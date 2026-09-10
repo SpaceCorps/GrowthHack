@@ -139,6 +139,29 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleGenerateSpotlight = async (payload: {
+    project_name: string;
+    repo_url: string;
+    tagline: string;
+    key_features: string[];
+    target_channel: string;
+    extra_notes?: string;
+  }) => {
+    try {
+      const res = await fetch("/api/articles/generate-spotlight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.task_id) {
+        setTerminalTitle(`Drafting Project Spotlight: ${payload.project_name}`);
+        setActiveTaskId(data.task_id);
+      }
+    } catch (err) {
+      console.error("Generate spotlight error:", err);
+    }
+  };
   const handleUpdateArticleStatus = async (id: string, status: "Draft" | "Ready" | "Published") => {
     try {
       await fetch(`/api/articles/${id}`, {
@@ -301,6 +324,7 @@ export const App: React.FC = () => {
           <ArticleEngine
             articles={articles}
             onGenerateArticle={handleGenerateArticle}
+            onGenerateSpotlight={handleGenerateSpotlight}
             onSelectArticle={(art, tab) => {
               setSelectedArticle(art);
               setArticleModalTab(tab || "content");
