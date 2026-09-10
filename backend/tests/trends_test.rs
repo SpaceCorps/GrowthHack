@@ -89,6 +89,98 @@ Summary: Monorepos experience severe collision without isolated worktrees.
 }
 
 #[tokio::test]
+async fn test_parse_scouted_topics_unclosed_codeblock() {
+    let json_output = r#"
+Here are the trending topics discovered today:
+
+```json
+[
+  {
+    "source": "Reddit",
+    "topic": "Claude Code worktree isolation problems",
+    "url": "https://reddit.com/r/LocalLLaMA/comments/123",
+    "engagement": "540 upvotes, 190 comments",
+    "summary": "Developers discuss merge conflicts when running multiple agents concurrently in a shared repo.",
+    "tendril_tie_in": "direct"
+  }
+]
+"#;
+
+    let topics = parse_scouted_topics(json_output);
+    assert_eq!(topics.len(), 1);
+    assert_eq!(topics[0].source.as_deref(), Some("Reddit"));
+    assert_eq!(topics[0].topic, "Claude Code worktree isolation problems");
+}
+
+#[tokio::test]
+async fn test_parse_scouted_topics_trailing_commas() {
+    let json_output = r#"
+```json
+[
+  {
+    "source": "Reddit",
+    "topic": "Claude Code worktree isolation problems",
+    "url": "https://reddit.com/r/LocalLLaMA/comments/123",
+    "engagement": "540 upvotes, 190 comments",
+    "summary": "Developers discuss merge conflicts when running multiple agents concurrently in a shared repo.",
+    "tendril_tie_in": "direct",
+  },
+]
+```
+"#;
+
+    let topics = parse_scouted_topics(json_output);
+    assert_eq!(topics.len(), 1);
+    assert_eq!(topics[0].source.as_deref(), Some("Reddit"));
+    assert_eq!(topics[0].topic, "Claude Code worktree isolation problems");
+}
+
+#[tokio::test]
+async fn test_parse_scouted_topics_unclosed_array() {
+    let json_output = r#"
+```json
+[
+  {
+    "source": "Reddit",
+    "topic": "Claude Code worktree isolation problems",
+    "url": "https://reddit.com/r/LocalLLaMA/comments/123",
+    "engagement": "540 upvotes, 190 comments",
+    "summary": "Developers discuss merge conflicts when running multiple agents concurrently in a shared repo.",
+    "tendril_tie_in": "direct"
+  }
+"#;
+
+    let topics = parse_scouted_topics(json_output);
+    assert_eq!(topics.len(), 1);
+    assert_eq!(topics[0].source.as_deref(), Some("Reddit"));
+    assert_eq!(topics[0].topic, "Claude Code worktree isolation problems");
+}
+
+#[tokio::test]
+async fn test_parse_scouted_topics_truncated_mid_item() {
+    let json_output = r#"
+```json
+[
+  {
+    "source": "Reddit",
+    "topic": "Claude Code worktree isolation problems",
+    "url": "https://reddit.com/r/LocalLLaMA/comments/123",
+    "engagement": "540 upvotes, 190 comments",
+    "summary": "Developers discuss merge conflicts when running multiple agents concurrently in a shared repo.",
+    "tendril_tie_in": "direct"
+  },
+  {
+    "source": "Hacker News",
+    "summary": "This topic was cut off mid-string because token limits were reached
+"#;
+
+    let topics = parse_scouted_topics(json_output);
+    assert_eq!(topics.len(), 1);
+    assert_eq!(topics[0].source.as_deref(), Some("Reddit"));
+    assert_eq!(topics[0].topic, "Claude Code worktree isolation problems");
+}
+
+#[tokio::test]
 async fn test_list_trends() {
     let ctx = create_test_context();
     let response = list_trends(State(ctx)).await.into_response();
