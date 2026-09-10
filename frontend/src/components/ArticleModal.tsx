@@ -1,20 +1,16 @@
-import React, { useState } from 'react';
-import type { Article } from '../types';
-import { X, Copy, Check, ExternalLink, Globe, Sparkles, Send } from 'lucide-react';
+import React, { useState } from "react";
+import type { Article } from "../types";
+import { X, Copy, Check, ExternalLink, Globe, Sparkles, Send } from "lucide-react";
 
 interface ArticleModalProps {
   article: Article | null;
   onClose: () => void;
-  onUpdateStatus: (id: string, status: 'Draft' | 'Ready' | 'Published') => void;
+  onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
 }
 
-export const ArticleModal: React.FC<ArticleModalProps> = ({
-  article,
-  onClose,
-  onUpdateStatus,
-}) => {
+export const ArticleModal: React.FC<ArticleModalProps> = ({ article, onClose, onUpdateStatus }) => {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'content' | 'raw' | 'backlinks'>('content');
+  const [activeTab, setActiveTab] = useState<"content" | "raw" | "backlinks">("content");
 
   if (!article) return null;
 
@@ -46,13 +42,17 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
               onClick={handleCopyMarkdown}
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied' : 'Copy Markdown'}</span>
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>{copied ? "Copied" : "Copy Markdown"}</span>
             </button>
 
-            {article.status !== 'Published' ? (
+            {article.status !== "Published" ? (
               <button
-                onClick={() => onUpdateStatus(article.id, 'Published')}
+                onClick={() => onUpdateStatus(article.id, "Published")}
                 className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -78,38 +78,36 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
             {article.title}
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            {article.summary}
-          </p>
+          <p className="text-sm text-slate-400 mt-1">{article.summary}</p>
 
           {/* Sub-nav Tabs */}
           <div className="flex items-center space-x-4 mt-4 border-b border-slate-800">
             <button
-              onClick={() => setActiveTab('content')}
+              onClick={() => setActiveTab("content")}
               className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 ${
-                activeTab === 'content'
-                  ? 'border-emerald-400 text-emerald-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                activeTab === "content"
+                  ? "border-emerald-400 text-emerald-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
               Article Reading View
             </button>
             <button
-              onClick={() => setActiveTab('raw')}
+              onClick={() => setActiveTab("raw")}
               className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 ${
-                activeTab === 'raw'
-                  ? 'border-emerald-400 text-emerald-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                activeTab === "raw"
+                  ? "border-emerald-400 text-emerald-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
               Raw Markdown (with Frontmatter)
             </button>
             <button
-              onClick={() => setActiveTab('backlinks')}
+              onClick={() => setActiveTab("backlinks")}
               className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 ${
-                activeTab === 'backlinks'
-                  ? 'border-emerald-400 text-emerald-300'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                activeTab === "backlinks"
+                  ? "border-emerald-400 text-emerald-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
               }`}
             >
               Backlinks & Citations ({article.backlinks.length + article.outbound_citations.length})
@@ -119,7 +117,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 text-slate-300">
-          {activeTab === 'content' && (
+          {activeTab === "content" && (
             <div className="prose prose-invert max-w-none prose-headings:text-slate-100 prose-headings:font-bold prose-a:text-emerald-400 prose-code:text-emerald-300 prose-pre:bg-slate-950 prose-pre:border prose-pre:border-slate-800">
               <div className="whitespace-pre-wrap font-sans leading-relaxed space-y-4">
                 {article.content}
@@ -127,7 +125,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             </div>
           )}
 
-          {activeTab === 'raw' && (
+          {activeTab === "raw" && (
             <textarea
               readOnly
               value={article.content}
@@ -135,7 +133,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             />
           )}
 
-          {activeTab === 'backlinks' && (
+          {activeTab === "backlinks" && (
             <div className="space-y-6">
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 mb-3">

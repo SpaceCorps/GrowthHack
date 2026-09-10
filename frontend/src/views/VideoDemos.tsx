@@ -1,44 +1,40 @@
-import React, { useState } from 'react';
-import { 
-  Video, 
-  Sparkles, 
-  Play, 
-  Copy, 
-  Check, 
-  Share2, 
-  Layers, 
-  Cpu, 
-  Clapperboard, 
-  CheckCircle2, 
-  FolderGit2, 
-  ExternalLink,
+import React, { useState } from "react";
+import {
+  Video,
+  Sparkles,
+  Copy,
+  Check,
+  Cpu,
+  Clapperboard,
+  CheckCircle2,
   Mic,
   GitBranch,
   ShieldCheck,
-  Eye
-} from 'lucide-react';
+  Eye,
+} from "lucide-react";
 
 interface VideoDemosProps {
   onGenerateDemo: (feature: string, platform: string, duration: number) => void;
 }
 
 export const VideoDemos: React.FC<VideoDemosProps> = ({ onGenerateDemo }) => {
-  const [selectedFeature, setSelectedFeature] = useState('Git Worktrees');
-  const [selectedPlatform, setSelectedPlatform] = useState('LinkedIn');
+  const [selectedFeature, setSelectedFeature] = useState("Git Worktrees");
+  const [selectedPlatform, setSelectedPlatform] = useState("LinkedIn");
   const [duration, setDuration] = useState(30);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const features = [
     {
-      id: 'Git Worktrees',
-      title: 'Git Worktree Isolation',
-      hook: 'How to run 5 agents simultaneously without .git/index.lock collisions',
+      id: "Git Worktrees",
+      title: "Git Worktree Isolation",
+      hook: "How to run 5 agents simultaneously without .git/index.lock collisions",
       icon: GitBranch,
-      asset: 'worktrees.gif',
-      duration: '30s',
-      painPoint: 'Agent race conditions and dirty index corruption in shared branches',
+      asset: "worktrees.gif",
+      duration: "30s",
+      painPoint: "Agent race conditions and dirty index corruption in shared branches",
       premadeScript: {
-        headline: '🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)',
+        headline:
+          "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)",
         body: `If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:
 
 Dirty index collisions. Hallucinated file states. Broken test runs.
@@ -62,15 +58,15 @@ Check it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril
       },
     },
     {
-      id: 'Issue to Verified PR',
-      title: 'GitHub Issue to Verified PR',
-      hook: 'From production bug report to tested pull request in 15 minutes',
+      id: "Issue to Verified PR",
+      title: "GitHub Issue to Verified PR",
+      hook: "From production bug report to tested pull request in 15 minutes",
       icon: ShieldCheck,
-      asset: 'github.gif',
-      duration: '45s',
-      painPoint: 'Chatbot demos that output raw code snippets instead of verified pull requests',
+      asset: "github.gif",
+      duration: "45s",
+      painPoint: "Chatbot demos that output raw code snippets instead of verified pull requests",
       premadeScript: {
-        headline: 'From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡',
+        headline: "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡",
         body: `Chatbot coding demos stop at "here is a snippet." 
 
 Engineering teams do not need snippets. They need verified pull requests with passing test suites.
@@ -93,15 +89,16 @@ Star the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
       },
     },
     {
-      id: 'Multi-Agent Orchestration',
-      title: 'Multi-Agent Concurrency',
-      hook: 'Claude Code vs Codex vs Gemini executing concurrently on the same codebase',
+      id: "Multi-Agent Orchestration",
+      title: "Multi-Agent Concurrency",
+      hook: "Claude Code vs Codex vs Gemini executing concurrently on the same codebase",
       icon: Cpu,
-      asset: 'main.gif',
-      duration: '35s',
-      painPoint: 'Being locked into a single model or running one task at a time',
+      asset: "main.gif",
+      duration: "35s",
+      painPoint: "Being locked into a single model or running one task at a time",
       premadeScript: {
-        headline: 'What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?',
+        headline:
+          "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?",
         body: `Single-agent coding is 2024. Multi-agent software factories are 2026.
 
 With Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:
@@ -123,15 +120,15 @@ GitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril
       },
     },
     {
-      id: 'Voice Control',
-      title: 'Voice-Driven Agent Coding',
-      hook: 'Coding at the speed of thought: hands-free agent delegation',
+      id: "Voice Control",
+      title: "Voice-Driven Agent Coding",
+      hook: "Coding at the speed of thought: hands-free agent delegation",
       icon: Mic,
-      asset: 'voice.gif',
-      duration: '25s',
-      painPoint: 'Typing lengthy prompts in small terminal windows',
+      asset: "voice.gif",
+      duration: "25s",
+      painPoint: "Typing lengthy prompts in small terminal windows",
       premadeScript: {
-        headline: 'Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️',
+        headline: "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️",
         body: `Typing 500-word prompt context in terminal windows slows down flow state.
 
 Ivy-Tendril has built-in voice intelligence:
@@ -148,15 +145,15 @@ Star us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
       },
     },
     {
-      id: 'Tunneling & Preview',
-      title: 'Instant Web Preview & Tunneling',
-      hook: 'Instant public HTTPS tunnel to preview agent web changes on mobile',
+      id: "Tunneling & Preview",
+      title: "Instant Web Preview & Tunneling",
+      hook: "Instant public HTTPS tunnel to preview agent web changes on mobile",
       icon: Eye,
-      asset: 'tunneling.gif',
-      duration: '20s',
-      painPoint: 'Testing agent UI changes requires manual port forwarding or deploying to staging',
+      asset: "tunneling.gif",
+      duration: "20s",
+      painPoint: "Testing agent UI changes requires manual port forwarding or deploying to staging",
       premadeScript: {
-        headline: 'Instant Live Previews for AI-Generated Web Features 🌐',
+        headline: "Instant Live Previews for AI-Generated Web Features 🌐",
         body: `When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.
 
 Ivy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.
@@ -197,8 +194,9 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
             Produce Short Animated Demos & Viral LinkedIn Posts
           </h2>
           <p className="mt-1 text-xs text-slate-300 leading-relaxed">
-            Generate 15-45s animated UI video clips for every Tendril capability using{' '}
-            <strong className="text-rose-300">SpaceCorps/web-demo-generator</strong> (Playwright + H.264 video recorder), paired with high-converting LinkedIn post scripts.
+            Generate 15-45s animated UI video clips for every Tendril capability using{" "}
+            <strong className="text-rose-300">SpaceCorps/web-demo-generator</strong> (Playwright +
+            H.264 video recorder), paired with high-converting LinkedIn post scripts.
           </p>
         </div>
 
@@ -306,9 +304,7 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
                         <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">
                           Video Demo ({f.duration})
                         </span>
-                        <h4 className="text-base font-bold text-white leading-snug">
-                          {f.title}
-                        </h4>
+                        <h4 className="text-base font-bold text-white leading-snug">{f.title}</h4>
                       </div>
                     </div>
 
@@ -318,15 +314,11 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
                   </div>
 
                   {/* Hook */}
-                  <p className="text-xs text-rose-300/90 font-medium">
-                    &ldquo;{f.hook}&rdquo;
-                  </p>
+                  <p className="text-xs text-rose-300/90 font-medium">&ldquo;{f.hook}&rdquo;</p>
 
                   {/* Post Preview */}
                   <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800/80 text-xs font-mono text-slate-300 relative group">
-                    <div className="font-bold text-white mb-2">
-                      {f.premadeScript.headline}
-                    </div>
+                    <div className="font-bold text-white mb-2">{f.premadeScript.headline}</div>
                     <div className="whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto text-[11px] text-slate-300">
                       {f.premadeScript.body}
                     </div>
@@ -365,7 +357,12 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
                     </button>
 
                     <button
-                      onClick={() => handleCopy(`post-${f.id}`, `${f.premadeScript.headline}\n\n${f.premadeScript.body}`)}
+                      onClick={() =>
+                        handleCopy(
+                          `post-${f.id}`,
+                          `${f.premadeScript.headline}\n\n${f.premadeScript.body}`,
+                        )
+                      }
                       className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-all shadow-sm"
                       title="Copy LinkedIn Post"
                     >

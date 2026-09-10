@@ -1,22 +1,11 @@
-import React, { useState } from 'react';
-import type { GrowthIssue } from '../types';
-import { 
-  Play, 
-  CheckCircle2, 
-  Clock, 
-  Flame, 
-  Layers, 
-  Plus, 
-  Calendar, 
-  RotateCw,
-  Search,
-  Filter
-} from 'lucide-react';
+import React, { useState } from "react";
+import type { GrowthIssue } from "../types";
+import { Play, CheckCircle2, Flame, Plus, Calendar, RotateCw, Search, Filter } from "lucide-react";
 
 interface IssuesHubProps {
   issues: GrowthIssue[];
   onRunIssue: (id: string) => void;
-  onUpdateStatus: (id: string, status: 'Todo' | 'In Progress' | 'Active Routine' | 'Done') => void;
+  onUpdateStatus: (id: string, status: "Todo" | "In Progress" | "Active Routine" | "Done") => void;
   onCreateIssue: (issue: Partial<GrowthIssue>) => void;
 }
 
@@ -26,24 +15,24 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
   onUpdateStatus,
   onCreateIssue,
 }) => {
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
 
   // New Issue Form State
-  const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState('Content Engine');
-  const [newPriority, setNewPriority] = useState<'Critical' | 'High' | 'Medium' | 'Low'>('High');
-  const [newDesc, setNewDesc] = useState('');
-  const [newActions, setNewActions] = useState('');
-  const [newSchedule, setNewSchedule] = useState('');
+  const [newTitle, setNewTitle] = useState("");
+  const [newCategory, setNewCategory] = useState("Content Engine");
+  const [newPriority, setNewPriority] = useState<"Critical" | "High" | "Medium" | "Low">("High");
+  const [newDesc, setNewDesc] = useState("");
+  const [newActions, setNewActions] = useState("");
+  const [newSchedule, setNewSchedule] = useState("");
 
   const categories = Array.from(new Set(issues.map((i) => i.category)));
 
   const filteredIssues = issues.filter((issue) => {
-    const matchesCategory = filterCategory === 'all' || issue.category === filterCategory;
-    const matchesStatus = filterStatus === 'all' || issue.status === filterStatus;
+    const matchesCategory = filterCategory === "all" || issue.category === filterCategory;
+    const matchesStatus = filterStatus === "all" || issue.status === filterStatus;
     const matchesSearch =
       issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       issue.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -60,42 +49,42 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
       priority: newPriority,
       description: newDesc,
       direct_actions: newActions
-        .split('\n')
+        .split("\n")
         .map((a) => a.trim())
         .filter(Boolean),
       routine_schedule: newSchedule || undefined,
     });
 
-    setNewTitle('');
-    setNewDesc('');
-    setNewActions('');
-    setNewSchedule('');
+    setNewTitle("");
+    setNewDesc("");
+    setNewActions("");
+    setNewSchedule("");
     setShowAddModal(false);
   };
 
   const getPriorityBadge = (p: string) => {
     switch (p) {
-      case 'Critical':
-        return 'bg-rose-950/80 text-rose-300 border-rose-800';
-      case 'High':
-        return 'bg-amber-950/80 text-amber-300 border-amber-800';
-      case 'Medium':
-        return 'bg-sky-950/80 text-sky-300 border-sky-800';
+      case "Critical":
+        return "bg-rose-950/80 text-rose-300 border-rose-800";
+      case "High":
+        return "bg-amber-950/80 text-amber-300 border-amber-800";
+      case "Medium":
+        return "bg-sky-950/80 text-sky-300 border-sky-800";
       default:
-        return 'bg-slate-800 text-slate-300 border-slate-700';
+        return "bg-slate-800 text-slate-300 border-slate-700";
     }
   };
 
   const getStatusBadge = (s: string) => {
     switch (s) {
-      case 'Active Routine':
-        return 'bg-emerald-950/80 text-emerald-300 border-emerald-800';
-      case 'In Progress':
-        return 'bg-indigo-950/80 text-indigo-300 border-indigo-800';
-      case 'Done':
-        return 'bg-slate-800 text-slate-400 border-slate-700 line-through';
+      case "Active Routine":
+        return "bg-emerald-950/80 text-emerald-300 border-emerald-800";
+      case "In Progress":
+        return "bg-indigo-950/80 text-indigo-300 border-indigo-800";
+      case "Done":
+        return "bg-slate-800 text-slate-400 border-slate-700 line-through";
       default:
-        return 'bg-slate-900 text-slate-400 border-slate-800';
+        return "bg-slate-900 text-slate-400 border-slate-800";
     }
   };
 
@@ -112,8 +101,9 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
             Scale Ivy-Tendril to 100k Stars Through Real Adoption
           </h2>
           <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-            Direct-action initiatives executed autonomously by your local <strong>Antigravity</strong> agent. 
-            Automate daily 10x articles, blitz Awesome-lists, scout trends, and engineer viral pull request loops.
+            Direct-action initiatives executed autonomously by your local{" "}
+            <strong>Antigravity</strong> agent. Automate daily 10x articles, blitz Awesome-lists,
+            scout trends, and engineer viral pull request loops.
           </p>
         </div>
       </div>
@@ -195,7 +185,9 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center space-x-1.5">
-                  <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${getPriorityBadge(issue.priority)}`}>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${getPriorityBadge(issue.priority)}`}
+                  >
                     {issue.priority}
                   </span>
                   <select
