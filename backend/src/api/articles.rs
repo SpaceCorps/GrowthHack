@@ -1,7 +1,7 @@
 use crate::api::issues::AppContext;
 use crate::db::{Article, ExportRecord};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -10,6 +10,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
+
+pub use super::banner::*;
 
 #[derive(Deserialize)]
 pub struct CreateArticleRequest {
@@ -783,6 +785,12 @@ pub fn sync_hero_asset(
     std::fs::create_dir_all(&blog_dir)?;
     let dest_file = blog_dir.join(format!("{}-hero.png", slug));
     std::fs::write(&dest_file, DEFAULT_HERO_IMAGE)?;
+
+    // Also write dynamic SVG hero banner
+    let svg_content = generate_hero_banner_svg(title, category, "", None);
+    let svg_dest_file = blog_dir.join(format!("{}-hero.svg", slug));
+    std::fs::write(&svg_dest_file, svg_content)?;
+
     Ok(dest_file)
 }
 
@@ -954,6 +962,150 @@ pub async fn sync_assets(
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "Article not found" })),
         )
+    }
+}
+
+#[derive(Deserialize, Default)]
+pub struct HeroBannerQuery {
+    pub theme: Option<String>,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub summary: Option<String>,
+}
+
+pub async fn get_hero_banner_svg(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    Query(query): Query<HeroBannerQuery>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    if let Some(article) = state.articles.iter().find(|a| a.id == id) {
+        let title = query.title.as_deref().unwrap_or(&article.title);
+        let category = query.category.as_deref().unwrap_or(&article.angle);
+        let summary = query.summary.as_deref().unwrap_or(&article.summary);
+        let svg = generate_hero_banner_svg(
+            title,
+            category,
+            summary,
+            query.theme.as_deref(),
+        );
+
+        (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+            svg,
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found" })),
+        )
+            .into_response()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct UploadHeroImageRequest {
+    pub image_data: String,
+    pub target_images_dir: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct UploadHeroImageResponse {
+    pub success: bool,
+    pub image_path: String,
+    pub slug: String,
+    pub bytes_written: usize,
+}
+
+pub async fn upload_hero_image(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<UploadHeroImageRequest>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    if let Some(article) = state.articles.iter().find(|a| a.id == id) {
+        let slug = article
+            .slug
+            .clone()
+            .unwrap_or_else(|| slugify(&article.title));
+
+        let images_dir = payload
+            .target_images_dir
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+
+        let blog_dir = if images_dir
+            .file_name()
+            .and_then(|f| f.to_str())
+            == Some("blog")
+        {
+            images_dir
+        } else {
+            images_dir.join("blog")
+        };
+
+        if let Err(e) = std::fs::create_dir_all(&blog_dir) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Failed to create directory: {}", e) })),
+            )
+                .into_response();
+        }
+
+        use base64::prelude::*;
+        let raw_base64 = if let Some(idx) = payload.image_data.find(";base64,") {
+            &payload.image_data[idx + 8..]
+        } else {
+            payload.image_data.trim()
+        };
+
+        let image_bytes = match BASE64_STANDARD.decode(raw_base64) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": format!("Invalid base64 payload: {}", e) })),
+                )
+                    .into_response();
+            }
+        };
+
+        let dest_png = blog_dir.join(format!("{}-hero.png", slug));
+        if let Err(e) = std::fs::write(&dest_png, &image_bytes) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Failed to write PNG: {}", e) })),
+            )
+                .into_response();
+        }
+
+        let svg_path = blog_dir.join(format!("{}-hero.svg", slug));
+        let svg_content = generate_hero_banner_svg(
+            &article.title,
+            &article.angle,
+            &article.summary,
+            None,
+        );
+        let _ = std::fs::write(&svg_path, svg_content);
+
+        (
+            StatusCode::OK,
+            Json(serde_json::to_value(UploadHeroImageResponse {
+                success: true,
+                image_path: dest_png.to_string_lossy().to_string(),
+                slug,
+                bytes_written: image_bytes.len(),
+            }).unwrap()),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found" })),
+        )
+            .into_response()
     }
 }
 
@@ -1464,6 +1616,166 @@ mod tests {
 
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         assert!(images_dir.join("blog/test-sync-assets-endpoint-hero.png").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_generate_hero_banner_svg() {
+        let title = "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
+        let category = "Architecture & Design";
+        let summary = "A comprehensive deep dive into isolated git checkouts, automated verification steps, and human approval gates.";
+        let svg = generate_hero_banner_svg(title, category, summary, Some("dark-cyan"));
+
+        assert!(svg.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(svg.contains(r#"width="1200""#));
+        assert!(svg.contains(r#"height="630""#));
+        assert!(svg.contains("viewBox=\"0 0 1200 630\""));
+        // XML escaping check
+        assert!(svg.contains("ARCHITECTURE &amp; DESIGN"));
+        assert!(!svg.contains("ARCHITECTURE & DESIGN"));
+        // Check wrapping - lines should appear
+        assert!(svg.contains("Building Resilient AI Workflows"));
+        // Check branding and footer
+        assert!(svg.contains("ivy.interactive/blog"));
+        assert!(svg.contains("IVY"));
+    }
+
+    #[test]
+    fn test_sync_hero_asset_writes_svg_and_png() {
+        let temp_dir = std::env::temp_dir().join("test_sync_hero_asset_svg_png");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        let slug = "dual-asset-article";
+        let res = sync_hero_asset(slug, &temp_dir, "Dual Asset Article Title", "Benchmark");
+        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+
+        let png_path = temp_dir.join("blog/dual-asset-article-hero.png");
+        let svg_path = temp_dir.join("blog/dual-asset-article-hero.svg");
+
+        assert!(png_path.exists(), "PNG asset must exist");
+        assert!(svg_path.exists(), "SVG asset must exist");
+
+        let svg_content = std::fs::read_to_string(&svg_path).expect("Read SVG content");
+        assert!(svg_content.contains("Dual Asset Article Title"));
+        assert!(svg_content.contains("BENCHMARK"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_hero_banner_svg_endpoint() {
+        let temp_dir = std::env::temp_dir().join("test_hero_banner_svg_endpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let images_dir = temp_dir.join("public/site/images");
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let article = Article {
+            id: "art-banner-1".to_string(),
+            title: "Dynamic Banner Test Article".to_string(),
+            feature: "Social Sharing".to_string(),
+            channel: "Website".to_string(),
+            angle: "Benchmark".to_string(),
+            summary: "Validating dynamic banner SVG endpoint output".to_string(),
+            content: "## Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: chrono::Utc::now(),
+            published_at: None,
+            slug: Some("dynamic-banner-test-article".to_string()),
+            exports: vec![],
+        };
+        growth_state.articles.push(article);
+
+        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
+        let task_manager = crate::agent::TaskManager::new(runner);
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            task_manager,
+            data_file,
+            ivy_web_content_path: temp_dir.join("content"),
+            ivy_web_images_path: images_dir,
+        });
+
+        let resp = get_hero_banner_svg(
+            axum::extract::Path("art-banner-1".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Query(HeroBannerQuery {
+                theme: Some("midnight-emerald".to_string()),
+                ..Default::default()
+            }),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let content_type = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok());
+        assert_eq!(content_type, Some("image/svg+xml; charset=utf-8"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_upload_hero_image_endpoint() {
+        let temp_dir = std::env::temp_dir().join("test_upload_hero_image_endpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let images_dir = temp_dir.join("public/site/images");
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let article = Article {
+            id: "art-upload-1".to_string(),
+            title: "Upload Custom Banner Article".to_string(),
+            feature: "Canvas Rendering".to_string(),
+            channel: "Website".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "Testing upload endpoint with base64 data".to_string(),
+            content: "## Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: chrono::Utc::now(),
+            published_at: None,
+            slug: Some("upload-custom-banner-article".to_string()),
+            exports: vec![],
+        };
+        growth_state.articles.push(article);
+
+        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
+        let task_manager = crate::agent::TaskManager::new(runner);
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            task_manager,
+            data_file,
+            ivy_web_content_path: temp_dir.join("content"),
+            ivy_web_images_path: images_dir.clone(),
+        });
+
+        // 1x1 transparent PNG base64 payload
+        let sample_png_base64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        let req = UploadHeroImageRequest {
+            image_data: sample_png_base64.to_string(),
+            target_images_dir: Some(images_dir.to_string_lossy().to_string()),
+        };
+
+        let resp = upload_hero_image(
+            axum::extract::Path("art-upload-1".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Json(req),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let dest_png = images_dir.join("blog/upload-custom-banner-article-hero.png");
+        let dest_svg = images_dir.join("blog/upload-custom-banner-article-hero.svg");
+        assert!(dest_png.exists(), "Uploaded PNG file must exist on disk");
+        assert!(dest_svg.exists(), "Generated SVG file must exist on disk");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
