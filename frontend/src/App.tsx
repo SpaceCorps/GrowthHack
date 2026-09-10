@@ -7,6 +7,7 @@ import type {
   Listing,
   ReviewItem,
   TrendTopic,
+  VideoDemo,
 } from "./types";
 import { Navigation } from "./components/Navigation";
 import { LiveTerminal } from "./components/LiveTerminal";
@@ -51,6 +52,7 @@ export const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [trends, setTrends] = useState<TrendTopic[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [demos, setDemos] = useState<VideoDemo[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -63,18 +65,21 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resStatus] = await Promise.all([
-        fetch("/api/issues").then((r) => r.json()),
-        fetch("/api/articles").then((r) => r.json()),
-        fetch("/api/trends").then((r) => r.json()),
-        fetch("/api/listings").then((r) => r.json()),
-        fetch("/api/agent/status").then((r) => r.json()),
-      ]);
+      const [resIssues, resArticles, resTrends, resListings, resStatus, resDemos] =
+        await Promise.all([
+          fetch("/api/issues").then((r) => r.json()),
+          fetch("/api/articles").then((r) => r.json()),
+          fetch("/api/trends").then((r) => r.json()),
+          fetch("/api/listings").then((r) => r.json()),
+          fetch("/api/agent/status").then((r) => r.json()),
+          fetch("/api/demos").then((r) => r.json()),
+        ]);
       setIssues(resIssues);
       setArticles(resArticles);
       setTrends(resTrends);
       setListings(resListings);
       setAgentStatus(resStatus);
+      setDemos(resDemos);
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -224,19 +229,34 @@ export const App: React.FC = () => {
   };
 
   // Trend Handlers
-  const handleScoutTrends = async (mode: "general" | "discussions" = "general") => {
+  const handleScoutTrends = async (
+    sourcesOrMode?: string[] | "general" | "discussions",
+    optionalMode?: "general" | "discussions",
+  ) => {
+    let mode: "general" | "discussions" = "general";
+    let sources: string[] | undefined = undefined;
+
+    if (Array.isArray(sourcesOrMode)) {
+      sources = sourcesOrMode;
+      if (optionalMode) {
+        mode = optionalMode;
+      }
+    } else if (sourcesOrMode === "discussions" || sourcesOrMode === "general") {
+      mode = sourcesOrMode;
+    }
+
     try {
       const res = await fetch("/api/trends/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, sources }),
       });
       const data = await res.json();
       if (data.task_id) {
         setTerminalTitle(
           mode === "discussions"
             ? "Harvester: Social Discussions (Reddit & HN)"
-            : "Scouting GitHub, Reddit, LinkedIn Trends",
+            : `Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`,
         );
         setActiveTaskId(data.task_id);
       }
@@ -439,56 +459,102 @@ export const App: React.FC = () => {
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(baseReviewItems);
 
   useEffect(() => {
-    if (articles.length > 0 || listings.length > 0) {
-      const articleItems: ReviewItem[] = articles.map((art) => ({
-        id: `article-${art.id}`,
-        type: "article" as const,
-        title: art.title,
-        subtitle: `${art.feature} • Channel: ${art.channel}`,
-        channel: art.channel,
-        summary: art.summary,
-        content: art.content,
-        backlinks: art.backlinks || [],
-        citations: art.outbound_citations || [],
+    const articleItems: ReviewItem[] = articles.map((art) => ({
+      id: `article-${art.id}`,
+      type: "article" as const,
+      title: art.title,
+      subtitle: `${art.feature} • Channel: ${art.channel}`,
+      channel: art.channel,
+      summary: art.summary,
+      content: art.content,
+      backlinks: art.backlinks || [],
+      citations: art.outbound_citations || [],
+      status:
+        art.status === "Approved" ? "Approved" : art.status === "Rejected" ? "Rejected" : "Pending",
+      createdAt: art.created_at,
+      rawId: art.id,
+    }));
+
+    const demoItems: ReviewItem[] = demos.map((demo) => ({
+      id: `demo-${demo.id}`,
+      type: "video_demo" as const,
+      title: demo.headline,
+      subtitle: `${demo.feature} • Platform: ${demo.target_platform} (${demo.duration_seconds}s)`,
+      channel: demo.target_platform,
+      summary: `Video script & storyboard for ${demo.feature} on ${demo.target_platform}`,
+      content: `${demo.headline}\n\n${demo.body}\n\n### Storyboard\n${demo.storyboard}`,
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: [],
+      status:
+        demo.status === "Approved"
+          ? "Approved"
+          : demo.status === "Rejected"
+            ? "Rejected"
+            : "Pending",
+      createdAt: demo.created_at,
+      rawId: demo.id,
+    }));
+
+    const trendItems: ReviewItem[] = trends.map((trend) => ({
+      id: `trend-${trend.id}`,
+      type: "trend_synthesis" as const,
+      title: trend.topic,
+      subtitle: `Source: ${trend.source} • Signal: ${trend.engagement}`,
+      channel: trend.source,
+      summary: trend.summary,
+      content: `# ${trend.topic}\n\n**Source:** ${trend.source} (${trend.url})\n**Engagement:** ${trend.engagement}\n**Tendril Tie-In:** ${trend.tendril_tie_in}\n\n${trend.summary}`,
+      backlinks:
+        trend.tendril_tie_in !== "none" ? ["https://github.com/Ivy-Interactive/Ivy-Tendril"] : [],
+      citations: [trend.url],
+      status:
+        trend.status === "Approved"
+          ? "Approved"
+          : trend.status === "Rejected"
+            ? "Rejected"
+            : "Pending",
+      createdAt: trend.created_at,
+      rawId: trend.id,
+    }));
+
+    const dynamicListingItems: ReviewItem[] = listings
+      .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
+      .map((l) => ({
+        id: `listing-${l.id}`,
+        type: "listing_blurb" as const,
+        title: l.name,
+        subtitle: `${l.category} • ${l.url}`,
+        channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
+        summary: l.notes || `Submission blurb for ${l.name}`,
+        content: l.submission_blurb,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [l.url],
         status:
-          art.status === "Approved"
+          l.status === "PR Submitted" ||
+          l.status === "Under Review" ||
+          l.status === "Merged" ||
+          l.status === "Live"
             ? "Approved"
-            : art.status === "Rejected"
-              ? "Rejected"
-              : "Pending",
-        createdAt: art.created_at,
-        rawId: art.id,
+            : "Pending",
+        createdAt: l.updated_at,
+        rawId: l.id,
       }));
 
-      const listingItems: ReviewItem[] = listings
-        .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
-        .map((l) => ({
-          id: `listing-${l.id}`,
-          type: "listing_blurb" as const,
-          title: l.name,
-          subtitle: `${l.category} • ${l.url}`,
-          channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
-          summary: l.notes || `Submission blurb for ${l.name}`,
-          content: l.submission_blurb,
-          backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
-          citations: [l.url],
-          status:
-            l.status === "PR Submitted" ||
-            l.status === "Under Review" ||
-            l.status === "Merged" ||
-            l.status === "Live"
-              ? "Approved"
-              : "Pending",
-          createdAt: l.updated_at,
-          rawId: l.id,
-        }));
+    const listingItems =
+      dynamicListingItems.length > 0
+        ? dynamicListingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb");
 
-      setReviewItems((prev) => {
-        const nonDyn = prev.filter((it) => it.type !== "article" && it.type !== "listing_blurb");
-        return [...articleItems, ...listingItems, ...nonDyn];
-      });
-    }
-  }, [articles, listings]);
+    setReviewItems([
+      ...articleItems,
+      ...(demoItems.length > 0
+        ? demoItems
+        : baseReviewItems.filter((it) => it.type === "video_demo")),
+      ...(trendItems.length > 0
+        ? trendItems
+        : baseReviewItems.filter((it) => it.type === "trend_synthesis")),
+      ...listingItems,
+    ]);
+  }, [articles, demos, trends, listings]);
 
   const handleApproveReviewItem = async (item: ReviewItem) => {
     setReviewItems((prev) =>
@@ -498,6 +564,28 @@ export const App: React.FC = () => {
       await handleUpdateArticleStatus(item.rawId, "Approved");
     } else if (item.type === "listing_blurb") {
       await handleUpdateListingStatus(item.rawId, "PR Submitted");
+    } else if (item.type === "video_demo") {
+      try {
+        await fetch(`/api/demos/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Approved" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Approve video demo error:", err);
+      }
+    } else if (item.type === "trend_synthesis") {
+      try {
+        await fetch(`/api/trends/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Approved" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Approve trend error:", err);
+      }
     }
   };
 
@@ -509,6 +597,28 @@ export const App: React.FC = () => {
       await handleUpdateArticleStatus(item.rawId, "Rejected");
     } else if (item.type === "listing_blurb") {
       await handleUpdateListingStatus(item.rawId, "Targeted");
+    } else if (item.type === "video_demo") {
+      try {
+        await fetch(`/api/demos/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Rejected" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Reject video demo error:", err);
+      }
+    } else if (item.type === "trend_synthesis") {
+      try {
+        await fetch(`/api/trends/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "Rejected" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Reject trend error:", err);
+      }
     }
   };
 
@@ -531,6 +641,36 @@ export const App: React.FC = () => {
       } catch (err) {
         console.error("Refine article error:", err);
       }
+    } else if (item.type === "video_demo") {
+      try {
+        await fetch(`/api/demos/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            headline: updated.title,
+            body: updated.content,
+            status: updated.status,
+          }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Refine video demo error:", err);
+      }
+    } else if (item.type === "trend_synthesis") {
+      try {
+        await fetch(`/api/trends/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: updated.title,
+            summary: updated.summary,
+            status: updated.status,
+          }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Refine trend error:", err);
+      }
     }
   };
 
@@ -538,6 +678,16 @@ export const App: React.FC = () => {
     for (const it of itemsToPublish) {
       if (it.type === "article") {
         await handleUpdateArticleStatus(it.rawId, "Published");
+      } else if (it.type === "video_demo") {
+        try {
+          await fetch(`/api/demos/${it.rawId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "Published" }),
+          });
+        } catch (err) {
+          console.error("Publish video demo error:", err);
+        }
       }
     }
     setReviewItems((prev) =>
@@ -606,7 +756,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === "demos" && <VideoDemos onGenerateDemo={handleGenerateDemo} />}
+        {activeTab === "demos" && <VideoDemos onGenerateDemo={handleGenerateDemo} demos={demos} />}
 
         {activeTab === "listings" && (
           <ListingBlitz

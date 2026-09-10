@@ -11,12 +11,16 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::config::Config;
+
 #[derive(Clone)]
 pub struct AppContext {
     pub state: SharedState,
     pub task_manager: TaskManager,
     pub data_file: std::path::PathBuf,
     pub ivy_web_content_path: std::path::PathBuf,
+    pub ivy_web_images_path: std::path::PathBuf,
+    pub config: Config,
 }
 
 #[derive(Deserialize)]

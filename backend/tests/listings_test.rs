@@ -20,11 +20,15 @@ fn create_test_context() -> Arc<AppContext> {
     let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
     let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
 
+    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
+
     Arc::new(AppContext {
         state,
         task_manager,
         data_file,
         ivy_web_content_path,
+        ivy_web_images_path,
+        config: growthhack_backend::config::Config::load(),
     })
 }
 
