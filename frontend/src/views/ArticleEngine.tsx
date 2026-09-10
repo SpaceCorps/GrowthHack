@@ -3,13 +3,14 @@ import type { Article } from "../types";
 import {
   Sparkles,
   BookOpen,
+  Share2,
+  Send,
   Copy,
   Check,
   Filter,
   Wand2,
   Globe,
   Flame,
-  Send,
   ExternalLink,
 } from "lucide-react";
 
@@ -24,7 +25,10 @@ export interface ArticleEngineProps {
     target_channel: string;
     extra_notes?: string;
   }) => void;
-  onSelectArticle: (article: Article) => void;
+  onSelectArticle: (
+    article: Article,
+    initialTab?: "content" | "raw" | "backlinks" | "export",
+  ) => void;
   onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
 }
 
@@ -461,7 +465,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
           </div>
 
           <div className="mt-4 pt-4 border-t border-slate-800 text-[11px] text-slate-500">
-            Tip: All generated drafts route to the Review Queue before multi-channel syndication.
+            Tip: Dev.to and Hashnode syndicate canonical URLs back to Ivy-Tendril website to
+            transfer SEO equity.
           </div>
         </div>
       </div>
@@ -605,10 +610,41 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                     <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
+
+                {/* Export Status Indicators */}
+                {article.exports && article.exports.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+                      Exported:
+                    </span>
+                    {Array.from(new Set(article.exports.map((e) => e.channel))).map((ch) => (
+                      <span
+                        key={ch}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80"
+                      >
+                        <Check className="w-2.5 h-2.5 text-cyan-400" />
+                        <span>{ch}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Quick Actions */}
               <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectArticle(article, "export");
+                  }}
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 text-xs font-semibold transition-colors"
+                  title="Export & Syndicate"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Export</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={(e) => handleCopyMarkdown(e, article)}

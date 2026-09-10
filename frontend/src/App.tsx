@@ -20,7 +20,19 @@ import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
+  const searchParams =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const initialTabParam = searchParams?.get("tab") as ActiveTab | null;
+  const initialArticleId = searchParams?.get("article");
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    initialTabParam &&
+      ["issues", "articles", "trends", "demos", "listings", "agent", "review"].includes(
+        initialTabParam,
+      )
+      ? initialTabParam
+      : "issues",
+  );
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -31,6 +43,9 @@ export const App: React.FC = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [terminalTitle, setTerminalTitle] = useState<string>("Antigravity Agent");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [articleModalTab, setArticleModalTab] = useState<
+    "content" | "raw" | "backlinks" | "export"
+  >((searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export") || "content");
 
   // Initial Data Fetching
   const fetchAll = async () => {
@@ -47,6 +62,13 @@ export const App: React.FC = () => {
       setTrends(resTrends);
       setListings(resListings);
       setAgentStatus(resStatus);
+
+      if (initialArticleId && !selectedArticle) {
+        const found = resArticles.find((a: Article) => a.id === initialArticleId);
+        if (found) {
+          setSelectedArticle(found);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch initial data:", err);
     }
@@ -151,7 +173,6 @@ export const App: React.FC = () => {
       console.error("Generate spotlight error:", err);
     }
   };
-
   const handleUpdateArticleStatus = async (
     id: string,
     status: "Draft" | "Ready" | "Published" | "Approved" | "Rejected",
@@ -458,7 +479,10 @@ export const App: React.FC = () => {
             articles={articles}
             onGenerateArticle={handleGenerateArticle}
             onGenerateSpotlight={handleGenerateSpotlight}
-            onSelectArticle={(art) => setSelectedArticle(art)}
+            onSelectArticle={(art, tab) => {
+              setSelectedArticle(art);
+              setArticleModalTab(tab || "content");
+            }}
             onUpdateStatus={handleUpdateArticleStatus}
           />
         )}
@@ -509,8 +533,13 @@ export const App: React.FC = () => {
       {/* Article Detail & Markdown Viewer Modal */}
       <ArticleModal
         article={selectedArticle}
+        initialTab={articleModalTab}
         onClose={() => setSelectedArticle(null)}
         onUpdateStatus={handleUpdateArticleStatus}
+        onArticleUpdated={(updated) => {
+          setSelectedArticle(updated);
+          fetchAll();
+        }}
       />
     </div>
   );

@@ -14,6 +14,13 @@ export interface GrowthIssue {
   updated_at: string;
 }
 
+export interface ExportRecord {
+  channel: string;
+  exported_at: string;
+  target_path?: string;
+  status: "Success" | "Copied" | string;
+}
+
 export interface Article {
   id: string;
   title: string;
@@ -27,6 +34,8 @@ export interface Article {
   status: "Draft" | "Ready" | "Published" | "Approved" | "Rejected";
   created_at: string;
   published_at?: string;
+  slug?: string;
+  exports?: ExportRecord[];
 }
 
 export interface ReviewItem {

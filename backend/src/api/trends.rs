@@ -1,3 +1,4 @@
+use crate::api::articles::slugify;
 use crate::api::issues::AppContext;
 use crate::db::Article;
 use axum::{
@@ -147,6 +148,7 @@ Requirements:
                     .map(|l| l.trim_start_matches("# ").trim().to_string())
                     .unwrap_or_else(|| format!("Trend Analysis: {}", topic_title));
 
+                let slug = slugify(&title);
                 let article = Article {
                     id: art_id_clone.clone(),
                     title,
@@ -164,6 +166,8 @@ Requirements:
                     status: "Ready".to_string(),
                     created_at: Utc::now(),
                     published_at: None,
+                    slug: Some(slug),
+                    exports: Vec::new(),
                 };
                 state.articles.insert(0, article);
 
