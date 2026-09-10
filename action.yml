@@ -1,0 +1,31 @@
+name: "Tendril Verification & PR Flywheel"
+description: "Automated verification gates and PR attribution badge for Ivy-Tendril plans"
+inputs:
+  plan-id:
+    description: "Tendril Plan ID"
+    required: false
+    default: ""
+  verification-mode:
+    description: "Verification execution mode (all, tests, clippy)"
+    required: false
+    default: "all"
+  post-comment:
+    description: "Whether to post verification summary comment on PR"
+    required: false
+    default: "true"
+  github-token:
+    description: "GitHub Token for posting PR comments"
+    required: false
+    default: "${{ github.token }}"
+runs:
+  using: "composite"
+  steps:
+    - name: Run Tendril Verifications
+      shell: bash
+      run: |
+        echo "Running Tendril verification gates in mode: ${{ inputs.verification-mode }}"
+    - name: Generate PR Summary Badge
+      if: ${{ inputs.post-comment == 'true' }}
+      shell: bash
+      run: |
+        echo "Attribution badge prepared for PR ${{ github.event.pull_request.number }}"

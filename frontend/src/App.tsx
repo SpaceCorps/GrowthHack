@@ -19,6 +19,7 @@ import { ListingBlitz } from "./views/ListingBlitz";
 import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
+import { PrFlywheel } from "./views/PrFlywheel";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
       "listings",
       "agent",
       "review",
+      "flywheel",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -105,6 +107,7 @@ export const App: React.FC = () => {
         "listings",
         "agent",
         "review",
+        "flywheel",
       ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
@@ -699,6 +702,8 @@ export const App: React.FC = () => {
             onCreateListing={handleCreateListing}
           />
         )}
+
+        {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />

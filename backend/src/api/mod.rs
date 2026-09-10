@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod articles;
+pub mod badges;
 pub mod demos;
 pub mod issues;
 pub mod listings;
@@ -89,6 +90,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/{id}/generate-blurb",
             post(listings::generate_listing_blurb),
         )
+        // PR Badges and Workflows Flywheel
+        .route("/api/badges/generate", post(badges::generate_badge))
+        .route("/api/badges/svg", get(badges::render_svg_badge))
+        .route("/api/badges/workflows", get(badges::get_workflow_templates))
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))

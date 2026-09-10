@@ -130,7 +130,8 @@ export type ActiveTab =
   | "demos"
   | "listings"
   | "agent"
-  | "review";
+  | "review"
+  | "flywheel";
 
 export interface SyndicationSettings {
   devto_api_key?: string;
