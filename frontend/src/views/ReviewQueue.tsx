@@ -58,6 +58,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDraggingRef = React.useRef<boolean>(false);
   const dragOffsetRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hasVibratedRef = React.useRef<boolean>(false);
 
   // Edit/Refine state
   const [editTitle, setEditTitle] = useState<string>("");
@@ -182,6 +183,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     dragOffsetRef.current = { x: 0, y: 0 };
     isDraggingRef.current = true;
+    hasVibratedRef.current = false;
     setIsDragging(true);
     setDragOffset({ x: 0, y: 0 });
   };
@@ -192,6 +194,24 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     const dy = e.clientY - dragStartRef.current.y;
     dragOffsetRef.current = { x: dx, y: dy };
     setDragOffset({ x: dx, y: dy });
+
+    const isOverThreshold = Math.abs(dx) >= SWIPE_THRESHOLD;
+    if (isOverThreshold && !hasVibratedRef.current) {
+      if (
+        typeof navigator !== "undefined" &&
+        "vibrate" in navigator &&
+        typeof navigator.vibrate === "function"
+      ) {
+        try {
+          navigator.vibrate(15);
+        } catch {
+          // Ignore environments where vibration is blocked or restricted
+        }
+      }
+      hasVibratedRef.current = true;
+    } else if (!isOverThreshold && hasVibratedRef.current) {
+      hasVibratedRef.current = false;
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -204,6 +224,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       }
     }
     isDraggingRef.current = false;
+    hasVibratedRef.current = false;
     setIsDragging(false);
 
     const finalDx =
@@ -231,6 +252,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       }
     }
     isDraggingRef.current = false;
+    hasVibratedRef.current = false;
     setIsDragging(false);
     setDragOffset({ x: 0, y: 0 });
     dragOffsetRef.current = { x: 0, y: 0 };
