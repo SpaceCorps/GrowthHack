@@ -617,15 +617,45 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
                       Exported:
                     </span>
-                    {Array.from(new Set(article.exports.map((e) => e.channel))).map((ch) => (
-                      <span
-                        key={ch}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80"
-                      >
-                        <Check className="w-2.5 h-2.5 text-cyan-400" />
-                        <span>{ch}</span>
-                      </span>
-                    ))}
+                    {Array.from(new Set(article.exports.map((e) => e.channel))).map((ch) => {
+                      const latestRecord = [...article.exports!]
+                        .reverse()
+                        .find((e) => e.channel === ch);
+                      const remoteUrl =
+                        latestRecord?.target_path &&
+                        (latestRecord.target_path.startsWith("http://") ||
+                          latestRecord.target_path.startsWith("https://"))
+                          ? latestRecord.target_path
+                          : null;
+
+                      if (remoteUrl) {
+                        return (
+                          <a
+                            key={ch}
+                            href={remoteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition-colors shadow-sm"
+                            title={`Open syndicated post on ${ch}: ${remoteUrl}`}
+                          >
+                            <Check className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>{ch}</span>
+                            <ExternalLink className="w-2.5 h-2.5 text-emerald-400" />
+                          </a>
+                        );
+                      }
+
+                      return (
+                        <span
+                          key={ch}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80"
+                        >
+                          <Check className="w-2.5 h-2.5 text-cyan-400" />
+                          <span>{ch}</span>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
