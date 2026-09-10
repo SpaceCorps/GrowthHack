@@ -11,6 +11,7 @@ import {
   Star,
   Cpu,
   CheckCheck,
+  GitPullRequest,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -69,6 +70,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Listing & Repo Blitz",
       icon: ListTree,
       count: listingsCount,
+    },
+    {
+      id: "flywheel" as ActiveTab,
+      label: "PR Flywheel",
+      icon: GitPullRequest,
     },
     {
       id: "agent" as ActiveTab,

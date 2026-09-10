@@ -91,4 +91,5 @@ export type ActiveTab =
   | "demos"
   | "listings"
   | "agent"
-  | "review";
+  | "review"
+  | "flywheel";
