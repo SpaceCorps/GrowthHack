@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
     tracing::info!("🚀 GrowthHack Server listening on http://127.0.0.1:{}", config.port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
