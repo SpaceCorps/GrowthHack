@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import type { ActiveTab, AgentStatus, Article, GrowthIssue, Listing, TrendTopic } from './types';
-import { Navigation } from './components/Navigation';
-import { LiveTerminal } from './components/LiveTerminal';
-import { ArticleModal } from './components/ArticleModal';
-import { IssuesHub } from './views/IssuesHub';
-import { ArticleEngine } from './views/ArticleEngine';
-import { TrendRadar } from './views/TrendRadar';
-import { ListingBlitz } from './views/ListingBlitz';
-import { VideoDemos } from './views/VideoDemos';
-import { AgentConsole } from './views/AgentConsole';
+import React, { useEffect, useState } from "react";
+import type { ActiveTab, AgentStatus, Article, GrowthIssue, Listing, TrendTopic } from "./types";
+import { Navigation } from "./components/Navigation";
+import { LiveTerminal } from "./components/LiveTerminal";
+import { ArticleModal } from "./components/ArticleModal";
+import { IssuesHub } from "./views/IssuesHub";
+import { ArticleEngine } from "./views/ArticleEngine";
+import { TrendRadar } from "./views/TrendRadar";
+import { ListingBlitz } from "./views/ListingBlitz";
+import { VideoDemos } from "./views/VideoDemos";
+import { AgentConsole } from "./views/AgentConsole";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('issues');
+  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -20,18 +20,21 @@ export const App: React.FC = () => {
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [terminalTitle, setTerminalTitle] = useState<string>('Antigravity Agent');
+  const [terminalTitle, setTerminalTitle] = useState<string>("Antigravity Agent");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [articleModalTab, setArticleModalTab] = useState<
+    "content" | "raw" | "backlinks" | "export"
+  >("content");
 
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
       const [resIssues, resArticles, resTrends, resListings, resStatus] = await Promise.all([
-        fetch('/api/issues').then((r) => r.json()),
-        fetch('/api/articles').then((r) => r.json()),
-        fetch('/api/trends').then((r) => r.json()),
-        fetch('/api/listings').then((r) => r.json()),
-        fetch('/api/agent/status').then((r) => r.json()),
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/articles").then((r) => r.json()),
+        fetch("/api/trends").then((r) => r.json()),
+        fetch("/api/listings").then((r) => r.json()),
+        fetch("/api/agent/status").then((r) => r.json()),
       ]);
       setIssues(resIssues);
       setArticles(resArticles);
@@ -39,7 +42,7 @@ export const App: React.FC = () => {
       setListings(resListings);
       setAgentStatus(resStatus);
     } catch (err) {
-      console.error('Failed to fetch initial data:', err);
+      console.error("Failed to fetch initial data:", err);
     }
   };
 
@@ -50,7 +53,7 @@ export const App: React.FC = () => {
   // Issue Handlers
   const handleRunIssue = async (id: string) => {
     try {
-      const res = await fetch(`/api/issues/${id}/run`, { method: 'POST' });
+      const res = await fetch(`/api/issues/${id}/run`, { method: "POST" });
       const data = await res.json();
       if (data.task_id) {
         setTerminalTitle(`Issue Action #${id}`);
@@ -58,36 +61,36 @@ export const App: React.FC = () => {
         fetchAll();
       }
     } catch (err) {
-      console.error('Run issue error:', err);
+      console.error("Run issue error:", err);
     }
   };
 
   const handleUpdateIssueStatus = async (
     id: string,
-    status: 'Todo' | 'In Progress' | 'Active Routine' | 'Done'
+    status: "Todo" | "In Progress" | "Active Routine" | "Done",
   ) => {
     try {
       await fetch(`/api/issues/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
       fetchAll();
     } catch (err) {
-      console.error('Update issue error:', err);
+      console.error("Update issue error:", err);
     }
   };
 
   const handleCreateIssue = async (issueData: Partial<GrowthIssue>) => {
     try {
-      await fetch('/api/issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(issueData),
       });
       fetchAll();
     } catch (err) {
-      console.error('Create issue error:', err);
+      console.error("Create issue error:", err);
     }
   };
 
@@ -96,12 +99,12 @@ export const App: React.FC = () => {
     feature: string,
     angle: string,
     channel: string,
-    extra: string
+    extra: string,
   ) => {
     try {
-      const res = await fetch('/api/articles/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/articles/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feature,
           angle,
@@ -115,18 +118,15 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate article error:', err);
+      console.error("Generate article error:", err);
     }
   };
 
-  const handleUpdateArticleStatus = async (
-    id: string,
-    status: 'Draft' | 'Ready' | 'Published'
-  ) => {
+  const handleUpdateArticleStatus = async (id: string, status: "Draft" | "Ready" | "Published") => {
     try {
       await fetch(`/api/articles/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
       fetchAll();
@@ -134,37 +134,37 @@ export const App: React.FC = () => {
         setSelectedArticle((prev) => (prev ? { ...prev, status } : null));
       }
     } catch (err) {
-      console.error('Update article status error:', err);
+      console.error("Update article status error:", err);
     }
   };
 
   // Trend Handlers
   const handleScoutTrends = async () => {
     try {
-      const res = await fetch('/api/trends/scout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/trends/scout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle('Scouting GitHub, Reddit, LinkedIn Trends');
+        setTerminalTitle("Scouting GitHub, Reddit, LinkedIn Trends");
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Scout trends error:', err);
+      console.error("Scout trends error:", err);
     }
   };
 
   const handleSynthesizeTrend = async (
     id: string,
-    tieIn: 'direct' | 'subtle' | 'none',
-    channel: string
+    tieIn: "direct" | "subtle" | "none",
+    channel: string,
   ) => {
     try {
       const res = await fetch(`/api/trends/${id}/synthesize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tendril_tie_in: tieIn, channel }),
       });
       const data = await res.json();
@@ -173,7 +173,7 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Synthesize trend error:', err);
+      console.error("Synthesize trend error:", err);
     }
   };
 
@@ -181,7 +181,7 @@ export const App: React.FC = () => {
   const handleGenerateBlurb = async (id: string) => {
     try {
       const res = await fetch(`/api/listings/${id}/generate-blurb`, {
-        method: 'POST',
+        method: "POST",
       });
       const data = await res.json();
       if (data.task_id) {
@@ -189,49 +189,41 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate blurb error:', err);
+      console.error("Generate blurb error:", err);
     }
   };
 
-  const handleUpdateListingStatus = async (
-    id: string,
-    status: any,
-    prUrl?: string
-  ) => {
+  const handleUpdateListingStatus = async (id: string, status: any, prUrl?: string) => {
     try {
       await fetch(`/api/listings/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, pr_url: prUrl }),
       });
       fetchAll();
     } catch (err) {
-      console.error('Update listing error:', err);
+      console.error("Update listing error:", err);
     }
   };
 
   const handleCreateListing = async (listingData: Partial<Listing>) => {
     try {
-      await fetch('/api/listings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/listings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(listingData),
       });
       fetchAll();
     } catch (err) {
-      console.error('Create listing error:', err);
+      console.error("Create listing error:", err);
     }
   };
 
-  const handleGenerateDemo = async (
-    feature: string,
-    platform: string,
-    duration: number
-  ) => {
+  const handleGenerateDemo = async (feature: string, platform: string, duration: number) => {
     try {
-      const res = await fetch('/api/demos/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/demos/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feature,
           target_platform: platform,
@@ -244,25 +236,25 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate demo error:', err);
+      console.error("Generate demo error:", err);
     }
   };
 
   // Custom Prompt
   const handleRunCustomPrompt = async (prompt: string) => {
     try {
-      const res = await fetch('/api/agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle('Custom Antigravity Turn');
+        setTerminalTitle("Custom Antigravity Turn");
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Run custom prompt error:', err);
+      console.error("Run custom prompt error:", err);
     }
   };
 
@@ -279,7 +271,7 @@ export const App: React.FC = () => {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'issues' && (
+        {activeTab === "issues" && (
           <IssuesHub
             issues={issues}
             onRunIssue={handleRunIssue}
@@ -288,16 +280,19 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'articles' && (
+        {activeTab === "articles" && (
           <ArticleEngine
             articles={articles}
             onGenerateArticle={handleGenerateArticle}
-            onSelectArticle={(art) => setSelectedArticle(art)}
+            onSelectArticle={(art, tab) => {
+              setSelectedArticle(art);
+              setArticleModalTab(tab || "content");
+            }}
             onUpdateStatus={handleUpdateArticleStatus}
           />
         )}
 
-        {activeTab === 'trends' && (
+        {activeTab === "trends" && (
           <TrendRadar
             trends={trends}
             onScoutTrends={handleScoutTrends}
@@ -305,11 +300,9 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'demos' && (
-          <VideoDemos onGenerateDemo={handleGenerateDemo} />
-        )}
+        {activeTab === "demos" && <VideoDemos onGenerateDemo={handleGenerateDemo} />}
 
-        {activeTab === 'listings' && (
+        {activeTab === "listings" && (
           <ListingBlitz
             listings={listings}
             onGenerateBlurb={handleGenerateBlurb}
@@ -318,11 +311,8 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'agent' && (
-          <AgentConsole
-            agentStatus={agentStatus}
-            onRunCustomPrompt={handleRunCustomPrompt}
-          />
+        {activeTab === "agent" && (
+          <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
       </main>
 
@@ -339,8 +329,13 @@ export const App: React.FC = () => {
       {/* Article Detail & Markdown Viewer Modal */}
       <ArticleModal
         article={selectedArticle}
+        initialTab={articleModalTab}
         onClose={() => setSelectedArticle(null)}
         onUpdateStatus={handleUpdateArticleStatus}
+        onArticleUpdated={(updated) => {
+          setSelectedArticle(updated);
+          fetchAll();
+        }}
       />
     </div>
   );

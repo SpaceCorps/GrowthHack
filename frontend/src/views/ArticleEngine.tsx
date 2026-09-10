@@ -1,26 +1,15 @@
-import React, { useState } from 'react';
-import type { Article } from '../types';
-import { 
-  Sparkles, 
-  BookOpen, 
-  ExternalLink, 
-  Share2, 
-  Send, 
-  Copy, 
-  Check, 
-  Filter, 
-  Calendar,
-  Layers,
-  Wand2,
-  FileCode,
-  Globe
-} from 'lucide-react';
+import React, { useState } from "react";
+import type { Article } from "../types";
+import { Sparkles, BookOpen, Share2, Send, Copy, Check, Filter, Wand2, Globe } from "lucide-react";
 
 interface ArticleEngineProps {
   articles: Article[];
   onGenerateArticle: (feature: string, angle: string, channel: string, extra: string) => void;
-  onSelectArticle: (article: Article) => void;
-  onUpdateStatus: (id: string, status: 'Draft' | 'Ready' | 'Published') => void;
+  onSelectArticle: (
+    article: Article,
+    initialTab?: "content" | "raw" | "backlinks" | "export",
+  ) => void;
+  onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
 }
 
 export const ArticleEngine: React.FC<ArticleEngineProps> = ({
@@ -29,45 +18,45 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   onSelectArticle,
   onUpdateStatus,
 }) => {
-  const [selectedFeature, setSelectedFeature] = useState('Worktrees');
-  const [selectedAngle, setSelectedAngle] = useState('Architecture');
-  const [selectedChannel, setSelectedChannel] = useState('Website');
-  const [extraContext, setExtraContext] = useState('');
-  const [filterFeature, setFilterFeature] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [selectedFeature, setSelectedFeature] = useState("Worktrees");
+  const [selectedAngle, setSelectedAngle] = useState("Architecture");
+  const [selectedChannel, setSelectedChannel] = useState("Website");
+  const [extraContext, setExtraContext] = useState("");
+  const [filterFeature, setFilterFeature] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const features = [
-    { id: 'Worktrees', label: 'Git Worktree Isolation' },
-    { id: 'Multi-Agent Orchestration', label: 'Multi-Agent Orchestration (Claude, Codex, Gemini)' },
-    { id: 'Issue-to-PR', label: 'GitHub Issue to Verified PR' },
-    { id: 'Verification Gates', label: 'Automated Verification Gates & Self-Correction' },
-    { id: 'Voice Control', label: 'Hands-Free Voice-Driven Coding' },
-    { id: 'Tunneling', label: 'Secure Tunneling & Remote Web Preview' },
-    { id: 'Review & Diffs', label: 'Visual Annotations & Diff Inspection' },
+    { id: "Worktrees", label: "Git Worktree Isolation" },
+    { id: "Multi-Agent Orchestration", label: "Multi-Agent Orchestration (Claude, Codex, Gemini)" },
+    { id: "Issue-to-PR", label: "GitHub Issue to Verified PR" },
+    { id: "Verification Gates", label: "Automated Verification Gates & Self-Correction" },
+    { id: "Voice Control", label: "Hands-Free Voice-Driven Coding" },
+    { id: "Tunneling", label: "Secure Tunneling & Remote Web Preview" },
+    { id: "Review & Diffs", label: "Visual Annotations & Diff Inspection" },
   ];
 
   const angles = [
-    { id: 'Architecture', label: 'Deep Architectural Breakdown' },
-    { id: 'Benchmark', label: 'Empirical Benchmark & Cost Study' },
-    { id: 'Comparison', label: 'Head-to-Head Comparison (vs Cline/OpenHands)' },
-    { id: 'Tutorial', label: '15-Minute Golden Path Tutorial' },
-    { id: 'Postmortem', label: 'Production Failure Postmortem' },
-    { id: 'Ecosystem', label: 'Open Source Ecosystem Commentary' },
+    { id: "Architecture", label: "Deep Architectural Breakdown" },
+    { id: "Benchmark", label: "Empirical Benchmark & Cost Study" },
+    { id: "Comparison", label: "Head-to-Head Comparison (vs Cline/OpenHands)" },
+    { id: "Tutorial", label: "15-Minute Golden Path Tutorial" },
+    { id: "Postmortem", label: "Production Failure Postmortem" },
+    { id: "Ecosystem", label: "Open Source Ecosystem Commentary" },
   ];
 
-  const channels = ['Website', 'Dev.to', 'Hashnode', 'Medium', 'Substack', 'XThread', 'Reddit'];
+  const channels = ["Website", "Dev.to", "Hashnode", "Medium", "Substack", "XThread", "Reddit"];
 
   const filteredArticles = articles.filter((art) => {
-    const matchesFeature = filterFeature === 'all' || art.feature.includes(filterFeature);
-    const matchesStatus = filterStatus === 'all' || art.status === filterStatus;
+    const matchesFeature = filterFeature === "all" || art.feature.includes(filterFeature);
+    const matchesStatus = filterStatus === "all" || art.status === filterStatus;
     return matchesFeature && matchesStatus;
   });
 
   const handleGenerate = (e: React.FormEvent) => {
     e.preventDefault();
     onGenerateArticle(selectedFeature, selectedAngle, selectedChannel, extraContext);
-    setExtraContext('');
+    setExtraContext("");
   };
 
   const handleCopyMarkdown = (e: React.MouseEvent, art: Article) => {
@@ -91,7 +80,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
             Draft Authority Articles with Built-in Citations & Backlinks
           </h2>
           <p className="text-xs text-slate-400">
-            Select a core Tendril capability. Antigravity will draft an engineering-grade post citing official docs and inserting natural backlink anchors to the Tendril repo.
+            Select a core Tendril capability. Antigravity will draft an engineering-grade post
+            citing official docs and inserting natural backlink anchors to the Tendril repo.
           </p>
 
           <form onSubmit={handleGenerate} className="space-y-4 pt-2">
@@ -185,7 +175,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
             </div>
             <h3 className="text-lg font-bold text-white">Daily 10x Velocity</h3>
             <p className="text-xs text-slate-400 mt-1">
-              Aim for 10 articles per day across developer publishing platforms to saturate organic search intent.
+              Aim for 10 articles per day across developer publishing platforms to saturate organic
+              search intent.
             </p>
 
             <div className="mt-5 space-y-3 font-mono text-xs">
@@ -196,7 +187,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
               <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
                 <span className="text-slate-400">Published to Web:</span>
                 <span className="font-bold text-emerald-400">
-                  {articles.filter((a) => a.status === 'Published').length}
+                  {articles.filter((a) => a.status === "Published").length}
                 </span>
               </div>
               <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -209,7 +200,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
           </div>
 
           <div className="mt-4 pt-4 border-t border-slate-800 text-[11px] text-slate-500">
-            Tip: Dev.to and Hashnode syndicate canonical URLs back to Ivy-Tendril website to transfer SEO equity.
+            Tip: Dev.to and Hashnode syndicate canonical URLs back to Ivy-Tendril website to
+            transfer SEO equity.
           </div>
         </div>
       </div>
@@ -269,9 +261,9 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 </span>
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
-                    article.status === 'Published'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-400'
+                    article.status === "Published"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-slate-800 text-slate-400"
                   }`}
                 >
                   {article.status}
@@ -282,19 +274,47 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 {article.title}
               </h3>
 
-              <p className="text-xs text-slate-400 line-clamp-1">
-                {article.summary}
-              </p>
+              <p className="text-xs text-slate-400 line-clamp-1">{article.summary}</p>
 
               <div className="flex items-center space-x-4 text-[11px] text-slate-500 pt-1 font-mono">
                 <span>Inbound Links: {article.backlinks.length}</span>
                 <span>•</span>
                 <span>Citations: {article.outbound_citations.length}</span>
               </div>
+
+              {/* Export Status Indicators */}
+              {article.exports && article.exports.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+                    Exported:
+                  </span>
+                  {Array.from(new Set(article.exports.map((e) => e.channel))).map((ch) => (
+                    <span
+                      key={ch}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80"
+                    >
+                      <Check className="w-2.5 h-2.5 text-cyan-400" />
+                      <span>{ch}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Quick Actions */}
             <div className="flex items-center space-x-2 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectArticle(article, "export");
+                }}
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 text-xs font-semibold transition-colors"
+                title="Export & Syndicate"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Export</span>
+              </button>
+
               <button
                 onClick={(e) => handleCopyMarkdown(e, article)}
                 className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
@@ -305,14 +325,14 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
-                <span>{copiedId === article.id ? 'Copied' : 'Copy'}</span>
+                <span>{copiedId === article.id ? "Copied" : "Copy"}</span>
               </button>
 
-              {article.status !== 'Published' && (
+              {article.status !== "Published" && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdateStatus(article.id, 'Published');
+                    onUpdateStatus(article.id, "Published");
                   }}
                   className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
                 >

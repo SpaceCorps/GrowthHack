@@ -1,16 +1,16 @@
-import React from 'react';
-import type { ActiveTab, AgentStatus } from '../types';
-import { 
-  Target, 
-  FileText, 
-  Radio, 
+import React from "react";
+import type { ActiveTab, AgentStatus } from "../types";
+import {
+  Target,
+  FileText,
+  Radio,
   Clapperboard,
-  ListTree, 
-  Terminal, 
-  Sparkles, 
+  ListTree,
+  Terminal,
+  Sparkles,
   Star,
-  Cpu
-} from 'lucide-react';
+  Cpu,
+} from "lucide-react";
 
 interface NavigationProps {
   activeTab: ActiveTab;
@@ -33,37 +33,37 @@ export const Navigation: React.FC<NavigationProps> = ({
 }) => {
   const navItems = [
     {
-      id: 'issues' as ActiveTab,
-      label: 'Direct Action Issues',
+      id: "issues" as ActiveTab,
+      label: "Direct Action Issues",
       icon: Target,
       count: issuesCount,
     },
     {
-      id: 'articles' as ActiveTab,
-      label: '10x Content Engine',
+      id: "articles" as ActiveTab,
+      label: "10x Content Engine",
       icon: FileText,
       count: articlesCount,
     },
     {
-      id: 'trends' as ActiveTab,
-      label: 'Trend Radar & Newsroom',
+      id: "trends" as ActiveTab,
+      label: "Trend Radar & Newsroom",
       icon: Radio,
       count: trendsCount,
     },
     {
-      id: 'demos' as ActiveTab,
-      label: 'Video Demos & LinkedIn',
+      id: "demos" as ActiveTab,
+      label: "Video Demos & LinkedIn",
       icon: Clapperboard,
     },
     {
-      id: 'listings' as ActiveTab,
-      label: 'Listing & Repo Blitz',
+      id: "listings" as ActiveTab,
+      label: "Listing & Repo Blitz",
       icon: ListTree,
       count: listingsCount,
     },
     {
-      id: 'agent' as ActiveTab,
-      label: 'Antigravity Console',
+      id: "agent" as ActiveTab,
+      label: "Antigravity Console",
       icon: Terminal,
     },
   ];
@@ -79,7 +79,9 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <Sparkles className="w-4 h-4 text-slate-950 font-bold" />
               </div>
               <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">SpaceCorps //</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  SpaceCorps //
+                </span>
                 <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
                   GrowthHack
                   <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800/50">
@@ -110,18 +112,18 @@ export const Navigation: React.FC<NavigationProps> = ({
                   onClick={() => setActiveTab(item.id)}
                   className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                      ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? "text-emerald-400" : "text-slate-400"}`} />
                   <span className="hidden md:inline">{item.label}</span>
                   {item.count !== undefined && (
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                         isActive
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-slate-800 text-slate-400'
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-slate-800 text-slate-400"
                       }`}
                     >
                       {item.count}
@@ -137,15 +139,15 @@ export const Navigation: React.FC<NavigationProps> = ({
             <div
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs border ${
                 agentStatus?.is_available
-                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800/80'
-                  : 'bg-rose-950/60 text-rose-300 border-rose-800/80'
+                  ? "bg-emerald-950/60 text-emerald-300 border-emerald-800/80"
+                  : "bg-rose-950/60 text-rose-300 border-rose-800/80"
               }`}
-              title={agentStatus?.agy_path || 'Agent CLI not detected'}
+              title={agentStatus?.agy_path || "Agent CLI not detected"}
             >
               <Cpu className="w-3.5 h-3.5" />
               <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
               <span className="hidden sm:inline font-mono">
-                {agentStatus?.is_available ? 'Antigravity' : 'Offline'}
+                {agentStatus?.is_available ? "Antigravity" : "Offline"}
               </span>
             </div>
           </div>

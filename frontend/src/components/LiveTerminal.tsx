@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Terminal, Copy, Check, X, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
+import React, { useEffect, useRef, useState } from "react";
+import { Terminal, Copy, Check, X, RefreshCw } from "lucide-react";
 
 interface LiveTerminalProps {
   taskId: string | null;
@@ -10,7 +10,7 @@ interface LiveTerminalProps {
 
 export const LiveTerminal: React.FC<LiveTerminalProps> = ({
   taskId,
-  title = 'Antigravity Agent Stream',
+  title = "Antigravity Agent Stream",
   onClose,
   onTaskCompleted,
 }) => {
@@ -31,7 +31,7 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
       const line = event.data;
       setLogs((prev) => [...prev, line]);
 
-      if (line.includes('[DONE]') || line.includes('[ERROR]')) {
+      if (line.includes("[DONE]") || line.includes("[ERROR]")) {
         setIsStreaming(false);
         if (onTaskCompleted) {
           onTaskCompleted();
@@ -56,7 +56,7 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
   }, [logs]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(logs.join('\n'));
+    navigator.clipboard.writeText(logs.join("\n"));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -93,7 +93,11 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
             className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
             title="Copy logs"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
           </button>
           {onClose && (
             <button
@@ -113,16 +117,19 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
         className="p-3.5 max-h-72 min-h-44 overflow-y-auto space-y-1 bg-slate-950/90 text-slate-300 select-text"
       >
         {logs.map((line, idx) => {
-          let lineClass = 'text-slate-300';
-          if (line.startsWith('[SYSTEM]')) lineClass = 'text-cyan-400 font-semibold';
-          else if (line.startsWith('[PROMPT]')) lineClass = 'text-indigo-400 italic';
-          else if (line.startsWith('[DONE]')) lineClass = 'text-emerald-400 font-bold';
-          else if (line.startsWith('[ERROR]')) lineClass = 'text-rose-400 font-semibold';
-          else if (line.startsWith('[STDERR]')) lineClass = 'text-amber-300/80';
-          else if (line.startsWith('#')) lineClass = 'text-emerald-300 font-bold';
+          let lineClass = "text-slate-300";
+          if (line.startsWith("[SYSTEM]")) lineClass = "text-cyan-400 font-semibold";
+          else if (line.startsWith("[PROMPT]")) lineClass = "text-indigo-400 italic";
+          else if (line.startsWith("[DONE]")) lineClass = "text-emerald-400 font-bold";
+          else if (line.startsWith("[ERROR]")) lineClass = "text-rose-400 font-semibold";
+          else if (line.startsWith("[STDERR]")) lineClass = "text-amber-300/80";
+          else if (line.startsWith("#")) lineClass = "text-emerald-300 font-bold";
 
           return (
-            <div key={idx} className={`leading-relaxed break-words whitespace-pre-wrap ${lineClass}`}>
+            <div
+              key={idx}
+              className={`leading-relaxed break-words whitespace-pre-wrap ${lineClass}`}
+            >
               {line}
             </div>
           );
