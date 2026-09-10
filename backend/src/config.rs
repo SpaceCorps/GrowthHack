@@ -1,7 +1,9 @@
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
 pub struct Config {
+    pub host: IpAddr,
     pub port: u16,
     pub agy_path: PathBuf,
     pub data_file: PathBuf,
@@ -82,6 +84,11 @@ pub fn resolve_ivy_web_images_path(
 
 impl Config {
     pub fn load() -> Self {
+        let host = std::env::var("HOST")
+            .ok()
+            .and_then(|h| h.trim().parse::<IpAddr>().ok())
+            .unwrap_or_else(|| IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+
         let port = std::env::var("PORT")
             .ok()
             .and_then(|p| p.parse().ok())
@@ -132,6 +139,7 @@ impl Config {
             .filter(|s| !s.is_empty());
 
         Self {
+            host,
             port,
             agy_path,
             data_file,
@@ -147,6 +155,9 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_ivy_web_content_path_custom_env() {
@@ -196,5 +207,31 @@ mod tests {
         assert_eq!(resolved, test_images);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_host_default_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("HOST");
+        let config = Config::load();
+        assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_host_custom_ipv4() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("HOST", "0.0.0.0");
+        let config = Config::load();
+        std::env::remove_var("HOST");
+        assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)));
+    }
+
+    #[test]
+    fn test_host_invalid_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("HOST", "invalid-ip-address");
+        let config = Config::load();
+        std::env::remove_var("HOST");
+        assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     }
 }

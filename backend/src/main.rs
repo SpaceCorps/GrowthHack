@@ -61,8 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = app.layer(cors).layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    tracing::info!("🚀 GrowthHack Server listening on http://127.0.0.1:{}", config.port);
+    let addr = SocketAddr::from((config.host, config.port));
+    tracing::info!(
+        "🚀 GrowthHack Server listening on http://{}:{}",
+        config.host,
+        config.port
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
