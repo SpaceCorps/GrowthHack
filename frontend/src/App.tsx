@@ -11,7 +11,19 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
+  const getInitialTab = (): ActiveTab => {
+    const hash = window.location.hash.replace("#", "") as ActiveTab;
+    const validTabs: ActiveTab[] = ["issues", "articles", "trends", "demos", "listings", "agent"];
+    return validTabs.includes(hash) ? hash : "issues";
+  };
+
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(getInitialTab);
+
+  const setActiveTab = (tab: ActiveTab) => {
+    setActiveTabState(tab);
+    window.location.hash = tab;
+  };
+
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -45,6 +57,16 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace("#", "") as ActiveTab;
+      const validTabs: ActiveTab[] = ["issues", "articles", "trends", "demos", "listings", "agent"];
+      if (validTabs.includes(hash)) {
+        setActiveTabState(hash);
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   // Issue Handlers
