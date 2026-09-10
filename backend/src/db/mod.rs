@@ -292,6 +292,27 @@ impl GrowthState {
                 created_at: now,
                 updated_at: now,
             },
+            GrowthIssue {
+                id: "issue-10".to_string(),
+                number: 10,
+                title: "Feature Demo Videos & LinkedIn/Social Blitz (SpaceCorps/web-demo-generator)".to_string(),
+                category: "Video & Social".to_string(),
+                status: "Active Routine".to_string(),
+                priority: "Critical".to_string(),
+                description: "Produce short, high-impact 15-45 second animated video demos for every Tendril feature using SpaceCorps/web-demo-generator (Playwright + Claude + H.264) paired with viral LinkedIn posts.".to_string(),
+                direct_actions: vec![
+                    "Hook into SpaceCorps/web-demo-generator (Playwright headless browser + H.264 video recorder) to generate animated UI demo videos".to_string(),
+                    "Batch-produce video demos for all core Tendril features (Worktree isolation, Multi-Agent concurrency, Issue-to-PR loop, Voice coding, Tunneling, Diff review)".to_string(),
+                    "Draft hook-first LinkedIn posts focusing on real developer pain points (merge conflicts, agent drift, broken main)".to_string(),
+                    "Include GitHub repo call-to-action (https://github.com/Ivy-Interactive/Ivy-Tendril) and clear download instructions in every video post".to_string(),
+                    "Syndicate demo clips to Twitter/X video threads, YouTube Shorts, and Reddit r/programming".to_string(),
+                ],
+                routine_schedule: Some("3x weekly (Tue, Thu, Sun)".to_string()),
+                run_count: 2,
+                last_run_at: Some(now),
+                created_at: now,
+                updated_at: now,
+            },
         ];
 
         let articles = vec![

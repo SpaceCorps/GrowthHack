@@ -30,7 +30,7 @@ SpaceCorps/GrowthHack/
 
 ---
 
-## The 9 Direct-Action Growth Issues
+## The 10 Direct-Action Growth Issues
 
 1. **[ISSUE-01] Daily 10x Feature Article Engine (10 articles/day)**: Rotates through core Tendril capabilities (Worktrees, Multi-Agent, Issue-to-PR, Verification Gates, Voice, Tunneling) across 6 content archetypes with mandatory 3+ external authority citations and Tendril backlinks.
 2. **[ISSUE-02] Ecosystem Listing & Awesome-Repo Blitz (50+ targets)**: Automated submission tracking and PR blurb generator for `awesome-ai-agents`, `awesome-devtools`, `AlternativeTo`, `OpenAlternative`, `DevHunt`, and software factory catalogs.
@@ -41,6 +41,7 @@ SpaceCorps/GrowthHack/
 7. **[ISSUE-07] Public Daily "State of Coding Agents" Benchmark Matrix**: Automated daily benchmarks of Claude Code vs Codex vs Gemini vs OpenCode in Tendril worktrees (the #1 backlink magnet for tech newsletters).
 8. **[ISSUE-08] Ready-to-Run Workflow Pack & Recipe Hub**: 1-click community recipes (`bugfixer`, `dependency-upgrader`, `test-generator`).
 9. **[ISSUE-09] Daily Tech Radar & Trend Synthesizer (GitHub, Reddit, LinkedIn Trending → Website Posts)**: Autonomous scout that finds hot developer trends and synthesizes them into high-authority website posts with customizable Tendril tie-ins (Direct, Subtle, or Pure Tech Commentary).
+10. **[ISSUE-10] Feature Video Demos & LinkedIn/Social Blitz (SpaceCorps/web-demo-generator)**: Generates 15-45 second animated UI video demos using `SpaceCorps/web-demo-generator` (Playwright headless browser + Claude + H.264 video recorder), paired with high-converting LinkedIn post scripts and video storyboards.
 
 ---
 

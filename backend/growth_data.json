@@ -175,6 +175,27 @@
       "last_run_at": "2026-09-10T12:11:54.850877100Z",
       "created_at": "2026-09-10T12:11:54.850877100Z",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-10",
+      "number": 10,
+      "title": "Feature Demo Videos & LinkedIn/Social Blitz (SpaceCorps/web-demo-generator)",
+      "category": "Video & Social",
+      "status": "Active Routine",
+      "priority": "Critical",
+      "description": "Produce short, high-impact 15-45 second animated video demos for every Tendril feature using SpaceCorps/web-demo-generator (Playwright + Claude + H.264) paired with viral LinkedIn posts.",
+      "direct_actions": [
+        "Hook into SpaceCorps/web-demo-generator (Playwright headless browser + H.264 video recorder) to generate animated UI demo videos",
+        "Batch-produce video demos for all core Tendril features (Worktree isolation, Multi-Agent concurrency, Issue-to-PR loop, Voice coding, Tunneling, Diff review)",
+        "Draft hook-first LinkedIn posts focusing on real developer pain points (merge conflicts, agent drift, broken main)",
+        "Include GitHub repo call-to-action (https://github.com/Ivy-Interactive/Ivy-Tendril) and clear download instructions in every video post",
+        "Syndicate demo clips to Twitter/X video threads, YouTube Shorts, and Reddit r/programming"
+      ],
+      "routine_schedule": "3x weekly (Tue, Thu, Sun)",
+      "run_count": 2,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
     }
   ],
   "articles": [

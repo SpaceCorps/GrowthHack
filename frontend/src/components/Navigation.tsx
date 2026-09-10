@@ -4,6 +4,7 @@ import {
   Target, 
   FileText, 
   Radio, 
+  Clapperboard,
   ListTree, 
   Terminal, 
   Sparkles, 
@@ -48,6 +49,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: 'Trend Radar & Newsroom',
       icon: Radio,
       count: trendsCount,
+    },
+    {
+      id: 'demos' as ActiveTab,
+      label: 'Video Demos & LinkedIn',
+      icon: Clapperboard,
     },
     {
       id: 'listings' as ActiveTab,

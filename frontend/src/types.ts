@@ -60,4 +60,4 @@ export interface AgentStatus {
   version?: string;
 }
 
-export type ActiveTab = 'issues' | 'articles' | 'trends' | 'listings' | 'agent';
+export type ActiveTab = 'issues' | 'articles' | 'trends' | 'demos' | 'listings' | 'agent';

@@ -7,6 +7,7 @@ import { IssuesHub } from './views/IssuesHub';
 import { ArticleEngine } from './views/ArticleEngine';
 import { TrendRadar } from './views/TrendRadar';
 import { ListingBlitz } from './views/ListingBlitz';
+import { VideoDemos } from './views/VideoDemos';
 import { AgentConsole } from './views/AgentConsole';
 
 export const App: React.FC = () => {
@@ -222,6 +223,31 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleGenerateDemo = async (
+    feature: string,
+    platform: string,
+    duration: number
+  ) => {
+    try {
+      const res = await fetch('/api/demos/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feature,
+          target_platform: platform,
+          duration_seconds: duration,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_id) {
+        setTerminalTitle(`Generating ${feature} Demo (${platform})`);
+        setActiveTaskId(data.task_id);
+      }
+    } catch (err) {
+      console.error('Generate demo error:', err);
+    }
+  };
+
   // Custom Prompt
   const handleRunCustomPrompt = async (prompt: string) => {
     try {
@@ -277,6 +303,10 @@ export const App: React.FC = () => {
             onScoutTrends={handleScoutTrends}
             onSynthesizeTrend={handleSynthesizeTrend}
           />
+        )}
+
+        {activeTab === 'demos' && (
+          <VideoDemos onGenerateDemo={handleGenerateDemo} />
         )}
 
         {activeTab === 'listings' && (

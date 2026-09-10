@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod articles;
+pub mod demos;
 pub mod issues;
 pub mod listings;
 pub mod trends;
@@ -22,6 +23,8 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/articles", get(articles::list_articles).post(articles::create_article))
         .route("/api/articles/{id}", get(articles::get_article).put(articles::update_article).delete(articles::delete_article))
         .route("/api/articles/generate", post(articles::generate_article))
+        // Feature Video Demos & LinkedIn
+        .route("/api/demos/generate", post(demos::generate_feature_demo))
         // Trends Radar & Newsroom
         .route("/api/trends", get(trends::list_trends))
         .route("/api/trends/scout", post(trends::scout_trends))
