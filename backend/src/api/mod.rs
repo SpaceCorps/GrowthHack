@@ -102,6 +102,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/{id}/verify-backlink",
             post(listings::verify_backlink),
         )
+        .route(
+            "/api/listings/{id}/submit-pr",
+            post(listings::submit_listing_pr),
+        )
+        .route(
+            "/api/listings/batch-submit-pr",
+            post(listings::batch_submit_listing_prs),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
