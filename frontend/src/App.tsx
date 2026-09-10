@@ -6,7 +6,9 @@ import type {
   GrowthIssue,
   Listing,
   PackageManagerTarget,
+  Recipe,
   ReviewItem,
+  RunRecipeResponse,
   TrendTopic,
   VideoDemo,
 } from "./types";
@@ -22,6 +24,7 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 import { PrFlywheel } from "./views/PrFlywheel";
+import { RecipeHub } from "./views/RecipeHub";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -38,6 +41,7 @@ export const App: React.FC = () => {
       "demos",
       "listings",
       "packages",
+      "recipes",
       "agent",
       "review",
       "flywheel",
@@ -59,6 +63,7 @@ export const App: React.FC = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -71,16 +76,25 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resPackages, resStatus, resDemos] =
-        await Promise.all([
-          fetch("/api/issues").then((r) => r.json()),
-          fetch("/api/articles").then((r) => r.json()),
-          fetch("/api/trends").then((r) => r.json()),
-          fetch("/api/listings").then((r) => r.json()),
-          fetch("/api/packages").then((r) => r.json()),
-          fetch("/api/agent/status").then((r) => r.json()),
-          fetch("/api/demos").then((r) => r.json()),
-        ]);
+      const [
+        resIssues,
+        resArticles,
+        resTrends,
+        resListings,
+        resPackages,
+        resStatus,
+        resDemos,
+        resRecipes,
+      ] = await Promise.all([
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/articles").then((r) => r.json()),
+        fetch("/api/trends").then((r) => r.json()),
+        fetch("/api/listings").then((r) => r.json()),
+        fetch("/api/packages").then((r) => r.json()),
+        fetch("/api/agent/status").then((r) => r.json()),
+        fetch("/api/demos").then((r) => r.json()),
+        fetch("/api/recipes").then((r) => r.json()),
+      ]);
       setIssues(resIssues);
       setArticles(resArticles);
       setTrends(resTrends);
@@ -88,6 +102,7 @@ export const App: React.FC = () => {
       setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
+      setRecipes(resRecipes);
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -112,6 +127,7 @@ export const App: React.FC = () => {
         "demos",
         "listings",
         "packages",
+        "recipes",
         "agent",
         "review",
         "flywheel",
@@ -123,6 +139,26 @@ export const App: React.FC = () => {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  const handleRunRecipe = async (recipeId: string, parameters: Record<string, string>) => {
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parameters }),
+      });
+      if (res.ok) {
+        const data: RunRecipeResponse = await res.json();
+        if (data.task_id) {
+          setTerminalTitle(`Recipe: ${recipeId}`);
+          setActiveTaskId(data.task_id);
+          fetchAll();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to run recipe:", err);
+    }
+  };
 
   // Issue Handlers
   const handleRunIssue = async (id: string) => {
@@ -775,9 +811,13 @@ export const App: React.FC = () => {
         listingsCount={listings.length}
         packagesCount={packages.length}
         reviewCount={pendingReviewCount}
+        recipesCount={recipes.length}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === "recipes" && (
+          <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
+        )}
         {activeTab === "issues" && (
           <IssuesHub
             issues={issues}
