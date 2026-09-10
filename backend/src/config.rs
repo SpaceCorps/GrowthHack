@@ -6,6 +6,9 @@ pub struct Config {
     pub agy_path: PathBuf,
     pub data_file: PathBuf,
     pub ivy_web_content_path: PathBuf,
+    pub devto_api_key: Option<String>,
+    pub hashnode_api_key: Option<String>,
+    pub hashnode_publication_id: Option<String>,
 }
 
 impl Config {
@@ -34,7 +37,8 @@ impl Config {
         let ivy_web_content_path = if let Ok(custom) = std::env::var("IVY_WEB_CONTENT_PATH") {
             PathBuf::from(custom)
         } else {
-            let default_ivy = PathBuf::from("/Users/rorychatt/git/ivy-web/apps/web-new/content/posts");
+            let default_ivy =
+                PathBuf::from("/Users/rorychatt/git/ivy-web/apps/web-new/content/posts");
             if default_ivy.exists() {
                 default_ivy
             } else {
@@ -42,11 +46,29 @@ impl Config {
             }
         };
 
+        let devto_api_key = std::env::var("DEVTO_API_KEY")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let hashnode_api_key = std::env::var("HASHNODE_API_KEY")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let hashnode_publication_id = std::env::var("HASHNODE_PUBLICATION_ID")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Self {
             port,
             agy_path,
             data_file,
             ivy_web_content_path,
+            devto_api_key,
+            hashnode_api_key,
+            hashnode_publication_id,
         }
     }
 }

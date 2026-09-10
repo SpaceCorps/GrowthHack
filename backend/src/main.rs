@@ -30,14 +30,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Target Antigravity binary: {:?}", config.agy_path);
 
     let state = Arc::new(RwLock::new(GrowthState::load_or_init(&config.data_file)));
-    let runner = AgentRunner::new(config.agy_path);
+    let runner = AgentRunner::new(config.agy_path.clone());
     let task_manager = TaskManager::new(runner);
 
     let ctx = Arc::new(AppContext {
         state,
         task_manager,
-        data_file: config.data_file,
-        ivy_web_content_path: config.ivy_web_content_path,
+        data_file: config.data_file.clone(),
+        ivy_web_content_path: config.ivy_web_content_path.clone(),
+        config: config.clone(),
     });
 
     let cors = CorsLayer::new()
@@ -56,19 +57,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for dist in &possible_paths {
         if dist.exists() {
             tracing::info!("Serving frontend assets from: {:?}", dist);
-            let serve_dir = ServeDir::new(dist)
-                .fallback(ServeFile::new(dist.join("index.html")));
+            let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
             app = app.fallback_service(serve_dir);
             break;
         }
     }
 
-    let app = app
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
+    let app = app.layer(cors).layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    tracing::info!("🚀 GrowthHack Server listening on http://127.0.0.1:{}", config.port);
+    tracing::info!(
+        "🚀 GrowthHack Server listening on http://127.0.0.1:{}",
+        config.port
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
