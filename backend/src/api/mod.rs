@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod articles;
 pub mod badges;
+pub mod banner;
 pub mod demos;
 pub mod issues;
 pub mod listings;
@@ -48,6 +49,8 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/articles/{id}/sync-assets",
             post(articles::sync_assets),
         )
+        .route("/api/articles/{id}/hero-banner.svg", get(articles::get_hero_banner_svg))
+        .route("/api/articles/{id}/upload-hero-image", post(articles::upload_hero_image))
         .route(
             "/api/articles/{id}/format/{channel}",
             get(articles::format_article_channel),

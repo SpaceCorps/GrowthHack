@@ -64,6 +64,27 @@ export interface SyncAssetsResponse {
   slug: string;
 }
 
+export interface UploadHeroImageRequest {
+  image_data: string;
+  target_images_dir?: string;
+}
+
+export interface UploadHeroImageResponse {
+  success: boolean;
+  image_path: string;
+  slug: string;
+  bytes_written: number;
+}
+
+export type HeroBannerTheme = "dark-cyan" | "midnight-emerald" | "indigo-violet" | "amber-glow";
+
+export interface HeroBannerOptions {
+  theme?: HeroBannerTheme;
+  titleOverride?: string;
+  categoryOverride?: string;
+  summaryOverride?: string;
+}
+
 export interface ReviewItem {
   id: string;
   type: "article" | "video_demo" | "trend_synthesis" | "listing_blurb";
