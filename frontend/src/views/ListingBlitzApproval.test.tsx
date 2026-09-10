@@ -154,4 +154,74 @@ describe("Review Queue Listing Blurb Approval Flow", () => {
       body: JSON.stringify({ blurb_status: "Approved" }),
     });
   });
+
+  it("batch publish triggers submit-pr for approved listing blurbs and updates listing status to PR Submitted", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith("/submit-pr")) {
+        return {
+          ok: true,
+          json: async () => ({
+            task_id: "task-pr-123",
+            message: "PR submission initiated",
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      };
+    });
+    global.fetch = fetchMock;
+
+    const mockApprovedItem: ReviewItem = {
+      id: "listing-list-1",
+      type: "listing_blurb",
+      title: "awesome-ai-agents",
+      subtitle: "Awesome Repo • https://github.com/e2b-dev/awesome-ai-agents",
+      channel: "GitHub PR",
+      summary: "High authority repo",
+      content:
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://github.com/e2b-dev/awesome-ai-agents"],
+      status: "Approved",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "list-1",
+    };
+
+    let publishedItems: ReviewItem[] = [];
+    const handleBatchPublish = async (items: ReviewItem[]) => {
+      for (const it of items) {
+        if (it.type === "listing_blurb") {
+          await fetch(`/api/listings/${it.rawId}/submit-pr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+      publishedItems = items;
+    };
+
+    render(<ReviewQueue items={[mockApprovedItem]} onBatchPublish={handleBatchPublish} />);
+
+    // Open Export Approved modal
+    const exportBtn = screen.getByText(/Export Approved/);
+    fireEvent.click(exportBtn);
+
+    // Verify modal shows "PR Submission & Antigravity Generation" badge
+    expect(screen.getByText("PR Submission & Antigravity Generation")).toBeDefined();
+
+    // Click Publish All
+    const publishAllBtn = screen.getByText("Publish All");
+    await act(async () => {
+      fireEvent.click(publishAllBtn);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/listings/list-1/submit-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(publishedItems.length).toBe(1);
+    expect(publishedItems[0].id).toBe("listing-list-1");
+  });
 });

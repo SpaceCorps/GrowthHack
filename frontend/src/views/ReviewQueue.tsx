@@ -924,9 +924,15 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                     <span className="text-slate-500 font-mono">#{idx + 1}</span>
                     <span className="font-semibold text-slate-200 truncate">{item.title}</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-emerald-300 shrink-0">
-                    {item.channel}
-                  </span>
+                  {item.type === "listing_blurb" ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/50 shrink-0">
+                      PR Submission & Antigravity Generation
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-emerald-300 shrink-0">
+                      {item.channel}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
