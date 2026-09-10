@@ -1,17 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import type { ActiveTab, AgentStatus, Article, GrowthIssue, Listing, TrendTopic } from './types';
-import { Navigation } from './components/Navigation';
-import { LiveTerminal } from './components/LiveTerminal';
-import { ArticleModal } from './components/ArticleModal';
-import { IssuesHub } from './views/IssuesHub';
-import { ArticleEngine } from './views/ArticleEngine';
-import { TrendRadar } from './views/TrendRadar';
-import { ListingBlitz } from './views/ListingBlitz';
-import { VideoDemos } from './views/VideoDemos';
-import { AgentConsole } from './views/AgentConsole';
+import React, { useEffect, useState } from "react";
+import type {
+  ActiveTab,
+  AgentStatus,
+  Article,
+  GrowthIssue,
+  Listing,
+  ReviewItem,
+  TrendTopic,
+} from "./types";
+import { Navigation } from "./components/Navigation";
+import { LiveTerminal } from "./components/LiveTerminal";
+import { ArticleModal } from "./components/ArticleModal";
+import { IssuesHub } from "./views/IssuesHub";
+import { ArticleEngine } from "./views/ArticleEngine";
+import { TrendRadar } from "./views/TrendRadar";
+import { ListingBlitz } from "./views/ListingBlitz";
+import { VideoDemos } from "./views/VideoDemos";
+import { AgentConsole } from "./views/AgentConsole";
+import { ReviewQueue } from "./views/ReviewQueue";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('issues');
+  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -20,18 +29,18 @@ export const App: React.FC = () => {
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [terminalTitle, setTerminalTitle] = useState<string>('Antigravity Agent');
+  const [terminalTitle, setTerminalTitle] = useState<string>("Antigravity Agent");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
       const [resIssues, resArticles, resTrends, resListings, resStatus] = await Promise.all([
-        fetch('/api/issues').then((r) => r.json()),
-        fetch('/api/articles').then((r) => r.json()),
-        fetch('/api/trends').then((r) => r.json()),
-        fetch('/api/listings').then((r) => r.json()),
-        fetch('/api/agent/status').then((r) => r.json()),
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/articles").then((r) => r.json()),
+        fetch("/api/trends").then((r) => r.json()),
+        fetch("/api/listings").then((r) => r.json()),
+        fetch("/api/agent/status").then((r) => r.json()),
       ]);
       setIssues(resIssues);
       setArticles(resArticles);
@@ -39,7 +48,7 @@ export const App: React.FC = () => {
       setListings(resListings);
       setAgentStatus(resStatus);
     } catch (err) {
-      console.error('Failed to fetch initial data:', err);
+      console.error("Failed to fetch initial data:", err);
     }
   };
 
@@ -50,7 +59,7 @@ export const App: React.FC = () => {
   // Issue Handlers
   const handleRunIssue = async (id: string) => {
     try {
-      const res = await fetch(`/api/issues/${id}/run`, { method: 'POST' });
+      const res = await fetch(`/api/issues/${id}/run`, { method: "POST" });
       const data = await res.json();
       if (data.task_id) {
         setTerminalTitle(`Issue Action #${id}`);
@@ -58,36 +67,36 @@ export const App: React.FC = () => {
         fetchAll();
       }
     } catch (err) {
-      console.error('Run issue error:', err);
+      console.error("Run issue error:", err);
     }
   };
 
   const handleUpdateIssueStatus = async (
     id: string,
-    status: 'Todo' | 'In Progress' | 'Active Routine' | 'Done'
+    status: "Todo" | "In Progress" | "Active Routine" | "Done",
   ) => {
     try {
       await fetch(`/api/issues/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
       fetchAll();
     } catch (err) {
-      console.error('Update issue error:', err);
+      console.error("Update issue error:", err);
     }
   };
 
   const handleCreateIssue = async (issueData: Partial<GrowthIssue>) => {
     try {
-      await fetch('/api/issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(issueData),
       });
       fetchAll();
     } catch (err) {
-      console.error('Create issue error:', err);
+      console.error("Create issue error:", err);
     }
   };
 
@@ -96,12 +105,12 @@ export const App: React.FC = () => {
     feature: string,
     angle: string,
     channel: string,
-    extra: string
+    extra: string,
   ) => {
     try {
-      const res = await fetch('/api/articles/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/articles/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feature,
           angle,
@@ -115,18 +124,18 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate article error:', err);
+      console.error("Generate article error:", err);
     }
   };
 
   const handleUpdateArticleStatus = async (
     id: string,
-    status: 'Draft' | 'Ready' | 'Published'
+    status: "Draft" | "Ready" | "Published" | "Approved" | "Rejected",
   ) => {
     try {
       await fetch(`/api/articles/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
       fetchAll();
@@ -134,37 +143,37 @@ export const App: React.FC = () => {
         setSelectedArticle((prev) => (prev ? { ...prev, status } : null));
       }
     } catch (err) {
-      console.error('Update article status error:', err);
+      console.error("Update article status error:", err);
     }
   };
 
   // Trend Handlers
   const handleScoutTrends = async () => {
     try {
-      const res = await fetch('/api/trends/scout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/trends/scout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle('Scouting GitHub, Reddit, LinkedIn Trends');
+        setTerminalTitle("Scouting GitHub, Reddit, LinkedIn Trends");
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Scout trends error:', err);
+      console.error("Scout trends error:", err);
     }
   };
 
   const handleSynthesizeTrend = async (
     id: string,
-    tieIn: 'direct' | 'subtle' | 'none',
-    channel: string
+    tieIn: "direct" | "subtle" | "none",
+    channel: string,
   ) => {
     try {
       const res = await fetch(`/api/trends/${id}/synthesize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tendril_tie_in: tieIn, channel }),
       });
       const data = await res.json();
@@ -173,7 +182,7 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Synthesize trend error:', err);
+      console.error("Synthesize trend error:", err);
     }
   };
 
@@ -181,7 +190,7 @@ export const App: React.FC = () => {
   const handleGenerateBlurb = async (id: string) => {
     try {
       const res = await fetch(`/api/listings/${id}/generate-blurb`, {
-        method: 'POST',
+        method: "POST",
       });
       const data = await res.json();
       if (data.task_id) {
@@ -189,49 +198,41 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate blurb error:', err);
+      console.error("Generate blurb error:", err);
     }
   };
 
-  const handleUpdateListingStatus = async (
-    id: string,
-    status: any,
-    prUrl?: string
-  ) => {
+  const handleUpdateListingStatus = async (id: string, status: any, prUrl?: string) => {
     try {
       await fetch(`/api/listings/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, pr_url: prUrl }),
       });
       fetchAll();
     } catch (err) {
-      console.error('Update listing error:', err);
+      console.error("Update listing error:", err);
     }
   };
 
   const handleCreateListing = async (listingData: Partial<Listing>) => {
     try {
-      await fetch('/api/listings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/listings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(listingData),
       });
       fetchAll();
     } catch (err) {
-      console.error('Create listing error:', err);
+      console.error("Create listing error:", err);
     }
   };
 
-  const handleGenerateDemo = async (
-    feature: string,
-    platform: string,
-    duration: number
-  ) => {
+  const handleGenerateDemo = async (feature: string, platform: string, duration: number) => {
     try {
-      const res = await fetch('/api/demos/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/demos/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           feature,
           target_platform: platform,
@@ -244,27 +245,166 @@ export const App: React.FC = () => {
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Generate demo error:', err);
+      console.error("Generate demo error:", err);
     }
   };
 
   // Custom Prompt
   const handleRunCustomPrompt = async (prompt: string) => {
     try {
-      const res = await fetch('/api/agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle('Custom Antigravity Turn');
+        setTerminalTitle("Custom Antigravity Turn");
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
-      console.error('Run custom prompt error:', err);
+      console.error("Run custom prompt error:", err);
     }
   };
+
+  // Review Queue State & Handlers
+  const baseReviewItems: ReviewItem[] = [
+    {
+      id: "rev-demo-1",
+      type: "video_demo",
+      title: "Automated Worktree Sandboxing Demo (60s Screen Recording)",
+      subtitle: "Target: LinkedIn Tech Video • Duration: 60s",
+      channel: "LinkedIn",
+      summary:
+        "Short, punchy screen recording showing Tendril launching an agent into an isolated worktree and executing tests without touching main branch.",
+      content:
+        "## Video Demo Outline (60s)\n\n0:00 - 0:10: Show local developer repository with clean branch.\n0:10 - 0:25: Agent launches, worktree created dynamically in .tendril/Plans/.\n0:25 - 0:45: Parallel cargo test executes inside worktree while main repo stays untouched.\n0:45 - 1:00: PR opened with all tests green. Call to action: Star Ivy-Tendril on GitHub!\n",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://git-scm.com/docs/git-worktree"],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "demo-1",
+    },
+    {
+      id: "rev-trend-1",
+      type: "trend_synthesis",
+      title: "OpenCode & Terminal AI: Why Multi-Agent Sandboxes Are the Next Frontier",
+      subtitle: "Source: GitHub Trending #1 • Tie-in: Direct Tendril Worktree Comparison",
+      channel: "Dev.to",
+      summary:
+        "Synthesis connecting the viral adoption of terminal coding agents with the critical need for isolated git worktrees to prevent workspace corruption.",
+      content:
+        "# OpenCode & Terminal AI: Why Multi-Agent Sandboxes Are the Next Frontier\n\nTerminal-first AI agents are breaking GitHub star records this week. But behind the hype, senior engineers are asking: how do you run 3 autonomous agents in parallel on the same codebase without destroying your local branch?\n\nEnter Git Worktrees: zero-copy workspace isolation.\n",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://github.com/trending"],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "trend-1",
+    },
+    {
+      id: "rev-listing-1",
+      type: "listing_blurb",
+      title: "Awesome-AI-Agents Directory PR Submission Blurb",
+      subtitle: "Target: e2b/awesome-ai-agents • Category: Autonomous Software Factory",
+      channel: "GitHub PR",
+      summary:
+        "Tailored listing blurb positioning Ivy-Tendril as the premier autonomous plan management and agentic orchestration system.",
+      content:
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous plan management and multi-agent orchestration engine featuring isolated Git worktree sandboxing and automated verification gates.\n",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://github.com/e2b-dev/awesome-ai-agents"],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "listing-1",
+    },
+  ];
+
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>(baseReviewItems);
+
+  useEffect(() => {
+    if (articles.length > 0) {
+      const articleItems: ReviewItem[] = articles.map((art) => ({
+        id: `article-${art.id}`,
+        type: "article" as const,
+        title: art.title,
+        subtitle: `${art.feature} • Channel: ${art.channel}`,
+        channel: art.channel,
+        summary: art.summary,
+        content: art.content,
+        backlinks: art.backlinks || [],
+        citations: art.outbound_citations || [],
+        status:
+          art.status === "Approved"
+            ? "Approved"
+            : art.status === "Rejected"
+              ? "Rejected"
+              : "Pending",
+        createdAt: art.created_at,
+        rawId: art.id,
+      }));
+
+      setReviewItems((prev) => {
+        const nonArticles = prev.filter((it) => it.type !== "article");
+        return [...articleItems, ...nonArticles];
+      });
+    }
+  }, [articles]);
+
+  const handleApproveReviewItem = async (item: ReviewItem) => {
+    setReviewItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, status: "Approved" } : it)),
+    );
+    if (item.type === "article") {
+      await handleUpdateArticleStatus(item.rawId, "Approved");
+    }
+  };
+
+  const handleRejectReviewItem = async (item: ReviewItem) => {
+    setReviewItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, status: "Rejected" } : it)),
+    );
+    if (item.type === "article") {
+      await handleUpdateArticleStatus(item.rawId, "Rejected");
+    }
+  };
+
+  const handleRefineReviewItem = async (item: ReviewItem, updated: Partial<ReviewItem>) => {
+    setReviewItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, ...updated } : it)));
+    if (item.type === "article") {
+      try {
+        await fetch(`/api/articles/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: updated.title,
+            channel: updated.channel,
+            summary: updated.summary,
+            content: updated.content,
+            backlinks: updated.backlinks,
+          }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Refine article error:", err);
+      }
+    }
+  };
+
+  const handleBatchPublish = async (itemsToPublish: ReviewItem[]) => {
+    for (const it of itemsToPublish) {
+      if (it.type === "article") {
+        await handleUpdateArticleStatus(it.rawId, "Published");
+      }
+    }
+    setReviewItems((prev) =>
+      prev.map((it) =>
+        itemsToPublish.some((pub) => pub.id === it.id) ? { ...it, status: "Approved" } : it,
+      ),
+    );
+    fetchAll();
+  };
+
+  const pendingReviewCount = reviewItems.filter((it) => it.status === "Pending").length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -276,10 +416,11 @@ export const App: React.FC = () => {
         articlesCount={articles.length}
         trendsCount={trends.length}
         listingsCount={listings.length}
+        reviewCount={pendingReviewCount}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'issues' && (
+        {activeTab === "issues" && (
           <IssuesHub
             issues={issues}
             onRunIssue={handleRunIssue}
@@ -288,7 +429,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'articles' && (
+        {activeTab === "articles" && (
           <ArticleEngine
             articles={articles}
             onGenerateArticle={handleGenerateArticle}
@@ -297,7 +438,17 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'trends' && (
+        {activeTab === "review" && (
+          <ReviewQueue
+            items={reviewItems}
+            onApprove={handleApproveReviewItem}
+            onReject={handleRejectReviewItem}
+            onRefine={handleRefineReviewItem}
+            onBatchPublish={handleBatchPublish}
+          />
+        )}
+
+        {activeTab === "trends" && (
           <TrendRadar
             trends={trends}
             onScoutTrends={handleScoutTrends}
@@ -305,11 +456,9 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'demos' && (
-          <VideoDemos onGenerateDemo={handleGenerateDemo} />
-        )}
+        {activeTab === "demos" && <VideoDemos onGenerateDemo={handleGenerateDemo} />}
 
-        {activeTab === 'listings' && (
+        {activeTab === "listings" && (
           <ListingBlitz
             listings={listings}
             onGenerateBlurb={handleGenerateBlurb}
@@ -318,11 +467,8 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'agent' && (
-          <AgentConsole
-            agentStatus={agentStatus}
-            onRunCustomPrompt={handleRunCustomPrompt}
-          />
+        {activeTab === "agent" && (
+          <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
       </main>
 
