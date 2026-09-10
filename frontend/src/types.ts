@@ -155,7 +155,8 @@ export type ActiveTab =
   | "listings"
   | "packages"
   | "agent"
-  | "review";
+  | "review"
+  | "flywheel";
 
 export interface SyndicationSettings {
   devto_api_key?: string;
