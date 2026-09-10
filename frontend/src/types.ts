@@ -3,8 +3,8 @@ export interface GrowthIssue {
   number: number;
   title: string;
   category: string;
-  status: 'Todo' | 'In Progress' | 'Active Routine' | 'Done';
-  priority: 'Critical' | 'High' | 'Medium' | 'Low';
+  status: "Todo" | "In Progress" | "Active Routine" | "Done";
+  priority: "Critical" | "High" | "Medium" | "Low";
   description: string;
   direct_actions: string[];
   routine_schedule?: string;
@@ -24,20 +24,20 @@ export interface Article {
   content: string;
   backlinks: string[];
   outbound_citations: string[];
-  status: 'Draft' | 'Ready' | 'Published';
+  status: "Draft" | "Ready" | "Published";
   created_at: string;
   published_at?: string;
 }
 
 export interface TrendTopic {
   id: string;
-  source: 'GitHub' | 'Reddit' | 'LinkedIn';
+  source: "GitHub" | "Reddit" | "LinkedIn";
   topic: string;
   url: string;
   engagement: string;
   summary: string;
-  tendril_tie_in: 'direct' | 'subtle' | 'none';
-  status: 'Scouted' | 'Synthesizing' | 'Published';
+  tendril_tie_in: "direct" | "subtle" | "none";
+  status: "Scouted" | "Synthesizing" | "Published";
   generated_article_id?: string;
   created_at: string;
 }
@@ -45,9 +45,9 @@ export interface TrendTopic {
 export interface Listing {
   id: string;
   name: string;
-  category: 'Awesome Repo' | 'Dev Directory' | 'Software Factory' | 'Package Manager' | 'Community';
+  category: "Awesome Repo" | "Dev Directory" | "Software Factory" | "Package Manager" | "Community";
   url: string;
-  status: 'Targeted' | 'PR Submitted' | 'Under Review' | 'Merged' | 'Live';
+  status: "Targeted" | "PR Submitted" | "Under Review" | "Merged" | "Live";
   pr_url?: string;
   submission_blurb: string;
   notes: string;
@@ -60,4 +60,4 @@ export interface AgentStatus {
   version?: string;
 }
 
-export type ActiveTab = 'issues' | 'articles' | 'trends' | 'demos' | 'listings' | 'agent';
+export type ActiveTab = "issues" | "articles" | "trends" | "demos" | "listings" | "agent";

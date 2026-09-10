@@ -8,6 +8,11 @@
     "build": "tsc && vp build",
     "preview": "vp preview"
   },
+  "dependencies": {
+    "lucide-react": "^1.43.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.18",
@@ -24,10 +29,5 @@
       "version": "12.3.4",
       "onFail": "download"
     }
-  },
-  "dependencies": {
-    "lucide-react": "^1.43.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
   }
 }
