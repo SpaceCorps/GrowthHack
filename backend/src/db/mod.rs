@@ -150,6 +150,31 @@ pub struct PackageManagerTarget {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContributorIssue {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub category: String, // "Documentation", "CLI", "Frontend", "Backend", "Tests"
+    pub difficulty: String, // "Good First Issue", "Help Wanted"
+    pub estimated_minutes: u32,
+    pub affected_files: Vec<String>,
+    pub reproduction_steps: Vec<String>,
+    pub mentor: String,
+    pub claimed: bool,
+    pub claimed_by: Option<String>,
+    pub claimed_at: Option<DateTime<Utc>>,
+    pub pr_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContributorRecord {
+    pub name: String,
+    pub avatar_url: String,
+    pub profile_url: String,
+    pub contributions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
     pub articles: Vec<Article>,
@@ -162,6 +187,10 @@ pub struct GrowthState {
     pub syndication_settings: SyndicationSettings,
     #[serde(default)]
     pub packages: Vec<PackageManagerTarget>,
+    #[serde(default)]
+    pub contributor_issues: Vec<ContributorIssue>,
+    #[serde(default)]
+    pub contributors: Vec<ContributorRecord>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -179,6 +208,14 @@ impl GrowthState {
                     tracing::info!("Loaded growth database from {}", path.display());
                     if state.packages.is_empty() {
                         state.packages = Self::seed_packages(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if state.contributor_issues.is_empty() {
+                        state.contributor_issues = Self::seed_contributor_issues(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if state.contributors.is_empty() {
+                        state.contributors = Self::seed_contributors();
                         let _ = state.save(path);
                     }
                     return state;
@@ -620,6 +657,9 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             },
         ];
 
+        let contributor_issues = Self::seed_contributor_issues(now);
+        let contributors = Self::seed_contributors();
+
         Self {
             issues,
             articles,
@@ -629,6 +669,8 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             video_demos,
             syndication_settings: SyndicationSettings::default(),
             packages,
+            contributor_issues,
+            contributors,
         }
     }
 
@@ -1327,6 +1369,331 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 manifest_filename: "package.json".to_string(),
                 notes: "Sub-60-second time-to-first-run zero-install launcher published on npm.".to_string(),
                 updated_at: now,
+            },
+        ]
+    }
+
+    pub fn seed_contributor_issues(_now: DateTime<Utc>) -> Vec<ContributorIssue> {
+        vec![
+            ContributorIssue {
+                id: "cf-issue-1".to_string(),
+                title: "Add CLI shell completion for zsh".to_string(),
+                description: "Implement zsh completion generator in the CLI completions module to allow tab completion for commands and flags.".to_string(),
+                category: "CLI".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["src/cli/completions.rs".to_string(), "Cargo.toml".to_string()],
+                reproduction_steps: vec![
+                    "Run cargo run -- completion --help".to_string(),
+                    "Observe missing zsh completion script generator".to_string(),
+                    "Add clap_complete zsh target generation".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-2".to_string(),
+                title: "Add loopback host check validator in server startup".to_string(),
+                description: "Ensure server socket binding restricts to 127.0.0.1 or localhost in dev mode to prevent sandbox EPERM errors.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["backend/src/main.rs".to_string(), "backend/src/config.rs".to_string()],
+                reproduction_steps: vec![
+                    "Inspect server socket binding in main.rs".to_string(),
+                    "Ensure binding restricts to 127.0.0.1 or localhost".to_string(),
+                    "Log error if 0.0.0.0 is configured in sandboxed dev mode".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-3".to_string(),
+                title: "Improve empty state message on Plan Review view".to_string(),
+                description: "Display an intuitive empty state illustration and quick action buttons when no items are pending review.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/ReviewQueue.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open Approval Deck with zero pending review items".to_string(),
+                    "Observe generic no items text".to_string(),
+                    "Add an illustration and quick action link to generate sample articles".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-4".to_string(),
+                title: "Add keyboard shortcut ? to open navigation hotkeys modal".to_string(),
+                description: "Add a global keydown handler for '?' to open a modal describing navigation and quick action hotkeys.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/components/Navigation.tsx".to_string(), "frontend/src/App.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Press ? on keyboard in any view".to_string(),
+                    "No shortcut modal opens".to_string(),
+                    "Add global keydown listener and hotkey overview overlay".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-5".to_string(),
+                title: "Add copy-as-curl action to API error alerts".to_string(),
+                description: "Add a convenient Copy as cURL button to error banners and alerts in the terminal console.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/components/LiveTerminal.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Trigger a failed API request or simulated error".to_string(),
+                    "Notice lack of copyable curl command".to_string(),
+                    "Render a Copy as cURL button using navigator.clipboard".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-6".to_string(),
+                title: "Add format filter dropdown in ArticleEngine".to_string(),
+                description: "Allow users to filter generated articles by channel (Website, Dev.to, Medium, etc.) or angle.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["frontend/src/views/ArticleEngine.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Navigate to 10x Content Engine".to_string(),
+                    "Articles list lacks quick filtering by channel or archetype".to_string(),
+                    "Add filter select dropdown above article grid".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-7".to_string(),
+                title: "Add badge markdown preview tab in PR Flywheel".to_string(),
+                description: "Provide a tab toggle showing the raw Markdown badge snippet alongside rendered preview.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/PrFlywheel.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open PR Flywheel view".to_string(),
+                    "Observe single preview mode for GitHub badges".to_string(),
+                    "Add raw Markdown and HTML tab toggle with syntax highlighting".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-8".to_string(),
+                title: "Normalize repository URL trailing slashes in database loader".to_string(),
+                description: "Strip trailing slashes from repository and listing URLs during database load to avoid duplicate comparisons.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["backend/src/db/mod.rs".to_string()],
+                reproduction_steps: vec![
+                    "Add a listing or repo with trailing slash e.g. https://github.com/foo/bar/".to_string(),
+                    "Query comparisons fail due to trailing slash mismatch".to_string(),
+                    "Trim trailing slashes in normalization helper".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-9".to_string(),
+                title: "Add test coverage for trend topic tie-in serialization".to_string(),
+                description: "Add comprehensive unit and integration tests verifying serde serialization for trend topics.".to_string(),
+                category: "Tests".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["backend/tests/trends_test.rs".to_string(), "backend/src/db/mod.rs".to_string()],
+                reproduction_steps: vec![
+                    "Inspect tests in backend/tests/trends_test.rs".to_string(),
+                    "Notice missing serde roundtrip test for direct, subtle, and none tie-in values".to_string(),
+                    "Add test validating JSON serialization".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-10".to_string(),
+                title: "Add dark mode contrast test helper for buttons".to_string(),
+                description: "Add automated contrast ratio assertions to verify button accessibility compliance in dark mode.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["frontend/src/views/IssuesHub.tsx".to_string(), "frontend/src/index.css".to_string()],
+                reproduction_steps: vec![
+                    "Audit color contrast for low-emphasis action buttons".to_string(),
+                    "Notice some borders blend into dark slate background".to_string(),
+                    "Add high-contrast focus rings and test helper".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-11".to_string(),
+                title: "Add uptime and memory usage metrics to Agent Status response".to_string(),
+                description: "Extend GET /api/agent/status with process uptime and approximate memory consumption statistics.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 30,
+                affected_files: vec!["backend/src/api/agent.rs".to_string()],
+                reproduction_steps: vec![
+                    "Invoke GET /api/agent/status".to_string(),
+                    "Response only contains is_available and agy_path".to_string(),
+                    "Add uptime_seconds and process memory metrics to payload".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-12".to_string(),
+                title: "Add JSON export action to Direct Action Issues table".to_string(),
+                description: "Add a button to export all Direct Action issues as a downloadable formatted JSON file.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/IssuesHub.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Navigate to Direct Action Issues".to_string(),
+                    "Notice no batch export button".to_string(),
+                    "Add Export JSON button that triggers browser download".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-13".to_string(),
+                title: "Add validation error banner on empty listing PR blurb submit".to_string(),
+                description: "Display an explicit error alert when attempting to submit an empty listing PR blurb.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/views/ListingBlitz.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open Listing Blitz submission modal".to_string(),
+                    "Submit with empty submission blurb".to_string(),
+                    "Show user-friendly inline alert rather than silent rejection".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-14".to_string(),
+                title: "Add dry-run flag to package manager manifest generator".to_string(),
+                description: "Support ?dry_run=true parameter on manifest generator routes to validate target schemas without state changes.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Help Wanted".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["backend/src/api/packages.rs".to_string()],
+                reproduction_steps: vec![
+                    "Call manifest generation API".to_string(),
+                    "Notice no validation-only dry-run option".to_string(),
+                    "Accept ?dry_run=true query flag and validate without side effects".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-15".to_string(),
+                title: "Add contributor guide link to bottom footer".to_string(),
+                description: "Add a direct link in the application footer pointing to the Contributor Flywheel onboarding guide.".to_string(),
+                category: "Documentation".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/App.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Scroll to bottom of application".to_string(),
+                    "Notice absence of quick contributor guide link".to_string(),
+                    "Add link navigating directly to Contributor Flywheel view".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+        ]
+    }
+
+    pub fn seed_contributors() -> Vec<ContributorRecord> {
+        vec![
+            ContributorRecord {
+                name: "Rory Chatt".to_string(),
+                avatar_url: "https://github.com/rorychatt.png".to_string(),
+                profile_url: "https://github.com/rorychatt".to_string(),
+                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+            },
+            ContributorRecord {
+                name: "Alex Vance".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
+                profile_url: "https://github.com/alex-spacecorps".to_string(),
+                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+            },
+            ContributorRecord {
+                name: "Sarah Jenkins".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
+                profile_url: "https://github.com/sarah-ui".to_string(),
+                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+            },
+            ContributorRecord {
+                name: "Elena Rostova".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
+                profile_url: "https://github.com/dev-elena".to_string(),
+                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+            },
+            ContributorRecord {
+                name: "Marcus Chen".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10004?v=4".to_string(),
+                profile_url: "https://github.com/marcus-cli".to_string(),
+                contributions: vec!["cli".to_string(), "package".to_string(), "test".to_string()],
             },
         ]
     }
