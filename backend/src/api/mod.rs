@@ -19,10 +19,11 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/issues", get(issues::list_issues).post(issues::create_issue))
         .route("/api/issues/{id}", put(issues::update_issue))
         .route("/api/issues/{id}/run", post(issues::run_issue))
-        // Content Articles (10x Engine)
+        // Content Articles (10x Engine & Spotlights)
         .route("/api/articles", get(articles::list_articles).post(articles::create_article))
         .route("/api/articles/{id}", get(articles::get_article).put(articles::update_article).delete(articles::delete_article))
         .route("/api/articles/generate", post(articles::generate_article))
+        .route("/api/articles/generate-spotlight", post(articles::generate_spotlight))
         // Feature Video Demos & LinkedIn
         .route("/api/demos/generate", post(demos::generate_feature_demo))
         // Trends Radar & Newsroom
