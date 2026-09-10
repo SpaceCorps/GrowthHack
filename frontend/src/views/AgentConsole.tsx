@@ -1,15 +1,6 @@
 import React, { useState } from "react";
 import type { AgentStatus } from "../types";
-import {
-  Terminal,
-  Play,
-  Cpu,
-  Sparkles,
-  FolderGit2,
-  FileCode2,
-  CheckCircle,
-  AlertTriangle,
-} from "lucide-react";
+import { Terminal, Play, Cpu, Sparkles } from "lucide-react";
 
 interface AgentConsoleProps {
   agentStatus: AgentStatus | null;

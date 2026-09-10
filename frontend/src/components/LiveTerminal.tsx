@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Terminal, Copy, Check, X, ShieldAlert, Sparkles, RefreshCw } from "lucide-react";
+import { Terminal, Copy, Check, X, RefreshCw } from "lucide-react";
 
 interface LiveTerminalProps {
   taskId: string | null;

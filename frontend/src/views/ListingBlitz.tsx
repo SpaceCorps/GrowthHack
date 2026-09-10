@@ -8,8 +8,6 @@ import {
   Copy,
   Check,
   Plus,
-  CheckCircle2,
-  Clock,
   Filter,
 } from "lucide-react";
 

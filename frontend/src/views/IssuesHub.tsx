@@ -1,17 +1,6 @@
 import React, { useState } from "react";
 import type { GrowthIssue } from "../types";
-import {
-  Play,
-  CheckCircle2,
-  Clock,
-  Flame,
-  Layers,
-  Plus,
-  Calendar,
-  RotateCw,
-  Search,
-  Filter,
-} from "lucide-react";
+import { Play, CheckCircle2, Flame, Plus, Calendar, RotateCw, Search, Filter } from "lucide-react";
 
 interface IssuesHubProps {
   issues: GrowthIssue[];

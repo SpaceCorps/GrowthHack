@@ -10,6 +10,7 @@ import {
   Sparkles,
   Star,
   Cpu,
+  CheckCheck,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -20,6 +21,7 @@ interface NavigationProps {
   articlesCount: number;
   trendsCount: number;
   listingsCount: number;
+  reviewCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -30,6 +32,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   articlesCount,
   trendsCount,
   listingsCount,
+  reviewCount,
 }) => {
   const navItems = [
     {
@@ -43,6 +46,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "10x Content Engine",
       icon: FileText,
       count: articlesCount,
+    },
+    {
+      id: "review" as ActiveTab,
+      label: "Approval Deck",
+      icon: CheckCheck,
+      count: reviewCount,
     },
     {
       id: "trends" as ActiveTab,

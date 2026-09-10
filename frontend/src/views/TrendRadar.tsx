@@ -4,13 +4,11 @@ import {
   Radio,
   Sparkles,
   ExternalLink,
-  Send,
   Flame,
   MessageSquare,
   Globe,
   Sliders,
   CheckCircle2,
-  RefreshCw,
 } from "lucide-react";
 
 interface TrendRadarProps {
@@ -67,7 +65,7 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
           </h2>
           <p className="mt-1 text-xs text-slate-300 leading-relaxed">
             Scans GitHub Trending, Reddit discussions, and LinkedIn narratives. Antigravity
-            synthesizes viral topics into authoritative website articles—either connecting to
+            synthesizes viral topics into authoritative website articles, either connecting to
             Tendril's architecture or providing pure ecosystem thought leadership.
           </p>
         </div>
