@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state,
         task_manager,
         data_file: config.data_file,
+        ivy_web_content_path: config.ivy_web_content_path,
     });
 
     let cors = CorsLayer::new()

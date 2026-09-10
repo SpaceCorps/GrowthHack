@@ -23,6 +23,14 @@ pub struct GrowthIssue {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExportRecord {
+    pub channel: String, // "ivy-web", "Dev.to", "Hashnode", "Medium", "Substack", "LinkedIn", "XThread"
+    pub exported_at: DateTime<Utc>,
+    pub target_path: Option<String>,
+    pub status: String, // "Success", "Copied"
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Article {
     pub id: String,
     pub title: String,
@@ -36,6 +44,10 @@ pub struct Article {
     pub status: String, // "Draft", "Review", "Published"
     pub created_at: DateTime<Utc>,
     pub published_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub slug: Option<String>,
+    #[serde(default)]
+    pub exports: Vec<ExportRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -364,6 +376,15 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                 status: "Published".to_string(),
                 created_at: now,
                 published_at: Some(now),
+                slug: Some("how-git-worktrees-solve-agent-hallucination-and-workspace-collisions-in-multi-agent-coding".to_string()),
+                exports: vec![
+                    ExportRecord {
+                        channel: "ivy-web".to_string(),
+                        exported_at: now,
+                        target_path: Some("/Users/rorychatt/git/ivy-web/apps/web-new/content/posts/how-git-worktrees-solve-agent-hallucination-and-workspace-collisions-in-multi-agent-coding.mdoc".to_string()),
+                        status: "Success".to_string(),
+                    },
+                ],
             },
             Article {
                 id: "art-2".to_string(),
@@ -406,6 +427,15 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 status: "Published".to_string(),
                 created_at: now,
                 published_at: Some(now),
+                slug: Some("from-github-issue-to-verified-pull-request-the-15-minute-autonomous-loop".to_string()),
+                exports: vec![
+                    ExportRecord {
+                        channel: "Dev.to".to_string(),
+                        exported_at: now,
+                        target_path: None,
+                        status: "Copied".to_string(),
+                    },
+                ],
             },
         ];
 
