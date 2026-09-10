@@ -112,4 +112,87 @@ describe("ReviewQueue Component", () => {
     expect(screen.getByText("All Caught Up! 🎉")).toBeDefined();
     expect(screen.getByText("No pending review items found in the queue.")).toBeDefined();
   });
+
+  it("pointer drag swipe right past threshold triggers onApprove and transitions to next card", async () => {
+    const onApprove = vi.fn();
+    render(<ReviewQueue items={mockItems} onApprove={onApprove} />);
+
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 250, clientY: 100 }); // +150px > 120 threshold
+
+    // Approved stamp should be visible
+    expect(screen.getByTestId("approved-stamp")).toBeDefined();
+
+    fireEvent.pointerUp(card, { clientX: 250, clientY: 100 });
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onApprove).toHaveBeenCalledTimes(1);
+    expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
+    expect(screen.getByText("From GitHub Issue to Verified Pull Request")).toBeDefined();
+  });
+
+  it("pointer drag swipe left past threshold triggers onReject and transitions to next card", async () => {
+    const onReject = vi.fn();
+    render(<ReviewQueue items={mockItems} onReject={onReject} />);
+
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 50, clientY: 100 }); // -150px < -120 threshold
+
+    // Rejected stamp should be visible
+    expect(screen.getByTestId("rejected-stamp")).toBeDefined();
+
+    fireEvent.pointerUp(card, { clientX: 50, clientY: 100 });
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onReject).toHaveBeenCalledTimes(1);
+    expect(onReject).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
+    expect(screen.getByText("From GitHub Issue to Verified Pull Request")).toBeDefined();
+  });
+
+  it("pointer drag release below threshold resets card position without invoking callbacks", () => {
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    render(<ReviewQueue items={mockItems} onApprove={onApprove} onReject={onReject} />);
+
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 150, clientY: 100 }); // +50px < 120 threshold
+
+    fireEvent.pointerUp(card, { clientX: 150, clientY: 100 });
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onReject).not.toHaveBeenCalled();
+    expect(card.style.transform).toBe("translate3d(0px, 0px, 0) rotate(0deg)");
+    expect(screen.getByText("How Git Worktrees Solve Agent Hallucination")).toBeDefined();
+  });
+
+  it("pointer interactions inside the content preview box do not initiate card drag", () => {
+    const onApprove = vi.fn();
+    render(<ReviewQueue items={mockItems} onApprove={onApprove} />);
+
+    const previewBox = screen.getByText("Full content of article 1...");
+    fireEvent.pointerDown(previewBox, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(previewBox, { clientX: 300, clientY: 100 });
+    fireEvent.pointerUp(previewBox, { clientX: 300, clientY: 100 });
+
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("approved-stamp")).toBeNull();
+    expect(screen.getByText("How Git Worktrees Solve Agent Hallucination")).toBeDefined();
+  });
 });

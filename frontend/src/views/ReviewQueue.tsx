@@ -28,6 +28,8 @@ export interface ReviewQueueProps {
 
 type FilterType = "all" | "article" | "video_demo" | "trend_synthesis" | "listing_blurb";
 
+const SWIPE_THRESHOLD = 120;
+
 interface DeckAction {
   item: ReviewItem;
   action: "approve" | "reject" | "skip";
@@ -48,6 +50,13 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const [isRefining, setIsRefining] = useState<boolean>(false);
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+
+  // Pointer drag state
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDraggingRef = React.useRef<boolean>(false);
+  const dragOffsetRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Edit/Refine state
   const [editTitle, setEditTitle] = useState<string>("");
@@ -113,6 +122,8 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const handleApprove = async () => {
     if (!currentItem || animation) return;
     setAnimation("approving");
+    setDragOffset({ x: 0, y: 0 });
+    dragOffsetRef.current = { x: 0, y: 0 };
 
     const itemToApprove = currentItem;
     setTimeout(async () => {
@@ -130,6 +141,8 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const handleReject = async () => {
     if (!currentItem || animation) return;
     setAnimation("rejecting");
+    setDragOffset({ x: 0, y: 0 });
+    dragOffsetRef.current = { x: 0, y: 0 };
 
     const itemToReject = currentItem;
     setTimeout(async () => {
@@ -142,6 +155,84 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
         await onReject(itemToReject);
       }
     }, 200);
+  };
+
+  // Pointer drag event handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || animation) return;
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.closest("button, input, textarea, a, select, [role='button']") ||
+        target.closest("[data-no-drag='true']") ||
+        target.closest(".overflow-y-auto"))
+    ) {
+      return;
+    }
+
+    if (typeof (e.currentTarget as HTMLElement).setPointerCapture === "function") {
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragOffsetRef.current = { x: 0, y: 0 };
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    dragOffsetRef.current = { x: dx, y: dy };
+    setDragOffset({ x: dx, y: dy });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    if (typeof (e.currentTarget as HTMLElement).releasePointerCapture === "function") {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+    isDraggingRef.current = false;
+    setIsDragging(false);
+
+    const finalDx =
+      e.clientX !== undefined && e.clientX !== dragStartRef.current.x
+        ? e.clientX - dragStartRef.current.x
+        : dragOffsetRef.current.x;
+
+    if (finalDx > SWIPE_THRESHOLD) {
+      handleApprove();
+    } else if (finalDx < -SWIPE_THRESHOLD) {
+      handleReject();
+    } else {
+      setDragOffset({ x: 0, y: 0 });
+      dragOffsetRef.current = { x: 0, y: 0 };
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    if (typeof (e.currentTarget as HTMLElement).releasePointerCapture === "function") {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    setDragOffset({ x: 0, y: 0 });
+    dragOffsetRef.current = { x: 0, y: 0 };
   };
 
   const handleSkip = () => {
@@ -276,6 +367,11 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const totalDeckCount = totalReviewed + pendingItems.length;
   const progressPercent =
     totalDeckCount > 0 ? Math.round((totalReviewed / totalDeckCount) * 100) : 100;
+
+  // Background card 2 depth interpolation
+  const dragProgress = Math.min(Math.abs(dragOffset.x) / 200, 1);
+  const nextScale = 0.95 + 0.05 * dragProgress;
+  const nextOpacity = 0.6 + 0.25 * dragProgress;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -426,27 +522,65 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
 
             {/* Background Card 2 (Middle layer) */}
             {nextItem && (
-              <div className="absolute inset-x-0 top-0 h-[480px] bg-slate-900/80 border border-slate-800 rounded-2xl shadow-xl transform scale-95 translate-y-3 opacity-60 pointer-events-none transition-all duration-300" />
+              <div
+                data-testid="next-card"
+                style={{
+                  transform: `scale(${nextScale}) translateY(12px)`,
+                  opacity: nextOpacity,
+                  transition: isDragging ? "none" : "all 0.3s ease",
+                }}
+                className="absolute inset-x-0 top-0 h-[480px] bg-slate-900/80 border border-slate-800 rounded-2xl shadow-xl pointer-events-none"
+              />
             )}
 
             {/* Active Card 1 (Top layer) */}
             <div
-              className={`relative bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl shadow-slate-950 p-6 sm:p-8 flex flex-col justify-between transition-all duration-200 ${
+              data-testid="active-card"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+              style={
+                animation
+                  ? undefined
+                  : {
+                      transform: `translate3d(${dragOffset.x}px, ${dragOffset.y * 0.3}px, 0) rotate(${dragOffset.x * 0.05}deg)`,
+                      transition: isDragging
+                        ? "none"
+                        : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                      cursor: isDragging ? "grabbing" : "grab",
+                      userSelect: isDragging ? "none" : undefined,
+                      touchAction: "pan-y",
+                    }
+              }
+              className={`relative bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl shadow-slate-950 p-6 sm:p-8 flex flex-col justify-between ${
                 animation === "approving"
-                  ? "transform translate-x-[110%] rotate-12 opacity-0"
+                  ? "transform translate-x-[110%] rotate-12 opacity-0 transition-all duration-200"
                   : animation === "rejecting"
-                    ? "transform -translate-x-[110%] -rotate-12 opacity-0"
-                    : "transform scale-100 translate-y-0 opacity-100"
+                    ? "transform -translate-x-[110%] -rotate-12 opacity-0 transition-all duration-200"
+                    : "opacity-100"
               }`}
             >
-              {/* Swipe Stamp Indicators during animation */}
-              {animation === "approving" && (
-                <div className="absolute top-8 right-8 z-30 transform rotate-12 border-4 border-emerald-500 bg-emerald-950/90 text-emerald-400 px-6 py-2 rounded-xl font-black text-2xl tracking-widest uppercase shadow-2xl">
+              {/* Dynamic & Animation Stamp Indicators */}
+              {(animation === "approving" || (isDragging && dragOffset.x > 30)) && (
+                <div
+                  data-testid="approved-stamp"
+                  style={{
+                    opacity: animation === "approving" ? 1 : Math.min((dragOffset.x - 30) / 90, 1),
+                  }}
+                  className="absolute top-8 right-8 z-30 transform rotate-12 border-4 border-emerald-500 bg-emerald-950/90 text-emerald-400 px-6 py-2 rounded-xl font-black text-2xl tracking-widest uppercase shadow-2xl pointer-events-none"
+                >
                   APPROVED ⭐
                 </div>
               )}
-              {animation === "rejecting" && (
-                <div className="absolute top-8 left-8 z-30 transform -rotate-12 border-4 border-rose-500 bg-rose-950/90 text-rose-400 px-6 py-2 rounded-xl font-black text-2xl tracking-widest uppercase shadow-2xl">
+              {(animation === "rejecting" || (isDragging && dragOffset.x < -30)) && (
+                <div
+                  data-testid="rejected-stamp"
+                  style={{
+                    opacity: animation === "rejecting" ? 1 : Math.min((-dragOffset.x - 30) / 90, 1),
+                  }}
+                  className="absolute top-8 left-8 z-30 transform -rotate-12 border-4 border-rose-500 bg-rose-950/90 text-rose-400 px-6 py-2 rounded-xl font-black text-2xl tracking-widest uppercase shadow-2xl pointer-events-none"
+                >
                   REJECTED ❌
                 </div>
               )}
@@ -478,7 +612,10 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                 </div>
 
                 {/* Content Preview Box */}
-                <div className="max-h-60 overflow-y-auto rounded-xl bg-slate-950/80 p-4 border border-slate-800/80 text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap select-text">
+                <div
+                  data-no-drag="true"
+                  className="max-h-60 overflow-y-auto rounded-xl bg-slate-950/80 p-4 border border-slate-800/80 text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap select-text"
+                >
                   {currentItem.content}
                 </div>
 

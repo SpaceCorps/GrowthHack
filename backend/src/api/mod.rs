@@ -64,9 +64,12 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             get(articles::get_syndication_settings).post(articles::update_syndication_settings),
         )
         // Feature Video Demos & LinkedIn
+        .route("/api/demos", get(demos::list_demos).post(demos::create_demo))
+        .route("/api/demos/{id}", get(demos::get_demo).put(demos::update_demo).delete(demos::delete_demo))
         .route("/api/demos/generate", post(demos::generate_feature_demo))
         // Trends Radar & Newsroom
         .route("/api/trends", get(trends::list_trends))
+        .route("/api/trends/{id}", get(trends::get_trend).put(trends::update_trend).delete(trends::delete_trend))
         .route("/api/trends/scout", post(trends::scout_trends))
         .route(
             "/api/trends/{id}/synthesize",

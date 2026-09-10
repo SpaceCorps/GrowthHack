@@ -53,15 +53,28 @@ export interface ReviewItem {
   rawId: string;
 }
 
+export interface VideoDemo {
+  id: string;
+  feature: string;
+  target_platform: string;
+  duration_seconds: number;
+  headline: string;
+  body: string;
+  storyboard: string;
+  status: "Pending" | "Approved" | "Rejected" | "Published" | string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TrendTopic {
   id: string;
-  source: "GitHub" | "Reddit" | "LinkedIn";
+  source: "GitHub" | "Reddit" | "LinkedIn" | "Hacker News" | string;
   topic: string;
   url: string;
   engagement: string;
   summary: string;
   tendril_tie_in: "direct" | "subtle" | "none";
-  status: "Scouted" | "Synthesizing" | "Published";
+  status: "Scouted" | "Synthesizing" | "Published" | "Pending" | "Approved" | "Rejected" | string;
   generated_article_id?: string;
   created_at: string;
 }

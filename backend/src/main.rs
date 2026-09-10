@@ -1,12 +1,7 @@
-mod agent;
-mod api;
-mod config;
-mod db;
-
-use agent::{AgentRunner, TaskManager};
-use api::AppContext;
-use config::Config;
-use db::GrowthState;
+use growthhack_backend::agent::{AgentRunner, TaskManager};
+use growthhack_backend::api::{self, AppContext};
+use growthhack_backend::config::Config;
+use growthhack_backend::db::GrowthState;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -65,11 +60,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = app.layer(cors).layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    tracing::info!(
-        "🚀 GrowthHack Server listening on http://127.0.0.1:{}",
-        config.port
-    );
+    let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
+    tracing::info!("🚀 GrowthHack Server listening on http://127.0.0.1:{}", config.port);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

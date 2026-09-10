@@ -13,11 +13,14 @@ import {
   Eye,
 } from "lucide-react";
 
+import type { VideoDemo } from "../types";
+
 interface VideoDemosProps {
   onGenerateDemo: (feature: string, platform: string, duration: number) => void;
+  demos?: VideoDemo[];
 }
 
-export const VideoDemos: React.FC<VideoDemosProps> = ({ onGenerateDemo }) => {
+export const VideoDemos: React.FC<VideoDemosProps> = ({ onGenerateDemo, demos }) => {
   const [selectedFeature, setSelectedFeature] = useState("Git Worktrees");
   const [selectedPlatform, setSelectedPlatform] = useState("LinkedIn");
   const [duration, setDuration] = useState(30);
@@ -288,6 +291,9 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {features.map((f) => {
             const Icon = f.icon;
+            const matchingDemo = demos?.find((d) => d.feature === f.id);
+            const status = matchingDemo?.status || "Pending";
+
             return (
               <div
                 key={f.id}
@@ -308,9 +314,24 @@ GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril
                       </div>
                     </div>
 
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
-                      Asset: {f.asset}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
+                        Asset: {f.asset}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                          status === "Approved"
+                            ? "bg-emerald-950/80 border-emerald-800 text-emerald-400"
+                            : status === "Published"
+                              ? "bg-purple-950/80 border-purple-800 text-purple-400"
+                              : status === "Rejected"
+                                ? "bg-red-950/80 border-red-800 text-red-400"
+                                : "bg-amber-950/80 border-amber-800 text-amber-400"
+                        }`}
+                      >
+                        {status === "Pending" ? "Pending Review" : status}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Hook */}
