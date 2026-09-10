@@ -114,6 +114,7 @@ export interface Listing {
   pr_url?: string;
   submission_blurb: string;
   notes: string;
+  blurb_status?: "Pending" | "Approved" | "Rejected" | string;
   updated_at: string;
 }
 

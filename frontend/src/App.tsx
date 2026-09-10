@@ -482,7 +482,27 @@ export const App: React.FC = () => {
       rawId: trend.id,
     }));
 
-    const listingItems = baseReviewItems.filter((it) => it.type === "listing_blurb");
+    const listingItems: ReviewItem[] = listings
+      .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
+      .map((l) => ({
+        id: `listing-${l.id}`,
+        type: "listing_blurb" as const,
+        title: l.name,
+        subtitle: `${l.category} • ${l.url}`,
+        channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
+        summary: l.notes || `Submission blurb for ${l.name}`,
+        content: l.submission_blurb,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [l.url],
+        status:
+          l.blurb_status === "Approved"
+            ? "Approved"
+            : l.blurb_status === "Rejected"
+              ? "Rejected"
+              : "Pending",
+        createdAt: l.updated_at,
+        rawId: l.id,
+      }));
 
     setReviewItems([
       ...articleItems,
@@ -492,9 +512,11 @@ export const App: React.FC = () => {
       ...(trendItems.length > 0
         ? trendItems
         : baseReviewItems.filter((it) => it.type === "trend_synthesis")),
-      ...listingItems,
+      ...(listingItems.length > 0
+        ? listingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb")),
     ]);
-  }, [articles, demos, trends]);
+  }, [articles, demos, trends, listings]);
 
   const handleApproveReviewItem = async (item: ReviewItem) => {
     setReviewItems((prev) =>
@@ -523,6 +545,17 @@ export const App: React.FC = () => {
         fetchAll();
       } catch (err) {
         console.error("Approve trend error:", err);
+      }
+    } else if (item.type === "listing_blurb") {
+      try {
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blurb_status: "Approved" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Approve listing blurb error:", err);
       }
     }
   };
@@ -554,6 +587,17 @@ export const App: React.FC = () => {
         fetchAll();
       } catch (err) {
         console.error("Reject trend error:", err);
+      }
+    } else if (item.type === "listing_blurb") {
+      try {
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blurb_status: "Rejected" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Reject listing blurb error:", err);
       }
     }
   };
@@ -606,6 +650,20 @@ export const App: React.FC = () => {
         fetchAll();
       } catch (err) {
         console.error("Refine trend error:", err);
+      }
+    } else if (item.type === "listing_blurb") {
+      try {
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            submission_blurb: updated.content,
+            notes: updated.summary,
+          }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Refine listing blurb error:", err);
       }
     }
   };
