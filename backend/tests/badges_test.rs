@@ -25,7 +25,9 @@ fn create_test_context() -> Arc<AppContext> {
         state,
         task_manager,
         data_file,
-        ivy_web_content_path,
+        ivy_web_content_path: ivy_web_content_path.clone(),
+        ivy_web_images_path: ivy_web_content_path,
+        config: growthhack_backend::config::Config::load(),
     })
 }
 

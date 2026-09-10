@@ -100,27 +100,41 @@ export const getTierBadge = (tier: EngagementTier) => {
 
 interface TrendRadarProps {
   trends: TrendTopic[];
-  articles: Article[];
-  onScoutTrends: (mode?: "general" | "discussions") => void;
+  articles?: Article[];
+  onScoutTrends: (
+    sourcesOrMode?: string[] | "general" | "discussions",
+    optionalMode?: "general" | "discussions",
+  ) => void;
   onSynthesizeTrend: (id: string, tieIn: "direct" | "subtle" | "none", channel: string) => void;
-  onSelectArticle: (article: Article) => void;
-  onUpdateArticleStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
+  onSelectArticle?: (article: Article) => void;
+  onUpdateArticleStatus?: (id: string, status: "Draft" | "Ready" | "Published") => void;
 }
 
 export const TrendRadar: React.FC<TrendRadarProps> = ({
   trends,
-  articles,
+  articles = [],
   onScoutTrends,
   onSynthesizeTrend,
-  onSelectArticle,
-  onUpdateArticleStatus,
+  onSelectArticle = () => {},
+  onUpdateArticleStatus = () => {},
 }) => {
+  const [selectedSources, setSelectedSources] = useState<string[]>([
+    "GitHub",
+    "Reddit",
+    "LinkedIn",
+  ]);
   const [selectedTieIn, setSelectedTieIn] = useState<Record<string, "direct" | "subtle" | "none">>(
     {},
   );
   const [selectedChannel, setSelectedChannel] = useState<Record<string, string>>({});
   const [expandedCustom, setExpandedCustom] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const toggleSource = (source: string) => {
+    setSelectedSources((prev) =>
+      prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source],
+    );
+  };
 
   // Quick filter states
   const [selectedSourceFilter, setSelectedSourceFilter] = useState<string>("All");
@@ -286,24 +300,50 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-auto">
-          <button
-            onClick={() => onScoutTrends("general")}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950 transition-all hover:scale-[1.02]"
-            title="Scout GitHub Trending, Reddit, and LinkedIn narratives"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Scout Today's Trends</span>
-          </button>
+        <div className="flex flex-col lg:items-end gap-2.5 shrink-0 self-start lg:self-auto">
+          {/* Source Toggle Pills */}
+          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800">
+            {(["GitHub", "Reddit", "LinkedIn"] as const).map((source) => {
+              const isSelected = selectedSources.includes(source);
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => toggleSource(source)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                    isSelected
+                      ? "bg-indigo-600/30 text-indigo-300 border border-indigo-500/50"
+                      : "bg-slate-900/40 text-slate-400 border border-transparent hover:text-slate-200"
+                  }`}
+                >
+                  <span className="shrink-0">{getSourceIcon(source)}</span>
+                  <span>{source}</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <button
-            onClick={() => onScoutTrends("discussions")}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-950 transition-all hover:scale-[1.02]"
-            title="Harvest developer complaints around worktrees, merge collisions & sandboxes (Issue #6)"
-          >
-            <Flame className="w-4 h-4 text-amber-200" />
-            <span>Harvester: Discussions (Issue #6)</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() =>
+                onScoutTrends(selectedSources.length > 0 ? selectedSources : undefined)
+              }
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950 transition-all hover:scale-[1.02]"
+              title="Scout GitHub Trending, Reddit, and LinkedIn narratives"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Scout Today's Trends</span>
+            </button>
+
+            <button
+              onClick={() => onScoutTrends("discussions")}
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-950 transition-all hover:scale-[1.02]"
+              title="Harvest developer complaints around worktrees, merge collisions & sandboxes (Issue #6)"
+            >
+              <Flame className="w-4 h-4 text-amber-200" />
+              <span>Harvester: Discussions (Issue #6)</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -35,7 +35,33 @@ export interface Article {
   created_at: string;
   published_at?: string;
   slug?: string;
+  image_path?: string;
   exports?: ExportRecord[];
+}
+
+export interface ExportIvyWebRequest {
+  target_dir?: string;
+  target_images_dir?: string;
+  sync_hero_image?: boolean;
+}
+
+export interface ExportIvyWebResponse {
+  success: boolean;
+  file_path: string;
+  slug: string;
+  post_content: string;
+  record: ExportRecord;
+  image_path?: string;
+}
+
+export interface SyncAssetsRequest {
+  target_images_dir?: string;
+}
+
+export interface SyncAssetsResponse {
+  success: boolean;
+  image_path: string;
+  slug: string;
 }
 
 export interface ReviewItem {
@@ -53,6 +79,19 @@ export interface ReviewItem {
   rawId: string;
 }
 
+export interface VideoDemo {
+  id: string;
+  feature: string;
+  target_platform: string;
+  duration_seconds: number;
+  headline: string;
+  body: string;
+  storyboard: string;
+  status: "Pending" | "Approved" | "Rejected" | "Published" | string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TrendTopic {
   id: string;
   source: "GitHub" | "Reddit" | "LinkedIn" | "Hacker News" | string;
@@ -61,7 +100,7 @@ export interface TrendTopic {
   engagement: string;
   summary: string;
   tendril_tie_in: "direct" | "subtle" | "none";
-  status: "Scouted" | "Synthesizing" | "Published";
+  status: "Scouted" | "Synthesizing" | "Published" | "Pending" | "Approved" | "Rejected" | string;
   generated_article_id?: string;
   created_at: string;
 }
@@ -93,3 +132,19 @@ export type ActiveTab =
   | "agent"
   | "review"
   | "flywheel";
+
+export interface SyndicationSettings {
+  devto_api_key?: string;
+  hashnode_api_key?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
+
+export interface SyndicationStatusResponse {
+  devto_configured: boolean;
+  devto_key_preview?: string;
+  hashnode_configured: boolean;
+  hashnode_key_preview?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
