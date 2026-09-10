@@ -3,6 +3,7 @@ import type {
   ActiveTab,
   AgentStatus,
   Article,
+  ContributorIssue,
   GrowthIssue,
   Listing,
   PackageManagerTarget,
@@ -22,6 +23,7 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 import { PrFlywheel } from "./views/PrFlywheel";
+import { ContributorFlywheel } from "./views/ContributorFlywheel";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -38,6 +40,7 @@ export const App: React.FC = () => {
       "demos",
       "listings",
       "packages",
+      "contributors",
       "agent",
       "review",
       "flywheel",
@@ -59,6 +62,7 @@ export const App: React.FC = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
+  const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -71,16 +75,25 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resPackages, resStatus, resDemos] =
-        await Promise.all([
-          fetch("/api/issues").then((r) => r.json()),
-          fetch("/api/articles").then((r) => r.json()),
-          fetch("/api/trends").then((r) => r.json()),
-          fetch("/api/listings").then((r) => r.json()),
-          fetch("/api/packages").then((r) => r.json()),
-          fetch("/api/agent/status").then((r) => r.json()),
-          fetch("/api/demos").then((r) => r.json()),
-        ]);
+      const [
+        resIssues,
+        resArticles,
+        resTrends,
+        resListings,
+        resPackages,
+        resStatus,
+        resDemos,
+        resContributors,
+      ] = await Promise.all([
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/articles").then((r) => r.json()),
+        fetch("/api/trends").then((r) => r.json()),
+        fetch("/api/listings").then((r) => r.json()),
+        fetch("/api/packages").then((r) => r.json()),
+        fetch("/api/agent/status").then((r) => r.json()),
+        fetch("/api/demos").then((r) => r.json()),
+        fetch("/api/contributors/issues").then((r) => r.json()),
+      ]);
       setIssues(resIssues);
       setArticles(resArticles);
       setTrends(resTrends);
@@ -88,6 +101,7 @@ export const App: React.FC = () => {
       setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
+      setContributorIssues(resContributors);
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -112,6 +126,7 @@ export const App: React.FC = () => {
         "demos",
         "listings",
         "packages",
+        "contributors",
         "agent",
         "review",
         "flywheel",
@@ -775,6 +790,7 @@ export const App: React.FC = () => {
         listingsCount={listings.length}
         packagesCount={packages.length}
         reviewCount={pendingReviewCount}
+        contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -839,12 +855,38 @@ export const App: React.FC = () => {
             onUpdatePackageStatus={handleUpdatePackageStatus}
           />
         )}
+
+        {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
+
         {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800 bg-slate-900/50 py-6 text-center text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p>GrowthHack Platform &middot; Scaling Ivy-Tendril adoption</p>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setActiveTab("contributors")}
+              className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+            >
+              Contributor Guide & Fast-Track Onboarding
+            </button>
+            <a
+              href="https://github.com/SpaceCorps/GrowthHack"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-slate-200 transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
 
       {/* Floating Live Terminal for Real-Time Streaming */}
       <LiveTerminal

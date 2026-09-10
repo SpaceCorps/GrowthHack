@@ -178,7 +178,43 @@ export type ActiveTab =
   | "packages"
   | "agent"
   | "review"
-  | "flywheel";
+  | "flywheel"
+  | "contributors";
+
+export interface ContributorIssue {
+  id: string;
+  title: string;
+  description: string;
+  category: "Documentation" | "CLI" | "Frontend" | "Backend" | "Tests" | string;
+  difficulty: "Good First Issue" | "Help Wanted" | string;
+  estimated_minutes: number;
+  affected_files: string[];
+  reproduction_steps: string[];
+  mentor: string;
+  claimed: boolean;
+  claimed_by?: string;
+  claimed_at?: string;
+  pr_url?: string;
+}
+
+export interface ContributorRecord {
+  name: string;
+  avatar_url: string;
+  profile_url: string;
+  contributions: string[];
+}
+
+export interface ContributingGuideResponse {
+  content: string;
+  filename: string;
+}
+
+export interface AllContributorsResponse {
+  contributors: ContributorRecord[];
+  markdown_table: string;
+  html_grid: string;
+  badge_markdown: string;
+}
 
 export interface SyndicationSettings {
   devto_api_key?: string;

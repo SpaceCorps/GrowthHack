@@ -25,6 +25,7 @@ interface NavigationProps {
   listingsCount: number;
   packagesCount?: number;
   reviewCount?: number;
+  contributorsCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -37,6 +38,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   listingsCount,
   packagesCount,
   reviewCount,
+  contributorsCount,
 }) => {
   const navItems = [
     {
@@ -79,6 +81,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Package Blitz",
       icon: Package,
       count: packagesCount,
+    },
+    {
+      id: "contributors" as ActiveTab,
+      label: "Contributor Flywheel",
+      icon: Users,
+      count: contributorsCount,
     },
     {
       id: "flywheel" as ActiveTab,
