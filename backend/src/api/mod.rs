@@ -67,6 +67,19 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/articles/{id}/publish/hashnode",
             post(articles::publish_hashnode),
         )
+        // Syndication Metrics & Webhooks
+        .route(
+            "/api/articles/sync-metrics",
+            post(articles::sync_metrics),
+        )
+        .route(
+            "/api/articles/{id}/sync-metrics",
+            post(articles::sync_article_metrics),
+        )
+        .route(
+            "/api/webhooks/syndication",
+            post(articles::handle_syndication_webhook),
+        )
         // Syndication Settings
         .route(
             "/api/settings/syndication",

@@ -1,5 +1,5 @@
 use crate::api::issues::AppContext;
-use crate::db::{Article, ExportRecord};
+use crate::db::{Article, EngagementMetrics, ExportRecord};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -100,6 +100,7 @@ pub async fn create_article(
         published_at: None,
         slug: Some(slug),
         exports: Vec::new(),
+        engagement: None,
     };
     state.articles.push(new_article.clone());
     let _ = state.save(&ctx.data_file);
@@ -469,6 +470,7 @@ pub async fn generate_article(
                     published_at: None,
                     slug: Some(slug),
                     exports: Vec::new(),
+                    engagement: None,
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -542,6 +544,7 @@ pub async fn generate_spotlight(
                     published_at: None,
                     slug: None,
                     exports: Vec::new(),
+                    engagement: None,
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -895,6 +898,8 @@ pub async fn export_ivy_web(
             exported_at: now,
             target_path: Some(file_path.to_string_lossy().to_string()),
             status: "Success".to_string(),
+            external_id: None,
+            engagement: None,
         };
 
         article.exports.push(record.clone());
@@ -1141,6 +1146,8 @@ pub async fn record_export(
             exported_at: Utc::now(),
             target_path: payload.target_path,
             status: payload.status.unwrap_or_else(|| "Copied".to_string()),
+            external_id: None,
+            engagement: None,
         };
         article.exports.push(record);
         let cloned = article.clone();
@@ -1441,11 +1448,14 @@ pub async fn publish_devto(
         if art.slug.is_none() {
             art.slug = Some(slug.clone());
         }
+        let external_id = res_json["id"].as_i64().map(|n| n.to_string());
         let record = ExportRecord {
             channel: "Dev.to".to_string(),
             exported_at: Utc::now(),
             target_path: Some(published_url.clone()),
             status: "Published".to_string(),
+            external_id,
+            engagement: None,
         };
         art.exports.push(record.clone());
         let _ = state.save(&ctx.data_file);
@@ -1658,11 +1668,16 @@ pub async fn publish_hashnode(
         if art.slug.is_none() {
             art.slug = Some(slug.clone());
         }
+        let external_id = res_json["data"]["publishPost"]["post"]["id"]
+            .as_str()
+            .map(|s| s.to_string());
         let record = ExportRecord {
             channel: "Hashnode".to_string(),
             exported_at: Utc::now(),
             target_path: Some(published_url.clone()),
             status: "Published".to_string(),
+            external_id,
+            engagement: None,
         };
         art.exports.push(record.clone());
         let _ = state.save(&ctx.data_file);
@@ -1681,6 +1696,428 @@ pub async fn publish_hashnode(
             Json(serde_json::json!({ "error": "Article not found during state update" })),
         )
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedPlatformMetric {
+    pub id: String,
+    pub url: Option<String>,
+    pub slug: Option<String>,
+    pub reactions: u32,
+    pub comments: u32,
+    pub views: u32,
+}
+
+pub fn parse_devto_metrics(val: &serde_json::Value) -> Vec<ParsedPlatformMetric> {
+    let mut metrics = Vec::new();
+    if let Some(arr) = val.as_array() {
+        for item in arr {
+            let id = if let Some(n) = item["id"].as_i64() {
+                n.to_string()
+            } else if let Some(s) = item["id"].as_str() {
+                s.to_string()
+            } else {
+                continue;
+            };
+            let url = item["url"].as_str().map(|s| s.to_string());
+            let slug = item["slug"].as_str().map(|s| s.to_string());
+            let reactions = item["public_reactions_count"]
+                .as_u64()
+                .or_else(|| item["reactions_count"].as_u64())
+                .unwrap_or(0) as u32;
+            let comments = item["comments_count"].as_u64().unwrap_or(0) as u32;
+            let views = item["page_views_count"].as_u64().unwrap_or(0) as u32;
+            metrics.push(ParsedPlatformMetric {
+                id,
+                url,
+                slug,
+                reactions,
+                comments,
+                views,
+            });
+        }
+    }
+    metrics
+}
+
+pub fn parse_hashnode_metrics(val: &serde_json::Value) -> Vec<ParsedPlatformMetric> {
+    let mut metrics = Vec::new();
+    let edges = val["data"]["publication"]["posts"]["edges"]
+        .as_array()
+        .or_else(|| val["publication"]["posts"]["edges"].as_array());
+    if let Some(arr) = edges {
+        for edge in arr {
+            let node = &edge["node"];
+            let id = if let Some(s) = node["id"].as_str() {
+                s.to_string()
+            } else {
+                continue;
+            };
+            let url = node["url"].as_str().map(|s| s.to_string());
+            let slug = node["slug"].as_str().map(|s| s.to_string());
+            let reactions = node["reactionCount"].as_u64().unwrap_or(0) as u32;
+            let comments = node["responseCount"].as_u64().unwrap_or(0) as u32;
+            let views = node["views"].as_u64().unwrap_or(0) as u32;
+            metrics.push(ParsedPlatformMetric {
+                id,
+                url,
+                slug,
+                reactions,
+                comments,
+                views,
+            });
+        }
+    }
+    metrics
+}
+
+pub fn calculate_aggregate_engagement(exports: &[ExportRecord]) -> EngagementMetrics {
+    let mut total_reactions = 0;
+    let mut total_comments = 0;
+    let mut total_views = 0;
+    let mut latest_sync: Option<chrono::DateTime<Utc>> = None;
+
+    for exp in exports {
+        if let Some(ref eng) = exp.engagement {
+            total_reactions += eng.reactions;
+            total_comments += eng.comments;
+            total_views += eng.views;
+            if let Some(ts) = eng.last_synced_at {
+                latest_sync = match latest_sync {
+                    Some(curr) if curr > ts => Some(curr),
+                    _ => Some(ts),
+                };
+            }
+        }
+    }
+
+    EngagementMetrics {
+        reactions: total_reactions,
+        comments: total_comments,
+        views: total_views,
+        last_synced_at: latest_sync,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncMetricsSummary {
+    pub success: bool,
+    pub synced_count: usize,
+    pub total_reactions: u32,
+    pub total_comments: u32,
+    pub total_views: u32,
+}
+
+pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetricsSummary, String> {
+    let (devto_key, hashnode_key, hashnode_pub_id) = {
+        let state = ctx.state.read().await;
+        let d_key = state
+            .syndication_settings
+            .devto_api_key
+            .clone()
+            .or_else(|| ctx.config.devto_api_key.clone());
+        let h_key = state
+            .syndication_settings
+            .hashnode_api_key
+            .clone()
+            .or_else(|| ctx.config.hashnode_api_key.clone());
+        let h_pub = state
+            .syndication_settings
+            .hashnode_publication_id
+            .clone()
+            .or_else(|| ctx.config.hashnode_publication_id.clone());
+        (d_key, h_key, h_pub)
+    };
+
+    let client = reqwest::Client::builder()
+        .user_agent("IvyTendrilGrowthHack/1.0")
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let devto_metrics = if let Some(ref key) = devto_key {
+        if !key.trim().is_empty() {
+            match client
+                .get("https://dev.to/api/articles/me/all")
+                .header("api-key", key.trim())
+                .send()
+                .await
+            {
+                Ok(res) if res.status().is_success() => {
+                    match res.json::<serde_json::Value>().await {
+                        Ok(val) => parse_devto_metrics(&val),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse Dev.to articles JSON: {}", e);
+                            Vec::new()
+                        }
+                    }
+                }
+                Ok(res) => {
+                    tracing::warn!("Dev.to API returned status: {}", res.status());
+                    Vec::new()
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch Dev.to articles: {}", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let hashnode_metrics = if let Some(ref key) = hashnode_key {
+        if !key.trim().is_empty() {
+            let pub_id = match hashnode_pub_id {
+                Some(ref pid) if !pid.trim().is_empty() => Some(pid.trim().to_string()),
+                _ => {
+                    let disc_query = serde_json::json!({
+                        "query": "query { me { publications(first: 1) { edges { node { id title } } } } }"
+                    });
+                    match client
+                        .post("https://gql.hashnode.com")
+                        .header("Authorization", key.trim())
+                        .header("Content-Type", "application/json")
+                        .json(&disc_query)
+                        .send()
+                        .await
+                    {
+                        Ok(r) => match r.json::<serde_json::Value>().await {
+                            Ok(json) => json["data"]["me"]["publications"]["edges"][0]["node"]["id"]
+                                .as_str()
+                                .map(|s| s.to_string()),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    }
+                }
+            };
+
+            if let Some(pid) = pub_id {
+                let query = serde_json::json!({
+                    "query": "query GetPublicationPosts($id: ObjectId!) { publication(id: $id) { posts(first: 50) { edges { node { id url reactionCount responseCount views } } } } }",
+                    "variables": { "id": pid }
+                });
+                match client
+                    .post("https://gql.hashnode.com")
+                    .header("Authorization", key.trim())
+                    .header("Content-Type", "application/json")
+                    .json(&query)
+                    .send()
+                    .await
+                {
+                    Ok(r) if r.status().is_success() => {
+                        match r.json::<serde_json::Value>().await {
+                            Ok(val) => parse_hashnode_metrics(&val),
+                            Err(e) => {
+                                tracing::warn!("Failed to parse Hashnode GraphQL response: {}", e);
+                                Vec::new()
+                            }
+                        }
+                    }
+                    Ok(r) => {
+                        tracing::warn!("Hashnode GraphQL returned status: {}", r.status());
+                        Vec::new()
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to query Hashnode GraphQL: {}", e);
+                        Vec::new()
+                    }
+                }
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let now = Utc::now();
+    let mut state = ctx.state.write().await;
+    let mut total_reactions = 0;
+    let mut total_comments = 0;
+    let mut total_views = 0;
+    let mut synced_count = 0;
+
+    for article in state.articles.iter_mut() {
+        let mut article_had_sync = false;
+        for export in article.exports.iter_mut() {
+            if export.channel.eq_ignore_ascii_case("dev.to") {
+                let matched = devto_metrics.iter().find(|m| {
+                    if let Some(ref ext_id) = export.external_id {
+                        if ext_id == &m.id {
+                            return true;
+                        }
+                    }
+                    if let Some(ref path) = export.target_path {
+                        if path.contains(&m.id) {
+                            return true;
+                        }
+                        if let Some(ref u) = m.url {
+                            if path == u {
+                                return true;
+                            }
+                        }
+                    }
+                    if let (Some(ref art_slug), Some(ref m_slug)) = (&article.slug, &m.slug) {
+                        if art_slug == m_slug {
+                            return true;
+                        }
+                    }
+                    false
+                });
+
+                if let Some(m) = matched {
+                    export.external_id = Some(m.id.clone());
+                    export.engagement = Some(EngagementMetrics {
+                        reactions: m.reactions,
+                        comments: m.comments,
+                        views: m.views,
+                        last_synced_at: Some(now),
+                    });
+                    article_had_sync = true;
+                }
+            } else if export.channel.eq_ignore_ascii_case("hashnode") {
+                let matched = hashnode_metrics.iter().find(|m| {
+                    if let Some(ref ext_id) = export.external_id {
+                        if ext_id == &m.id {
+                            return true;
+                        }
+                    }
+                    if let Some(ref path) = export.target_path {
+                        if path.contains(&m.id) {
+                            return true;
+                        }
+                        if let Some(ref u) = m.url {
+                            if path == u {
+                                return true;
+                            }
+                        }
+                    }
+                    if let (Some(ref art_slug), Some(ref m_slug)) = (&article.slug, &m.slug) {
+                        if art_slug == m_slug {
+                            return true;
+                        }
+                    }
+                    false
+                });
+
+                if let Some(m) = matched {
+                    export.external_id = Some(m.id.clone());
+                    export.engagement = Some(EngagementMetrics {
+                        reactions: m.reactions,
+                        comments: m.comments,
+                        views: m.views,
+                        last_synced_at: Some(now),
+                    });
+                    article_had_sync = true;
+                }
+            }
+        }
+
+        let has_any_engagement = article.exports.iter().any(|e| e.engagement.is_some());
+        if has_any_engagement {
+            let agg = calculate_aggregate_engagement(&article.exports);
+            article.engagement = Some(EngagementMetrics {
+                reactions: agg.reactions,
+                comments: agg.comments,
+                views: agg.views,
+                last_synced_at: if article_had_sync {
+                    Some(now)
+                } else {
+                    agg.last_synced_at.or(Some(now))
+                },
+            });
+        }
+
+        if let Some(ref eng) = article.engagement {
+            total_reactions += eng.reactions;
+            total_comments += eng.comments;
+            total_views += eng.views;
+            synced_count += 1;
+        }
+    }
+
+    let _ = state.save(&ctx.data_file);
+
+    Ok(SyncMetricsSummary {
+        success: true,
+        synced_count,
+        total_reactions,
+        total_comments,
+        total_views,
+    })
+}
+
+pub async fn sync_metrics(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
+    match sync_all_metrics_internal(&ctx).await {
+        Ok(summary) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "synced_count": summary.synced_count,
+                "total_reactions": summary.total_reactions,
+                "total_comments": summary.total_comments,
+                "total_views": summary.total_views
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "error": e
+            })),
+        ),
+    }
+}
+
+pub async fn sync_article_metrics(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let _ = sync_all_metrics_internal(&ctx).await;
+    let state = ctx.state.read().await;
+    if let Some(art) = state.articles.iter().find(|a| a.id == id) {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "article": art
+            })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "Article not found"
+            })),
+        )
+    }
+}
+
+pub async fn handle_syndication_webhook(
+    State(ctx): State<Arc<AppContext>>,
+    body: Option<Json<serde_json::Value>>,
+) -> impl IntoResponse {
+    tracing::info!("Received syndication webhook event: {:?}", body.as_ref().map(|b| &b.0));
+    let sync_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        if let Err(e) = sync_all_metrics_internal(&sync_ctx).await {
+            tracing::warn!("Webhook-triggered metrics sync error: {}", e);
+        }
+    });
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "received": true,
+            "status": "processed"
+        })),
+    )
 }
 
 #[cfg(test)]
@@ -1724,6 +2161,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let fm = generate_ivy_web_frontmatter(&article, "test-article");
@@ -1756,6 +2194,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let (devto, t1) = format_for_channel(&article, "Dev.to", "test-article");
@@ -1811,6 +2250,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("temp-export-test".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -1844,6 +2284,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("record-export-test".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let rec = ExportRecord {
@@ -1851,6 +2292,8 @@ mod tests {
             exported_at: now,
             target_path: None,
             status: "Copied".to_string(),
+            external_id: None,
+            engagement: None,
         };
         article.exports.push(rec);
 
@@ -2047,6 +2490,7 @@ mod tests {
             published_at: None,
             slug: Some("scaling-autonomous-agents-with-worktrees".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let payload =
@@ -2088,6 +2532,7 @@ mod tests {
             published_at: None,
             slug: Some("15-minute-issue-to-pr-autonomous-loop".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let payload = format_hashnode_publish_mutation(
@@ -2199,6 +2644,7 @@ mod tests {
             published_at: None,
             slug: Some("test-syncing-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
         growth_state.articles.push(article);
 
@@ -2257,6 +2703,7 @@ mod tests {
             published_at: None,
             slug: Some("test-sync-assets-endpoint".to_string()),
             exports: vec![],
+            engagement: None,
         };
         growth_state.articles.push(article);
 
@@ -2355,6 +2802,7 @@ mod tests {
             published_at: None,
             slug: Some("dynamic-banner-test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
         growth_state.articles.push(article);
 
@@ -2413,6 +2861,7 @@ mod tests {
             published_at: None,
             slug: Some("upload-custom-banner-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
         growth_state.articles.push(article);
 
@@ -2449,5 +2898,162 @@ mod tests {
         assert!(dest_svg.exists(), "Generated SVG file must exist on disk");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_engagement_metrics_serialization() {
+        let default_metrics = EngagementMetrics::default();
+        assert_eq!(default_metrics.reactions, 0);
+        assert_eq!(default_metrics.comments, 0);
+        assert_eq!(default_metrics.views, 0);
+        assert!(default_metrics.last_synced_at.is_none());
+
+        let json_str = r#"{"reactions":15,"comments":3,"views":250}"#;
+        let deserialized: EngagementMetrics =
+            serde_json::from_str(json_str).expect("Deserialize EngagementMetrics");
+        assert_eq!(deserialized.reactions, 15);
+        assert_eq!(deserialized.comments, 3);
+        assert_eq!(deserialized.views, 250);
+        assert!(deserialized.last_synced_at.is_none());
+
+        let serialized = serde_json::to_string(&deserialized).expect("Serialize EngagementMetrics");
+        assert!(serialized.contains("\"reactions\":15"));
+        assert!(serialized.contains("\"comments\":3"));
+        assert!(serialized.contains("\"views\":250"));
+    }
+
+    #[test]
+    fn test_aggregate_engagement_calculation() {
+        let now = Utc::now();
+        let exports = vec![
+            ExportRecord {
+                channel: "Dev.to".to_string(),
+                exported_at: now,
+                target_path: Some("https://dev.to/article/1".to_string()),
+                status: "Published".to_string(),
+                external_id: Some("1".to_string()),
+                engagement: Some(EngagementMetrics {
+                    reactions: 42,
+                    comments: 7,
+                    views: 500,
+                    last_synced_at: Some(now),
+                }),
+            },
+            ExportRecord {
+                channel: "Hashnode".to_string(),
+                exported_at: now,
+                target_path: Some("https://hashnode.com/post/2".to_string()),
+                status: "Published".to_string(),
+                external_id: Some("2".to_string()),
+                engagement: Some(EngagementMetrics {
+                    reactions: 18,
+                    comments: 3,
+                    views: 250,
+                    last_synced_at: Some(now),
+                }),
+            },
+            ExportRecord {
+                channel: "ivy-web".to_string(),
+                exported_at: now,
+                target_path: Some("/content/post.mdoc".to_string()),
+                status: "Success".to_string(),
+                external_id: None,
+                engagement: None,
+            },
+        ];
+
+        let agg = calculate_aggregate_engagement(&exports);
+        assert_eq!(agg.reactions, 60);
+        assert_eq!(agg.comments, 10);
+        assert_eq!(agg.views, 750);
+        assert_eq!(agg.last_synced_at, Some(now));
+    }
+
+    #[test]
+    fn test_devto_metrics_response_parsing() {
+        let mock_payload = serde_json::json!([
+            {
+                "id": 12345,
+                "title": "Autonomous Worktrees",
+                "url": "https://dev.to/ivy/autonomous-worktrees-12345",
+                "slug": "autonomous-worktrees-12345",
+                "public_reactions_count": 88,
+                "comments_count": 12,
+                "page_views_count": 1420
+            },
+            {
+                "id": 67890,
+                "title": "Verification Gates",
+                "url": "https://dev.to/ivy/verification-gates-67890",
+                "slug": "verification-gates-67890",
+                "public_reactions_count": 35,
+                "comments_count": 4,
+                "page_views_count": 610
+            }
+        ]);
+
+        let parsed = parse_devto_metrics(&mock_payload);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].id, "12345");
+        assert_eq!(parsed[0].reactions, 88);
+        assert_eq!(parsed[0].comments, 12);
+        assert_eq!(parsed[0].views, 1420);
+        assert_eq!(
+            parsed[0].url.as_deref(),
+            Some("https://dev.to/ivy/autonomous-worktrees-12345")
+        );
+
+        assert_eq!(parsed[1].id, "67890");
+        assert_eq!(parsed[1].reactions, 35);
+        assert_eq!(parsed[1].comments, 4);
+        assert_eq!(parsed[1].views, 610);
+    }
+
+    #[test]
+    fn test_hashnode_metrics_graphql_response_parsing() {
+        let mock_payload = serde_json::json!({
+            "data": {
+                "publication": {
+                    "posts": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "id": "post-hash-1",
+                                    "url": "https://blog.ivy.interactive/post-hash-1",
+                                    "reactionCount": 47,
+                                    "responseCount": 9,
+                                    "views": 890
+                                }
+                            },
+                            {
+                                "node": {
+                                    "id": "post-hash-2",
+                                    "url": "https://blog.ivy.interactive/post-hash-2",
+                                    "reactionCount": 21,
+                                    "responseCount": 2,
+                                    "views": 310
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+
+        let parsed = parse_hashnode_metrics(&mock_payload);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].id, "post-hash-1");
+        assert_eq!(parsed[0].reactions, 47);
+        assert_eq!(parsed[0].comments, 9);
+        assert_eq!(parsed[0].views, 890);
+        assert_eq!(
+            parsed[0].url.as_deref(),
+            Some("https://blog.ivy.interactive/post-hash-1")
+        );
+
+        assert_eq!(parsed[1].id, "post-hash-2");
+        assert_eq!(parsed[1].reactions, 21);
+        assert_eq!(parsed[1].comments, 2);
+        assert_eq!(parsed[1].views, 310);
     }
 }
