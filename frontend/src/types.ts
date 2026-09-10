@@ -31,7 +31,7 @@ export interface Article {
 
 export interface TrendTopic {
   id: string;
-  source: "GitHub" | "Reddit" | "LinkedIn";
+  source: "GitHub" | "Reddit" | "LinkedIn" | "Hacker News" | string;
   topic: string;
   url: string;
   engagement: string;
