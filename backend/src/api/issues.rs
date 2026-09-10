@@ -19,6 +19,7 @@ pub struct AppContext {
     pub task_manager: TaskManager,
     pub data_file: std::path::PathBuf,
     pub ivy_web_content_path: std::path::PathBuf,
+    pub ivy_web_images_path: std::path::PathBuf,
     pub config: Config,
 }
 

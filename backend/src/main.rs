@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         task_manager,
         data_file: config.data_file.clone(),
         ivy_web_content_path: config.ivy_web_content_path.clone(),
+        ivy_web_images_path: config.ivy_web_images_path.clone(),
         config: config.clone(),
     });
 

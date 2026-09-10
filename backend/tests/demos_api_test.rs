@@ -24,6 +24,7 @@ fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
         task_manager,
         data_file: data_file.clone(),
         ivy_web_content_path: temp_dir.clone(),
+        ivy_web_images_path: temp_dir.clone(),
         config: growthhack_backend::config::Config::load(),
     });
 

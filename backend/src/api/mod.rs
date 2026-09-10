@@ -43,6 +43,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(articles::export_ivy_web),
         )
         .route(
+            "/api/articles/{id}/sync-assets",
+            post(articles::sync_assets),
+        )
+        .route(
             "/api/articles/{id}/format/{channel}",
             get(articles::format_article_channel),
         )
