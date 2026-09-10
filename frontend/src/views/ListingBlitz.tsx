@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { Listing } from "../types";
 import {
   ListTree,
@@ -24,6 +24,9 @@ export interface ListingBlitzProps {
   onCreateListing: (listing: Partial<Listing>) => void;
   onBatchGenerateBlurbs?: (category?: string, listingIds?: string[]) => Promise<any>;
   onVerifyBacklink?: (id: string) => Promise<any>;
+  onSubmitUpstream?: (id: string) => Promise<any>;
+  onBatchSubmitUpstream?: (category?: string, listingIds?: string[]) => Promise<any>;
+  githubStatus?: { configured: boolean; username?: string; message: string };
 }
 
 export const CATEGORIES = [
@@ -90,12 +93,41 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
   onCreateListing,
   onBatchGenerateBlurbs,
   onVerifyBacklink,
+  onSubmitUpstream,
+  onBatchSubmitUpstream,
+  githubStatus,
 }) => {
   const [filterCategory, setFilterCategory] = useState<string>("All");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+
+  // GitHub status & upstream submission state
+  const [ghStatus, setGhStatus] = useState<{
+    configured: boolean;
+    username?: string;
+    message: string;
+  } | null>(githubStatus !== undefined ? githubStatus : null);
+  const [submittingMap, setSubmittingMap] = useState<Record<string, boolean>>({});
+  const [isBatchSubmitting, setIsBatchSubmitting] = useState<boolean>(false);
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (githubStatus !== undefined) {
+      setGhStatus(githubStatus);
+      return;
+    }
+    fetch("/api/submissions/github-status")
+      .then((res) => res.json())
+      .then((data) => setGhStatus(data))
+      .catch(() =>
+        setGhStatus({
+          configured: false,
+          message: "GitHub token not configured. Set GITHUB_TOKEN environment variable.",
+        }),
+      );
+  }, [githubStatus]);
 
   // Batch runner state
   const [batchCategory, setBatchCategory] = useState<string>("All");
@@ -205,6 +237,50 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
     }
   };
 
+  const handleSubmitUpstreamClick = async (id: string) => {
+    setSubmittingMap((prev) => ({ ...prev, [id]: true }));
+    try {
+      if (onSubmitUpstream) {
+        await onSubmitUpstream(id);
+      } else {
+        await fetch(`/api/listings/${id}/submit-upstream`, { method: "POST" });
+      }
+      onUpdateStatus(id, "PR Submitted");
+    } catch (err) {
+      console.error("Submit upstream failed:", err);
+    } finally {
+      setSubmittingMap((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleTriggerBatchSubmit = async () => {
+    setIsBatchSubmitting(true);
+    setSubmissionMessage(null);
+    try {
+      const catArg = batchCategory === "All" ? undefined : batchCategory;
+      if (onBatchSubmitUpstream) {
+        const res = await onBatchSubmitUpstream(catArg);
+        const count = res?.targeted_count ?? "targeted";
+        setSubmissionMessage(`Batch upstream PR submission initiated for ${count} listings!`);
+      } else {
+        const res = await fetch("/api/listings/submit-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category: catArg,
+          }),
+        });
+        const data = await res.json();
+        setSubmissionMessage(data.message || "Batch submission initiated!");
+      }
+    } catch {
+      setSubmissionMessage("Failed to start batch upstream submission");
+    } finally {
+      setIsBatchSubmitting(false);
+      setTimeout(() => setSubmissionMessage(null), 5000);
+    }
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !url.trim()) return;
@@ -276,14 +352,45 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-950 transition-all hover:scale-[1.02] shrink-0 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Target Directory</span>
-        </button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+          {ghStatus && ghStatus.configured && (
+            <div
+              data-testid="github-status-badge"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-mono"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>GitHub Connected: @{ghStatus.username || "authenticated"}</span>
+            </div>
+          )}
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-950 transition-all hover:scale-[1.02]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Target Directory</span>
+          </button>
+        </div>
       </div>
+
+      {/* GitHub Token Status Alert Banner if unconfigured */}
+      {ghStatus && !ghStatus.configured && (
+        <div
+          data-testid="github-status-banner"
+          className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/80 text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md"
+        >
+          <div className="flex items-center space-x-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold">GitHub Token Unconfigured: </span>
+              <span>
+                {ghStatus.message ||
+                  "Set GITHUB_TOKEN or GITHUB_PAT environment variable or configure in Settings to enable automated 1-click PR submissions."}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Progress Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
@@ -331,7 +438,7 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
             value={batchCategory}
             onChange={(e) => setBatchCategory(e.target.value)}
@@ -358,6 +465,22 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
             )}
             <span>{isBatchGenerating ? "Running Batch..." : "Batch Generate Tailored Blurbs"}</span>
           </button>
+
+          <button
+            onClick={handleTriggerBatchSubmit}
+            disabled={isBatchSubmitting}
+            data-testid="batch-submit-btn"
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold transition-all shadow-md shadow-indigo-950 disabled:opacity-50"
+          >
+            {isBatchSubmitting ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <GitPullRequest className="w-4 h-4" />
+            )}
+            <span>
+              {isBatchSubmitting ? "Submitting Upstream..." : "Batch Submit Upstream PRs"}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -365,6 +488,16 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
         <div className="p-3 rounded-lg bg-cyan-950/80 border border-cyan-800 text-cyan-200 text-xs flex items-center space-x-2">
           <CheckCircle2 className="w-4 h-4 text-cyan-400" />
           <span>{batchMessage}</span>
+        </div>
+      )}
+
+      {submissionMessage && (
+        <div
+          data-testid="batch-submission-message"
+          className="p-3 rounded-lg bg-indigo-950/80 border border-indigo-800 text-indigo-200 text-xs flex items-center space-x-2"
+        >
+          <CheckCircle2 className="w-4 h-4 text-indigo-400" />
+          <span>{submissionMessage}</span>
         </div>
       )}
 
@@ -449,6 +582,10 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
           const prTitle = getPrTitle(listing);
           const prDescription = getPrDescription(listing);
           const ghCommand = getGhPrCommand(listing);
+          const isGitHub = !!extractRepo(listing.url);
+          const isEligibleForSubmission =
+            isGitHub && (listing.status === "Targeted" || listing.status === "Under Review");
+          const isSubmitting = submittingMap[listing.id] || false;
 
           return (
             <div
@@ -547,6 +684,7 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                       href={listing.pr_url}
                       target="_blank"
                       rel="noreferrer"
+                      data-testid={`view-pr-${listing.id}`}
                       className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-indigo-950/80 text-indigo-300 border border-indigo-800 text-xs font-mono"
                     >
                       <GitPullRequest className="w-3.5 h-3.5" />
@@ -670,14 +808,36 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                   Notes: {listing.notes || "No notes added."}
                 </span>
 
-                <button
-                  onClick={() => onGenerateBlurb(listing.id)}
-                  data-testid={`generate-blurb-${listing.id}`}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/80 hover:bg-cyan-600 text-white font-semibold transition-all self-start sm:self-auto"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Tailor PR Blurb with Antigravity</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                  {isGitHub && (
+                    <button
+                      onClick={() => handleSubmitUpstreamClick(listing.id)}
+                      disabled={isSubmitting || !isEligibleForSubmission}
+                      data-testid={`submit-upstream-${listing.id}`}
+                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        isEligibleForSubmission
+                          ? "bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white border-cyan-500/40 shadow-md shadow-indigo-950"
+                          : "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-60"
+                      }`}
+                    >
+                      {isSubmitting ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-200" />
+                      ) : (
+                        <GitPullRequest className="w-3.5 h-3.5 text-cyan-200" />
+                      )}
+                      <span>{isSubmitting ? "Submitting PR..." : "Submit Upstream PR"}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => onGenerateBlurb(listing.id)}
+                    data-testid={`generate-blurb-${listing.id}`}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600/80 hover:bg-cyan-600 text-white font-semibold transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Tailor PR Blurb with Antigravity</span>
+                  </button>
+                </div>
               </div>
             </div>
           );

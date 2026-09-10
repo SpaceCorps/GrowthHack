@@ -12,6 +12,7 @@ pub struct Config {
     pub devto_api_key: Option<String>,
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
+    pub github_token: Option<String>,
 }
 
 pub fn get_user_home() -> Option<PathBuf> {
@@ -138,6 +139,12 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let github_token = std::env::var("GITHUB_TOKEN")
+            .or_else(|_| std::env::var("GITHUB_PAT"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Self {
             host,
             port,
@@ -148,6 +155,7 @@ impl Config {
             devto_api_key,
             hashnode_api_key,
             hashnode_publication_id,
+            github_token,
         }
     }
 }
@@ -233,5 +241,19 @@ mod tests {
         let config = Config::load();
         std::env::remove_var("HOST");
         assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_github_token_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("GITHUB_TOKEN", "ghp_test_token_12345");
+        let config = Config::load();
+        std::env::remove_var("GITHUB_TOKEN");
+        assert_eq!(config.github_token, Some("ghp_test_token_12345".to_string()));
+
+        std::env::set_var("GITHUB_PAT", "ghp_pat_token_67890");
+        let config = Config::load();
+        std::env::remove_var("GITHUB_PAT");
+        assert_eq!(config.github_token, Some("ghp_pat_token_67890".to_string()));
     }
 }

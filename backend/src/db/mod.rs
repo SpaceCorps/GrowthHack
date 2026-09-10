@@ -104,6 +104,8 @@ pub struct SyndicationSettings {
     pub hashnode_api_key: Option<String>,
     #[serde(default)]
     pub hashnode_publication_id: Option<String>,
+    #[serde(default)]
+    pub github_token: Option<String>,
     #[serde(default = "default_publish_as_draft")]
     pub publish_as_draft: bool,
 }
@@ -114,6 +116,7 @@ impl Default for SyndicationSettings {
             devto_api_key: None,
             hashnode_api_key: None,
             hashnode_publication_id: None,
+            github_token: None,
             publish_as_draft: true,
         }
     }

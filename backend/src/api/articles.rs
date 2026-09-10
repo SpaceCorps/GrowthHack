@@ -2141,6 +2141,7 @@ mod tests {
             devto_api_key: Some("devto_secret_key_123".to_string()),
             hashnode_api_key: Some("hashnode_pat_456".to_string()),
             hashnode_publication_id: Some("pub_789".to_string()),
+            github_token: Some("ghp_roundtrip_test_999".to_string()),
             publish_as_draft: false,
         };
         let serialized = serde_json::to_string(&populated).expect("serialize");

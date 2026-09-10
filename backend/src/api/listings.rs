@@ -1,4 +1,7 @@
 use crate::api::issues::AppContext;
+use crate::api::submission::{
+    extract_github_repo, insert_listing_entry, GitHubClient, SubmitBatchRequest,
+};
 use crate::db::Listing;
 use axum::{
     extract::{Path, State},
@@ -8,6 +11,7 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -429,6 +433,385 @@ pub async fn verify_backlink(
             verified,
             status: current_status,
             message,
+        }),
+    )
+}
+
+pub async fn submit_upstream(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<ListingActionResponse>) {
+    let state = ctx.state.read().await;
+    let listing = match state.listings.iter().find(|l| l.id == id) {
+        Some(l) => l.clone(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ListingActionResponse {
+                    task_id: String::new(),
+                    message: "Listing target not found".to_string(),
+                }),
+            );
+        }
+    };
+    drop(state);
+
+    if extract_github_repo(&listing.url).is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ListingActionResponse {
+                task_id: String::new(),
+                message: "Listing URL is not a valid GitHub repository".to_string(),
+            }),
+        );
+    }
+
+    let token = match ctx.get_github_token() {
+        Some(t) if !t.trim().is_empty() => t,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ListingActionResponse {
+                    task_id: String::new(),
+                    message: "GitHub token is not configured. Please set GITHUB_TOKEN or configure in Settings.".to_string(),
+                }),
+            );
+        }
+    };
+
+    let task_id = format!("task-upstream-{}", Uuid::new_v4().simple());
+    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+    let state_arc = ctx.state.clone();
+    let data_file = ctx.data_file.clone();
+    let list_id = listing.id.clone();
+    let listing_name = listing.name.clone();
+
+    tokio::spawn(async move {
+        let _ = tx.send(format!("[START] Automated upstream submission worker initialized for listing '{}'", listing.name));
+
+        // 1. Authenticating GitHub user token
+        let _ = tx.send("[STEP 1/6] Authenticating GitHub user token...".to_string());
+        let client = match GitHubClient::new(&token) {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to initialize GitHub client: {}", e));
+                return;
+            }
+        };
+
+        let _user = match client.get_authenticated_user().await {
+            Ok(u) => {
+                let _ = tx.send(format!("[INFO] Authenticated as GitHub user @{}", u.login));
+                u
+            }
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] GitHub authentication failed: {}", e));
+                return;
+            }
+        };
+
+        // 2. Verifying upstream repository and retrieving default branch
+        let _ = tx.send("[STEP 2/6] Verifying upstream repository and retrieving default branch...".to_string());
+        let (owner, repo) = match extract_github_repo(&listing.url) {
+            Some(pair) => pair,
+            None => {
+                let _ = tx.send(format!("[ERROR] Invalid repository URL: {}", listing.url));
+                return;
+            }
+        };
+
+        let repo_info = match client.get_repo_info(&owner, &repo).await {
+            Ok(info) => {
+                let _ = tx.send(format!("[INFO] Target repository {}/{} verified. Default branch: '{}'", owner, repo, info.default_branch));
+                info
+            }
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to fetch upstream repository info: {}", e));
+                return;
+            }
+        };
+
+        // 3. Creating or verifying fork repository
+        let _ = tx.send("[STEP 3/6] Creating or verifying fork repository...".to_string());
+        let fork_user = match client.ensure_fork(&owner, &repo).await {
+            Ok(u) => {
+                let _ = tx.send(format!("[INFO] Fork verified under user @{}", u));
+                u
+            }
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Fork creation failed: {}", e));
+                return;
+            }
+        };
+
+        // 4. Creating dedicated feature branch
+        let branch_name = format!("add-ivy-tendril-{}", list_id);
+        let _ = tx.send(format!("[STEP 4/6] Creating dedicated feature branch '{}'...", branch_name));
+        let base_sha = match client.get_branch_sha(&owner, &repo, &repo_info.default_branch).await {
+            Ok(sha) => sha,
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to fetch base branch commit SHA: {}", e));
+                return;
+            }
+        };
+
+        if let Err(e) = client.create_branch(&fork_user, &repo, &branch_name, &base_sha).await {
+            let _ = tx.send(format!("[ERROR] Failed to create branch: {}", e));
+            return;
+        }
+        let _ = tx.send(format!("[INFO] Branch '{}' created from SHA {}", branch_name, &base_sha[..7.min(base_sha.len())]));
+
+        // 5. Fetching target README.md, inserting entry, and committing change
+        let _ = tx.send("[STEP 5/6] Fetching target README.md and inserting entry...".to_string());
+        let (readme_content, blob_sha) = match client.get_file_content(&owner, &repo, "README.md", &repo_info.default_branch).await {
+            Ok(res) => res,
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to fetch README.md from upstream: {}", e));
+                return;
+            }
+        };
+
+        let entry = if !listing.submission_blurb.trim().is_empty() {
+            let lines: Vec<&str> = listing.submission_blurb.lines().collect();
+            if let Some(l) = lines.iter().find(|l| l.trim().starts_with("- [")) {
+                l.trim().to_string()
+            } else {
+                listing.submission_blurb.trim().to_string()
+            }
+        } else {
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory with isolated Git worktrees and verification gates.".to_string()
+        };
+
+        let updated_readme = insert_listing_entry(&readme_content, &entry, &listing.category);
+        let commit_message = format!("Add Ivy-Tendril to {}", listing.name);
+
+        if let Err(e) = client.update_file(&fork_user, &repo, "README.md", &branch_name, &commit_message, &updated_readme, &blob_sha).await {
+            let _ = tx.send(format!("[ERROR] Failed to commit README.md changes: {}", e));
+            return;
+        }
+        let _ = tx.send("[INFO] README.md entry committed successfully".to_string());
+
+        // 6. Opening upstream pull request
+        let _ = tx.send("[STEP 6/6] Opening upstream pull request...".to_string());
+        let head_ref = if fork_user.eq_ignore_ascii_case(&owner) {
+            branch_name.clone()
+        } else {
+            format!("{}:{}", fork_user, branch_name)
+        };
+
+        let pr_title = format!("Add Ivy-Tendril to {}", listing.name);
+        let pr_body = format!(
+            "## Add Ivy-Tendril to {}\n\n### Description\n[Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) is an open-source autonomous multi-agent software factory that plans tasks, runs agents in isolated Git worktrees, and executes verification gates.\n\n### Entry\n{}\n\n### Checklist\n- [x] Item placed in alphabetical order\n- [x] Verified link to repository and documentation\n- [x] Adheres to repository contribution guidelines\n",
+            listing.name, entry
+        );
+
+        match client.create_pull_request(&owner, &repo, &head_ref, &repo_info.default_branch, &pr_title, &pr_body, false).await {
+            Ok(pr) => {
+                let _ = tx.send(format!("[SUCCESS] Upstream Pull Request opened successfully: {}", pr.html_url));
+                let mut state = state_arc.write().await;
+                if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id) {
+                    l.status = "PR Submitted".to_string();
+                    l.pr_url = Some(pr.html_url);
+                    l.updated_at = Utc::now();
+                }
+                let _ = state.save(&data_file);
+            }
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] Failed to create upstream pull request: {}", e));
+            }
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(ListingActionResponse {
+            task_id,
+            message: format!("Automated upstream PR submission worker started for '{}'", listing_name),
+        }),
+    )
+}
+
+pub async fn submit_batch(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<SubmitBatchRequest>,
+) -> (StatusCode, Json<GenerateBatchResponse>) {
+    let state = ctx.state.read().await;
+    let mut targets: Vec<Listing> = state
+        .listings
+        .iter()
+        .filter(|l| {
+            if extract_github_repo(&l.url).is_none() {
+                return false;
+            }
+            if l.status == "PR Submitted" || l.status == "Merged" || l.status == "Live" {
+                return false;
+            }
+            if let Some(ref ids) = payload.listing_ids {
+                if !ids.is_empty() && !ids.contains(&l.id) {
+                    return false;
+                }
+            }
+            if let Some(ref cat) = payload.category {
+                if cat != "All" && cat != "all" && !cat.is_empty() && &l.category != cat {
+                    return false;
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect();
+
+    if let Some(limit) = payload.limit {
+        targets.truncate(limit);
+    }
+    drop(state);
+
+    let targeted_count = targets.len();
+    let mut task_ids = Vec::new();
+
+    let token = ctx.get_github_token();
+
+    for (i, listing) in targets.into_iter().enumerate() {
+        let task_id = format!("task-upstream-{}", Uuid::new_v4().simple());
+        task_ids.push(task_id.clone());
+
+        let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+        let state_arc = ctx.state.clone();
+        let data_file = ctx.data_file.clone();
+        let list_id = listing.id.clone();
+        let token_opt = token.clone();
+
+        tokio::spawn(async move {
+            // Pacing: 2-second delay between sequential submission tasks
+            if i > 0 {
+                tokio::time::sleep(Duration::from_secs(2 * (i as u64))).await;
+            }
+
+            let token = match token_opt {
+                Some(t) if !t.trim().is_empty() => t,
+                _ => {
+                    let _ = tx.send("[ERROR] GitHub token not configured. Aborting submission.".to_string());
+                    return;
+                }
+            };
+
+            let client = match GitHubClient::new(&token) {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Client initialization failed: {}", e));
+                    return;
+                }
+            };
+
+            let _user = match client.get_authenticated_user().await {
+                Ok(u) => u,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Authentication failed: {}", e));
+                    return;
+                }
+            };
+
+            let (owner, repo) = match extract_github_repo(&listing.url) {
+                Some(p) => p,
+                None => {
+                    let _ = tx.send(format!("[ERROR] Invalid repo URL: {}", listing.url));
+                    return;
+                }
+            };
+
+            let repo_info = match client.get_repo_info(&owner, &repo).await {
+                Ok(info) => info,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Target repo info failed: {}", e));
+                    return;
+                }
+            };
+
+            let fork_user = match client.ensure_fork(&owner, &repo).await {
+                Ok(u) => u,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Fork failed: {}", e));
+                    return;
+                }
+            };
+
+            let branch_name = format!("add-ivy-tendril-{}", list_id);
+            let base_sha = match client.get_branch_sha(&owner, &repo, &repo_info.default_branch).await {
+                Ok(sha) => sha,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Base SHA lookup failed: {}", e));
+                    return;
+                }
+            };
+
+            if let Err(e) = client.create_branch(&fork_user, &repo, &branch_name, &base_sha).await {
+                let _ = tx.send(format!("[ERROR] Branch creation failed: {}", e));
+                return;
+            }
+
+            let (readme_content, blob_sha) = match client.get_file_content(&owner, &repo, "README.md", &repo_info.default_branch).await {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] README fetch failed: {}", e));
+                    return;
+                }
+            };
+
+            let entry = if !listing.submission_blurb.trim().is_empty() {
+                let lines: Vec<&str> = listing.submission_blurb.lines().collect();
+                if let Some(l) = lines.iter().find(|l| l.trim().starts_with("- [")) {
+                    l.trim().to_string()
+                } else {
+                    listing.submission_blurb.trim().to_string()
+                }
+            } else {
+                "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory with isolated Git worktrees and verification gates.".to_string()
+            };
+
+            let updated_readme = insert_listing_entry(&readme_content, &entry, &listing.category);
+            let commit_message = format!("Add Ivy-Tendril to {}", listing.name);
+
+            if let Err(e) = client.update_file(&fork_user, &repo, "README.md", &branch_name, &commit_message, &updated_readme, &blob_sha).await {
+                let _ = tx.send(format!("[ERROR] File update failed: {}", e));
+                return;
+            }
+
+            let head_ref = if fork_user.eq_ignore_ascii_case(&owner) {
+                branch_name.clone()
+            } else {
+                format!("{}:{}", fork_user, branch_name)
+            };
+
+            let pr_title = format!("Add Ivy-Tendril to {}", listing.name);
+            let pr_body = format!(
+                "## Add Ivy-Tendril to {}\n\n### Description\n[Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) is an open-source autonomous multi-agent software factory.\n\n### Entry\n{}\n",
+                listing.name, entry
+            );
+
+            match client.create_pull_request(&owner, &repo, &head_ref, &repo_info.default_branch, &pr_title, &pr_body, false).await {
+                Ok(pr) => {
+                    let _ = tx.send(format!("[SUCCESS] Upstream PR opened: {}", pr.html_url));
+                    let mut state = state_arc.write().await;
+                    if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id) {
+                        l.status = "PR Submitted".to_string();
+                        l.pr_url = Some(pr.html_url);
+                        l.updated_at = Utc::now();
+                    }
+                    let _ = state.save(&data_file);
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] Pull request creation failed: {}", e));
+                }
+            }
+        });
+    }
+
+    (
+        StatusCode::ACCEPTED,
+        Json(GenerateBatchResponse {
+            task_ids,
+            targeted_count,
+            message: format!("Started batch upstream submission for {} listings", targeted_count),
         }),
     )
 }

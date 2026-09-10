@@ -228,4 +228,103 @@ describe("ListingBlitz View", () => {
     expect(badge.textContent).toContain("Verified Live");
     expect(onUpdateStatus).toHaveBeenCalledWith("list-1", "Live");
   });
+
+  it("renders GitHub status banner when unconfigured and connected badge when configured", () => {
+    // Unconfigured
+    const { unmount } = render(
+      <ListingBlitz
+        {...defaultProps}
+        githubStatus={{
+          configured: false,
+          message: "Set GITHUB_TOKEN or GITHUB_PAT environment variable.",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("github-status-banner")).toBeDefined();
+    expect(screen.queryByTestId("github-status-badge")).toBeNull();
+    unmount();
+
+    // Configured
+    render(
+      <ListingBlitz
+        {...defaultProps}
+        githubStatus={{
+          configured: true,
+          username: "octocat",
+          message: "Authenticated as GitHub user @octocat",
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("github-status-banner")).toBeNull();
+    const badge = screen.getByTestId("github-status-badge");
+    expect(badge).toBeDefined();
+    expect(badge.textContent).toContain("@octocat");
+  });
+
+  it("renders Submit Upstream PR button on eligible GitHub listings and triggers onSubmitUpstream", async () => {
+    const onSubmitUpstream = vi.fn().mockResolvedValue({ task_id: "task-123" });
+    const onUpdateStatus = vi.fn();
+
+    render(
+      <ListingBlitz
+        {...defaultProps}
+        onSubmitUpstream={onSubmitUpstream}
+        onUpdateStatus={onUpdateStatus}
+      />,
+    );
+
+    // list-4 (Homebrew/homebrew-core) is GitHub with status Targeted
+    const submitBtn = screen.getByTestId("submit-upstream-list-4");
+    expect(submitBtn).toBeDefined();
+    expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(submitBtn);
+
+    expect(onSubmitUpstream).toHaveBeenCalledWith("list-4");
+    // Should update status to PR Submitted after trigger
+    await vi.waitFor(() => {
+      expect(onUpdateStatus).toHaveBeenCalledWith("list-4", "PR Submitted");
+    });
+  });
+
+  it("does not render Submit Upstream PR button on non-GitHub targets", () => {
+    render(<ListingBlitz {...defaultProps} />);
+
+    // list-2 (AlternativeTo), list-3 (swebench.com), list-5 (reddit) are not GitHub repos
+    expect(screen.queryByTestId("submit-upstream-list-2")).toBeNull();
+    expect(screen.queryByTestId("submit-upstream-list-3")).toBeNull();
+    expect(screen.queryByTestId("submit-upstream-list-5")).toBeNull();
+  });
+
+  it("disables Submit Upstream PR button when status is already submitted or live", () => {
+    render(<ListingBlitz {...defaultProps} />);
+
+    // list-1 is GitHub repo but status is PR Submitted
+    const submitBtn = screen.getByTestId("submit-upstream-list-1");
+    expect((submitBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("triggers batch upstream PR submission with selected category", async () => {
+    const onBatchSubmitUpstream = vi.fn().mockResolvedValue({ targeted_count: 3 });
+
+    render(<ListingBlitz {...defaultProps} onBatchSubmitUpstream={onBatchSubmitUpstream} />);
+
+    const batchCategorySelect = screen.getByTestId("batch-category-select");
+    fireEvent.change(batchCategorySelect, { target: { value: "Package Manager" } });
+
+    const batchSubmitBtn = screen.getByTestId("batch-submit-btn");
+    fireEvent.click(batchSubmitBtn);
+
+    expect(onBatchSubmitUpstream).toHaveBeenCalledWith("Package Manager");
+  });
+
+  it("renders View PR link for listings with PR submitted", () => {
+    render(<ListingBlitz {...defaultProps} />);
+
+    const prLink = screen.getByTestId("view-pr-list-1");
+    expect(prLink).toBeDefined();
+    expect(prLink.getAttribute("href")).toBe(
+      "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
+    );
+  });
 });
