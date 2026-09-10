@@ -274,3 +274,119 @@ async fn test_backlink_verification_logic_and_endpoint() {
     let verified_listing = state.listings.iter().find(|l| l.id == "list-verify-test").unwrap();
     assert_eq!(verified_listing.status, "Live");
 }
+
+#[tokio::test]
+async fn test_update_listing_resets_blurb_status_on_text_change() {
+    let ctx = create_test_context();
+    let test_listing = Listing {
+        id: "list-reset-test".to_string(),
+        name: "Test Reset List".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/reset-test".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb: "Initial blurb".to_string(),
+        notes: "Initial notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+    }
+
+    // Case 1: Updating submission_blurb on an Approved listing without blurb_status automatically resets blurb_status to Pending
+    let update_req = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Modified blurb text".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.submission_blurb, "Modified blurb text");
+    assert_eq!(updated.blurb_status, Some("Pending".to_string()));
+
+    // Case 2: Updating submission_blurb with explicit blurb_status (e.g. "Approved") preserves the explicit status
+    let update_req_explicit = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Another modification".to_string()),
+        notes: None,
+        blurb_status: Some("Approved".to_string()),
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_explicit),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.submission_blurb, "Another modification");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 3: Updating non-blurb fields without touching submission_blurb preserves existing blurb_status
+    let update_req_non_blurb = UpdateListingRequest {
+        status: Some("PR Submitted".to_string()),
+        pr_url: None,
+        submission_blurb: None,
+        notes: Some("Updated notes only".to_string()),
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_non_blurb),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.status, "PR Submitted");
+    assert_eq!(updated.notes, "Updated notes only");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 4: Submitting identical submission_blurb without blurb_status preserves existing blurb_status
+    let update_req_same_blurb = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Another modification".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_same_blurb),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 5: Empty/whitespace blurb resets blurb_status to None
+    let update_req_empty = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("   ".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_empty),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.blurb_status, None);
+}
