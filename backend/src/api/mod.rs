@@ -106,6 +106,8 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
         .route("/api/packages/{id}/status", put(packages::update_package_status))
+        .route("/api/packages/{id}/dispatch", post(packages::dispatch_package_pr))
+        .route("/api/packages/{id}/commands", get(packages::get_package_dispatch_commands))
         // PR Badges and Workflows Flywheel
         .route("/api/badges/generate", post(badges::generate_badge))
         .route("/api/badges/svg", get(badges::render_svg_badge))
