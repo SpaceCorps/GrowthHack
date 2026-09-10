@@ -1,11 +1,11 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::packages::{
     generate_manifest_content, get_manifest, list_packages, update_package_status,
-    UpdatePackageStatusRequest,
+    ManifestQuery, ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
 use std::path::PathBuf;
@@ -64,8 +64,10 @@ async fn test_list_packages_returns_seeded_targets() {
 
 #[tokio::test]
 async fn test_manifest_generators_syntax_markers() {
+    let release = ReleaseInfo::default_fallback();
+
     // 1. Homebrew Formula
-    let brew = generate_manifest_content("homebrew").expect("homebrew manifest missing");
+    let brew = generate_manifest_content("homebrew", &release).expect("homebrew manifest missing");
     assert_eq!(brew.filename, "tendril.rb");
     assert_eq!(brew.language, "ruby");
     assert!(
@@ -77,7 +79,7 @@ async fn test_manifest_generators_syntax_markers() {
     assert!(brew.content.contains("on_linux"));
 
     // 2. Winget Singleton Manifest
-    let winget = generate_manifest_content("winget").expect("winget manifest missing");
+    let winget = generate_manifest_content("winget", &release).expect("winget manifest missing");
     assert_eq!(winget.filename, "Ivy.Tendril.yaml");
     assert_eq!(winget.language, "yaml");
     assert!(
@@ -88,7 +90,7 @@ async fn test_manifest_generators_syntax_markers() {
     assert!(winget.content.contains("ManifestVersion: 1.6.0"));
 
     // 3. Scoop Extras Manifest
-    let scoop = generate_manifest_content("scoop").expect("scoop manifest missing");
+    let scoop = generate_manifest_content("scoop", &release).expect("scoop manifest missing");
     assert_eq!(scoop.filename, "tendril.json");
     assert_eq!(scoop.language, "json");
     assert!(
@@ -99,7 +101,7 @@ async fn test_manifest_generators_syntax_markers() {
     assert!(scoop.content.contains("tendril.exe"));
 
     // 4. npx Zero-Install Launcher
-    let npx = generate_manifest_content("npx").expect("npx manifest missing");
+    let npx = generate_manifest_content("npx", &release).expect("npx manifest missing");
     assert_eq!(npx.filename, "package.json");
     assert_eq!(npx.language, "json");
     assert!(
@@ -115,13 +117,23 @@ async fn test_get_manifest_endpoint() {
     let ctx = create_test_context();
 
     // Valid target
-    let (status, Json(manifest)) = get_manifest(Path("homebrew".to_string()), State(ctx.clone())).await;
+    let (status, Json(manifest)) = get_manifest(
+        Path("homebrew".to_string()),
+        Query(ManifestQuery { refresh: None }),
+        State(ctx.clone()),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(manifest.is_some());
     assert_eq!(manifest.unwrap().target_key, "homebrew");
 
     // Invalid target
-    let (status_invalid, Json(manifest_invalid)) = get_manifest(Path("invalid_key".to_string()), State(ctx)).await;
+    let (status_invalid, Json(manifest_invalid)) = get_manifest(
+        Path("invalid_key".to_string()),
+        Query(ManifestQuery { refresh: None }),
+        State(ctx),
+    )
+    .await;
     assert_eq!(status_invalid, StatusCode::NOT_FOUND);
     assert!(manifest_invalid.is_none());
 }
@@ -163,4 +175,183 @@ async fn test_update_package_status_and_persistence() {
     let persisted_state: GrowthState = serde_json::from_str(&saved_content).expect("Valid JSON state");
     let persisted_winget = persisted_state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
     assert_eq!(persisted_winget.status, "Merged");
+}
+
+#[tokio::test]
+async fn test_release_info_parser_and_checksum_extraction() {
+    let mock_json = r####"{
+        "tag_name": "v1.2.3",
+        "published_at": "2026-09-10T12:00:00Z",
+        "body": "Release Checksums:\ntendril-v1.2.3-darwin-arm64.tar.gz: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n",
+        "assets": [
+            {
+                "name": "tendril-v1.2.3-darwin-arm64.tar.gz",
+                "browser_download_url": "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.2.3/tendril-v1.2.3-darwin-arm64.tar.gz",
+                "digest": null
+            },
+            {
+                "name": "tendril-v1.2.3-windows-x64.zip",
+                "browser_download_url": "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.2.3/tendril-v1.2.3-windows-x64.zip",
+                "digest": "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+            }
+        ]
+    }"####;
+
+    let release = ReleaseInfo::from_github_json(mock_json).expect("Failed to parse GitHub release JSON");
+    assert_eq!(release.tag_name, "v1.2.3");
+    assert_eq!(release.version, "1.2.3");
+    assert_eq!(release.assets.len(), 2);
+
+    let darwin_asset = release.assets.iter().find(|a| a.name.contains("darwin-arm64")).unwrap();
+    assert_eq!(
+        darwin_asset.sha256.as_deref(),
+        Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    );
+
+    let win_asset = release.assets.iter().find(|a| a.name.contains("windows-x64")).unwrap();
+    assert_eq!(
+        win_asset.sha256.as_deref(),
+        Some("2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae")
+    );
+}
+
+#[tokio::test]
+async fn test_dynamic_manifest_generation_homebrew() {
+    let release = ReleaseInfo {
+        tag_name: "v1.4.2".to_string(),
+        version: "1.4.2".to_string(),
+        assets: vec![
+            ReleaseAsset {
+                name: "tendril-v1.4.2-darwin-arm64.tar.gz".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.4.2/tendril-v1.4.2-darwin-arm64.tar.gz".to_string(),
+                digest: Some("sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string()),
+                sha256: Some("1111111111111111111111111111111111111111111111111111111111111111".to_string()),
+            },
+            ReleaseAsset {
+                name: "tendril-v1.4.2-darwin-x64.tar.gz".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.4.2/tendril-v1.4.2-darwin-x64.tar.gz".to_string(),
+                digest: Some("sha256:2222222222222222222222222222222222222222222222222222222222222222".to_string()),
+                sha256: Some("2222222222222222222222222222222222222222222222222222222222222222".to_string()),
+            },
+        ],
+        published_at: None,
+        fetched_at: chrono::Utc::now(),
+    };
+
+    let brew = generate_manifest_content("homebrew", &release).expect("Manifest missing");
+    assert!(brew.content.contains("version \"1.4.2\""));
+    assert!(brew.content.contains("1111111111111111111111111111111111111111111111111111111111111111"));
+    assert!(brew.content.contains("2222222222222222222222222222222222222222222222222222222222222222"));
+    assert!(brew.content.contains("v1.4.2"));
+    assert_eq!(brew.release_tag, Some("v1.4.2".to_string()));
+}
+
+#[tokio::test]
+async fn test_dynamic_manifest_generation_winget() {
+    let release = ReleaseInfo {
+        tag_name: "v1.5.0".to_string(),
+        version: "1.5.0".to_string(),
+        assets: vec![
+            ReleaseAsset {
+                name: "tendril-v1.5.0-windows-x64.zip".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.5.0/tendril-v1.5.0-windows-x64.zip".to_string(),
+                digest: Some("sha256:3333333333333333333333333333333333333333333333333333333333333333".to_string()),
+                sha256: Some("3333333333333333333333333333333333333333333333333333333333333333".to_string()),
+            },
+            ReleaseAsset {
+                name: "tendril-v1.5.0-windows-arm64.zip".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.5.0/tendril-v1.5.0-windows-arm64.zip".to_string(),
+                digest: Some("sha256:4444444444444444444444444444444444444444444444444444444444444444".to_string()),
+                sha256: Some("4444444444444444444444444444444444444444444444444444444444444444".to_string()),
+            },
+        ],
+        published_at: None,
+        fetched_at: chrono::Utc::now(),
+    };
+
+    let winget = generate_manifest_content("winget", &release).expect("Manifest missing");
+    assert!(winget.content.contains("PackageVersion: 1.5.0"));
+    assert!(winget.content.contains("InstallerSha256: 3333333333333333333333333333333333333333333333333333333333333333"));
+    assert!(winget.content.contains("InstallerSha256: 4444444444444444444444444444444444444444444444444444444444444444"));
+    assert!(winget.instructions.contains("1.5.0"));
+}
+
+#[tokio::test]
+async fn test_dynamic_manifest_generation_scoop() {
+    let release = ReleaseInfo {
+        tag_name: "v1.5.0".to_string(),
+        version: "1.5.0".to_string(),
+        assets: vec![
+            ReleaseAsset {
+                name: "tendril-v1.5.0-windows-x64.zip".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.5.0/tendril-v1.5.0-windows-x64.zip".to_string(),
+                digest: Some("sha256:5555555555555555555555555555555555555555555555555555555555555555".to_string()),
+                sha256: Some("5555555555555555555555555555555555555555555555555555555555555555".to_string()),
+            },
+            ReleaseAsset {
+                name: "tendril-v1.5.0-windows-arm64.zip".to_string(),
+                browser_download_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/releases/download/v1.5.0/tendril-v1.5.0-windows-arm64.zip".to_string(),
+                digest: Some("sha256:6666666666666666666666666666666666666666666666666666666666666666".to_string()),
+                sha256: Some("6666666666666666666666666666666666666666666666666666666666666666".to_string()),
+            },
+        ],
+        published_at: None,
+        fetched_at: chrono::Utc::now(),
+    };
+
+    let scoop = generate_manifest_content("scoop", &release).expect("Manifest missing");
+    assert!(scoop.content.contains("\"version\": \"1.5.0\""));
+    assert!(scoop.content.contains("\"hash\": \"5555555555555555555555555555555555555555555555555555555555555555\""));
+    assert!(scoop.content.contains("\"hash\": \"6666666666666666666666666666666666666666666666666666666666666666\""));
+}
+
+#[tokio::test]
+async fn test_dynamic_manifest_generation_npx() {
+    let release = ReleaseInfo {
+        tag_name: "v2.0.0".to_string(),
+        version: "2.0.0".to_string(),
+        assets: vec![],
+        published_at: None,
+        fetched_at: chrono::Utc::now(),
+    };
+
+    let npx = generate_manifest_content("npx", &release).expect("Manifest missing");
+    assert!(npx.content.contains("\"version\": \"2.0.0\""));
+}
+
+#[tokio::test]
+async fn test_manifest_endpoint_with_refresh_query() {
+    let ctx = create_test_context();
+
+    let (status, Json(manifest)) = get_manifest(
+        Path("homebrew".to_string()),
+        Query(ManifestQuery { refresh: Some(true) }),
+        State(ctx.clone()),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(manifest.is_some());
+    let m = manifest.unwrap();
+    assert_eq!(m.target_key, "homebrew");
+    assert!(m.release_tag.is_some());
+}
+
+#[tokio::test]
+async fn test_release_cache_fallback_on_network_error() {
+    let ctx = create_test_context();
+
+    // Even if external network fails or repo is invalid, fallback to cached or default
+    let (status, Json(manifest)) = get_manifest(
+        Path("winget".to_string()),
+        Query(ManifestQuery { refresh: Some(true) }),
+        State(ctx.clone()),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(manifest.is_some());
+    let m = manifest.unwrap();
+    assert_eq!(m.target_key, "winget");
+    assert!(m.content.contains("PackageIdentifier: Ivy.Tendril"));
 }

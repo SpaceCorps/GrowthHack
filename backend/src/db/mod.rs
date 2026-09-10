@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::api::packages::ReleaseInfo;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthIssue {
@@ -162,6 +163,8 @@ pub struct GrowthState {
     pub syndication_settings: SyndicationSettings,
     #[serde(default)]
     pub packages: Vec<PackageManagerTarget>,
+    #[serde(default)]
+    pub latest_release: Option<ReleaseInfo>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -629,6 +632,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             video_demos,
             syndication_settings: SyndicationSettings::default(),
             packages,
+            latest_release: None,
         }
     }
 

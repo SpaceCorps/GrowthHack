@@ -105,6 +105,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
+        .route("/api/packages/refresh-release", post(packages::refresh_release))
         .route("/api/packages/{id}/status", put(packages::update_package_status))
         // PR Badges and Workflows Flywheel
         .route("/api/badges/generate", post(badges::generate_badge))
