@@ -24,6 +24,17 @@ pub struct SynthesizeTrendRequest {
     pub channel: Option<String>,        // "Website", "LinkedIn", "Reddit"
 }
 
+#[derive(Deserialize, Default)]
+pub struct UpdateTrendRequest {
+    pub status: Option<String>,
+    pub topic: Option<String>,
+    pub summary: Option<String>,
+    pub tendril_tie_in: Option<String>,
+    pub source: Option<String>,
+    pub url: Option<String>,
+    pub engagement: Option<String>,
+}
+
 #[derive(Serialize)]
 pub struct TrendActionResponse {
     pub task_id: String,
@@ -182,6 +193,69 @@ pub fn parse_scouted_topics(raw: &str) -> Vec<ScoutedItem> {
 pub async fn list_trends(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
     let state = ctx.state.read().await;
     Json(state.trends.clone())
+}
+
+pub async fn get_trend(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> Result<Json<crate::db::TrendTopic>, StatusCode> {
+    let state = ctx.state.read().await;
+    match state.trends.iter().find(|t| t.id == id) {
+        Some(trend) => Ok(Json(trend.clone())),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+pub async fn update_trend(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<UpdateTrendRequest>,
+) -> Result<Json<crate::db::TrendTopic>, StatusCode> {
+    let mut state = ctx.state.write().await;
+    match state.trends.iter_mut().find(|t| t.id == id) {
+        Some(trend) => {
+            if let Some(status) = payload.status {
+                trend.status = status;
+            }
+            if let Some(topic) = payload.topic {
+                trend.topic = topic;
+            }
+            if let Some(summary) = payload.summary {
+                trend.summary = summary;
+            }
+            if let Some(tie_in) = payload.tendril_tie_in {
+                trend.tendril_tie_in = tie_in;
+            }
+            if let Some(source) = payload.source {
+                trend.source = source;
+            }
+            if let Some(url) = payload.url {
+                trend.url = url;
+            }
+            if let Some(engagement) = payload.engagement {
+                trend.engagement = engagement;
+            }
+            let updated = trend.clone();
+            let _ = state.save(&ctx.data_file);
+            Ok(Json(updated))
+        }
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+pub async fn delete_trend(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> Result<StatusCode, StatusCode> {
+    let mut state = ctx.state.write().await;
+    let initial_len = state.trends.len();
+    state.trends.retain(|t| t.id != id);
+    if state.trends.len() < initial_len {
+        let _ = state.save(&ctx.data_file);
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
 }
 
 pub async fn scout_trends(

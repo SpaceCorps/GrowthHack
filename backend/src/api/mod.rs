@@ -28,9 +28,12 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/articles/{id}/format/{channel}", get(articles::format_article_channel))
         .route("/api/articles/{id}/record-export", post(articles::record_export))
         // Feature Video Demos & LinkedIn
+        .route("/api/demos", get(demos::list_demos).post(demos::create_demo))
+        .route("/api/demos/{id}", get(demos::get_demo).put(demos::update_demo).delete(demos::delete_demo))
         .route("/api/demos/generate", post(demos::generate_feature_demo))
         // Trends Radar & Newsroom
         .route("/api/trends", get(trends::list_trends))
+        .route("/api/trends/{id}", get(trends::get_trend).put(trends::update_trend).delete(trends::delete_trend))
         .route("/api/trends/scout", post(trends::scout_trends))
         .route("/api/trends/{id}/synthesize", post(trends::synthesize_trend))
         // Listings & Awesome Blitz
