@@ -5,6 +5,7 @@ import type {
   Article,
   GrowthIssue,
   Listing,
+  PackageManagerTarget,
   ReviewItem,
   TrendTopic,
 } from "./types";
@@ -15,6 +16,7 @@ import { IssuesHub } from "./views/IssuesHub";
 import { ArticleEngine } from "./views/ArticleEngine";
 import { TrendRadar } from "./views/TrendRadar";
 import { ListingBlitz } from "./views/ListingBlitz";
+import { PackageManagerBlitz } from "./views/PackageManagerBlitz";
 import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
@@ -33,6 +35,7 @@ export const App: React.FC = () => {
       "trends",
       "demos",
       "listings",
+      "packages",
       "agent",
       "review",
     ];
@@ -51,6 +54,7 @@ export const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [trends, setTrends] = useState<TrendTopic[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -63,17 +67,20 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resStatus] = await Promise.all([
-        fetch("/api/issues").then((r) => r.json()),
-        fetch("/api/articles").then((r) => r.json()),
-        fetch("/api/trends").then((r) => r.json()),
-        fetch("/api/listings").then((r) => r.json()),
-        fetch("/api/agent/status").then((r) => r.json()),
-      ]);
+      const [resIssues, resArticles, resTrends, resListings, resPackages, resStatus] =
+        await Promise.all([
+          fetch("/api/issues").then((r) => r.json()),
+          fetch("/api/articles").then((r) => r.json()),
+          fetch("/api/trends").then((r) => r.json()),
+          fetch("/api/listings").then((r) => r.json()),
+          fetch("/api/packages").then((r) => r.json()),
+          fetch("/api/agent/status").then((r) => r.json()),
+        ]);
       setIssues(resIssues);
       setArticles(resArticles);
       setTrends(resTrends);
       setListings(resListings);
+      setPackages(resPackages);
       setAgentStatus(resStatus);
 
       if (initialArticleId && !selectedArticle) {
@@ -98,6 +105,7 @@ export const App: React.FC = () => {
         "trends",
         "demos",
         "listings",
+        "packages",
         "agent",
         "review",
       ];
@@ -308,6 +316,22 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleUpdatePackageStatus = async (
+    id: string,
+    payload: { status?: string; pr_url?: string; notes?: string },
+  ) => {
+    try {
+      await fetch(`/api/packages/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      fetchAll();
+    } catch (err) {
+      console.error("Update package status error:", err);
+    }
+  };
+
   const handleGenerateDemo = async (feature: string, platform: string, duration: number) => {
     try {
       const res = await fetch("/api/demos/generate", {
@@ -496,6 +520,7 @@ export const App: React.FC = () => {
         articlesCount={articles.length}
         trendsCount={trends.length}
         listingsCount={listings.length}
+        packagesCount={packages.length}
         reviewCount={pendingReviewCount}
       />
 
@@ -550,6 +575,13 @@ export const App: React.FC = () => {
             onGenerateBlurb={handleGenerateBlurb}
             onUpdateStatus={handleUpdateListingStatus}
             onCreateListing={handleCreateListing}
+          />
+        )}
+
+        {activeTab === "packages" && (
+          <PackageManagerBlitz
+            packages={packages}
+            onUpdatePackageStatus={handleUpdatePackageStatus}
           />
         )}
 
