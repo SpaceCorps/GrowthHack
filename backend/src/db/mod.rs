@@ -132,6 +132,22 @@ pub struct VideoDemo {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PackageManagerTarget {
+    pub id: String,
+    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
+    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
+    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub install_command: String,
+    pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
+    pub pr_url: Option<String>,
+    pub manifest_filename: String, // "tendril.rb", "Ivy.Tendril.yaml", "tendril.json", "package.json"
+    pub notes: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
     pub articles: Vec<Article>,
@@ -142,6 +158,8 @@ pub struct GrowthState {
     pub video_demos: Vec<VideoDemo>,
     #[serde(default)]
     pub syndication_settings: SyndicationSettings,
+    #[serde(default)]
+    pub packages: Vec<PackageManagerTarget>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -157,6 +175,10 @@ impl GrowthState {
                         let _ = state.save(path);
                     }
                     tracing::info!("Loaded growth database from {}", path.display());
+                    if state.packages.is_empty() {
+                        state.packages = Self::seed_packages(Utc::now());
+                        let _ = state.save(path);
+                    }
                     return state;
                 }
             }
@@ -531,6 +553,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
         let listings = Self::seed_listings(now);
 
         let tasks = Vec::new();
+        let packages = Self::seed_packages(now);
 
         let video_demos = vec![
             VideoDemo {
@@ -603,6 +626,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             tasks,
             video_demos,
             syndication_settings: SyndicationSettings::default(),
+            packages,
         }
     }
 
@@ -1187,6 +1211,67 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 pr_url: None,
                 submission_blurb: "How we built an open source software factory: Ivy-Tendril product stack.".to_string(),
                 notes: "Indie Hackers product directory.".to_string(),
+                updated_at: now,
+            },
+        ]
+    }
+
+    pub fn seed_packages(now: DateTime<Utc>) -> Vec<PackageManagerTarget> {
+        vec![
+            PackageManagerTarget {
+                id: "pkg-homebrew".to_string(),
+                target_key: "homebrew".to_string(),
+                name: "Homebrew (tap & core)".to_string(),
+                os: "macOS / Linux".to_string(),
+                registry_repo: "ivy-interactive/homebrew-tap".to_string(),
+                package_id: "tendril".to_string(),
+                install_command: "brew install ivy-interactive/tap/tendril".to_string(),
+                status: "PR Submitted".to_string(),
+                pr_url: Some("https://github.com/ivy-interactive/homebrew-tap/pull/1".to_string()),
+                manifest_filename: "tendril.rb".to_string(),
+                notes: "Official tap formula with dual arm64/x86_64 bottles and shell completions. homebrew-core submission pending 50 stars.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-winget".to_string(),
+                target_key: "winget".to_string(),
+                name: "Windows Package Manager (winget)".to_string(),
+                os: "Windows".to_string(),
+                registry_repo: "microsoft/winget-pkgs".to_string(),
+                package_id: "Ivy.Tendril".to_string(),
+                install_command: "winget install Ivy.Tendril".to_string(),
+                status: "PR Submitted".to_string(),
+                pr_url: Some("https://github.com/microsoft/winget-pkgs/pull/189204".to_string()),
+                manifest_filename: "Ivy.Tendril.yaml".to_string(),
+                notes: "Singleton manifest schema v1.6.0 with MSIX/portable zip installers.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-scoop".to_string(),
+                target_key: "scoop".to_string(),
+                name: "Scoop (Extras)".to_string(),
+                os: "Windows".to_string(),
+                registry_repo: "ScoopInstaller/Extras".to_string(),
+                package_id: "tendril".to_string(),
+                install_command: "scoop bucket add extras && scoop install tendril".to_string(),
+                status: "Under Review".to_string(),
+                pr_url: Some("https://github.com/ScoopInstaller/Extras/pull/14522".to_string()),
+                manifest_filename: "tendril.json".to_string(),
+                notes: "Submitted to Scoop Extras bucket with autoupdate checkver hashes.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-npx".to_string(),
+                target_key: "npx".to_string(),
+                name: "npx Zero-Install".to_string(),
+                os: "Cross-Platform".to_string(),
+                registry_repo: "npm".to_string(),
+                package_id: "@ivy-interactive/tendril".to_string(),
+                install_command: "npx @ivy-interactive/tendril".to_string(),
+                status: "Live".to_string(),
+                pr_url: None,
+                manifest_filename: "package.json".to_string(),
+                notes: "Sub-60-second time-to-first-run zero-install launcher published on npm.".to_string(),
                 updated_at: now,
             },
         ]

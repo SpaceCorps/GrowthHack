@@ -6,6 +6,7 @@ import {
   Radio,
   Clapperboard,
   ListTree,
+  Package,
   Terminal,
   Sparkles,
   Star,
@@ -22,6 +23,7 @@ interface NavigationProps {
   articlesCount: number;
   trendsCount: number;
   listingsCount: number;
+  packagesCount?: number;
   reviewCount?: number;
 }
 
@@ -33,6 +35,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   articlesCount,
   trendsCount,
   listingsCount,
+  packagesCount,
   reviewCount,
 }) => {
   const navItems = [
@@ -70,6 +73,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Listing & Repo Blitz",
       icon: ListTree,
       count: listingsCount,
+    },
+    {
+      id: "packages" as ActiveTab,
+      label: "Package Blitz",
+      icon: Package,
+      count: packagesCount,
     },
     {
       id: "flywheel" as ActiveTab,
