@@ -5,6 +5,7 @@ import type {
   Article,
   GrowthIssue,
   Listing,
+  PackageManagerTarget,
   ReviewItem,
   TrendTopic,
   VideoDemo,
@@ -16,6 +17,7 @@ import { IssuesHub } from "./views/IssuesHub";
 import { ArticleEngine } from "./views/ArticleEngine";
 import { TrendRadar } from "./views/TrendRadar";
 import { ListingBlitz } from "./views/ListingBlitz";
+import { PackageManagerBlitz } from "./views/PackageManagerBlitz";
 import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
@@ -35,6 +37,7 @@ export const App: React.FC = () => {
       "trends",
       "demos",
       "listings",
+      "packages",
       "agent",
       "review",
       "flywheel",
@@ -54,6 +57,7 @@ export const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [trends, setTrends] = useState<TrendTopic[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
 
   // Live Terminal & Modal State
@@ -67,12 +71,13 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resStatus, resDemos] =
+      const [resIssues, resArticles, resTrends, resListings, resPackages, resStatus, resDemos] =
         await Promise.all([
           fetch("/api/issues").then((r) => r.json()),
           fetch("/api/articles").then((r) => r.json()),
           fetch("/api/trends").then((r) => r.json()),
           fetch("/api/listings").then((r) => r.json()),
+          fetch("/api/packages").then((r) => r.json()),
           fetch("/api/agent/status").then((r) => r.json()),
           fetch("/api/demos").then((r) => r.json()),
         ]);
@@ -80,6 +85,7 @@ export const App: React.FC = () => {
       setArticles(resArticles);
       setTrends(resTrends);
       setListings(resListings);
+      setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
 
@@ -105,6 +111,7 @@ export const App: React.FC = () => {
         "trends",
         "demos",
         "listings",
+        "packages",
         "agent",
         "review",
         "flywheel",
@@ -331,6 +338,59 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleBatchGenerateBlurbs = async (category?: string, listingIds?: string[]) => {
+    try {
+      const res = await fetch("/api/listings/generate-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: category === "all" ? undefined : category,
+          listing_ids: listingIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_ids && data.task_ids.length > 0) {
+        setTerminalTitle(`Batch Blurb Generation (${data.targeted_count} targets)`);
+        setActiveTaskId(data.task_ids[0]);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Batch generate blurbs error:", err);
+      throw err;
+    }
+  };
+
+  const handleVerifyBacklink = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/verify-backlink`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Verify backlink error:", err);
+      throw err;
+    }
+  };
+
+  const handleUpdatePackageStatus = async (
+    id: string,
+    payload: { status?: string; pr_url?: string; notes?: string },
+  ) => {
+    try {
+      await fetch(`/api/packages/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      fetchAll();
+    } catch (err) {
+      console.error("Update package status error:", err);
+    }
+  };
+
   const handleGenerateDemo = async (feature: string, platform: string, duration: number) => {
     try {
       const res = await fetch("/api/demos/generate", {
@@ -482,7 +542,7 @@ export const App: React.FC = () => {
       rawId: trend.id,
     }));
 
-    const listingItems: ReviewItem[] = listings
+    const dynamicListingItems: ReviewItem[] = listings
       .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
       .map((l) => ({
         id: `listing-${l.id}`,
@@ -503,6 +563,11 @@ export const App: React.FC = () => {
         createdAt: l.updated_at,
         rawId: l.id,
       }));
+
+    const listingItems =
+      dynamicListingItems.length > 0
+        ? dynamicListingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb");
 
     setReviewItems([
       ...articleItems,
@@ -704,6 +769,7 @@ export const App: React.FC = () => {
         articlesCount={articles.length}
         trendsCount={trends.length}
         listingsCount={listings.length}
+        packagesCount={packages.length}
         reviewCount={pendingReviewCount}
       />
 
@@ -758,9 +824,17 @@ export const App: React.FC = () => {
             onGenerateBlurb={handleGenerateBlurb}
             onUpdateStatus={handleUpdateListingStatus}
             onCreateListing={handleCreateListing}
+            onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+            onVerifyBacklink={handleVerifyBacklink}
           />
         )}
 
+        {activeTab === "packages" && (
+          <PackageManagerBlitz
+            packages={packages}
+            onUpdatePackageStatus={handleUpdatePackageStatus}
+          />
+        )}
         {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
