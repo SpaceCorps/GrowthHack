@@ -2202,15 +2202,12 @@ mod tests {
         };
         growth_state.articles.push(article);
 
-        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
-        let task_manager = crate::agent::TaskManager::new(runner);
         let ctx = std::sync::Arc::new(AppContext {
             state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
-            task_manager,
             data_file,
             ivy_web_content_path: content_dir.clone(),
             ivy_web_images_path: images_dir.clone(),
-            config: crate::config::Config::load(),
+            ..AppContext::new_test()
         });
 
         let req = ExportIvyWebRequest {
@@ -2260,15 +2257,12 @@ mod tests {
         };
         growth_state.articles.push(article);
 
-        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
-        let task_manager = crate::agent::TaskManager::new(runner);
         let ctx = std::sync::Arc::new(AppContext {
             state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
-            task_manager,
             data_file,
             ivy_web_content_path: temp_dir.join("content"),
             ivy_web_images_path: images_dir.clone(),
-            config: crate::config::Config::load(),
+            ..AppContext::new_test()
         });
 
         let req = SyncAssetsRequest {
@@ -2358,15 +2352,12 @@ mod tests {
         };
         growth_state.articles.push(article);
 
-        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
-        let task_manager = crate::agent::TaskManager::new(runner);
         let ctx = std::sync::Arc::new(AppContext {
             state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
-            task_manager,
             data_file,
             ivy_web_content_path: temp_dir.join("content"),
             ivy_web_images_path: images_dir,
-            config: crate::config::Config::load(),
+            ..AppContext::new_test()
         });
 
         let resp = get_hero_banner_svg(
@@ -2416,15 +2407,12 @@ mod tests {
         };
         growth_state.articles.push(article);
 
-        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
-        let task_manager = crate::agent::TaskManager::new(runner);
         let ctx = std::sync::Arc::new(AppContext {
             state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
-            task_manager,
             data_file,
             ivy_web_content_path: temp_dir.join("content"),
             ivy_web_images_path: images_dir.clone(),
-            config: crate::config::Config::load(),
+            ..AppContext::new_test()
         });
 
         // 1x1 transparent PNG base64 payload

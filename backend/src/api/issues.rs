@@ -23,6 +23,41 @@ pub struct AppContext {
     pub config: Config,
 }
 
+impl Default for AppContext {
+    fn default() -> Self {
+        let temp_dir = std::env::temp_dir();
+        let file_id = uuid::Uuid::new_v4().simple().to_string();
+        let data_file = temp_dir.join(format!("test_growth_data_{}.json", file_id));
+        Self {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::db::GrowthState::seed_default(),
+            )),
+            task_manager: crate::agent::TaskManager::new(crate::agent::AgentRunner::new(
+                std::path::PathBuf::from("agy"),
+            )),
+            data_file,
+            ivy_web_content_path: temp_dir.clone(),
+            ivy_web_images_path: temp_dir,
+            config: crate::config::Config::default(),
+        }
+    }
+}
+
+impl AppContext {
+    pub fn new_test() -> Self {
+        Self::default()
+    }
+
+    pub fn new_test_context() -> (std::sync::Arc<Self>, std::path::PathBuf) {
+        let ctx = Self::default();
+        let data_file = ctx.data_file.clone();
+        if let Ok(state) = ctx.state.try_read() {
+            let _ = state.save(&data_file);
+        }
+        (std::sync::Arc::new(ctx), data_file)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct CreateIssueRequest {
     pub title: String,
@@ -159,4 +194,32 @@ pub async fn run_issue(
             message: "Agent task started".to_string(),
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_context_default() {
+        let ctx = AppContext::default();
+        assert!(!ctx.data_file.to_string_lossy().is_empty());
+        assert!(!ctx.ivy_web_content_path.to_string_lossy().is_empty());
+        assert!(!ctx.ivy_web_images_path.to_string_lossy().is_empty());
+        assert_eq!(ctx.config.port, 4200);
+        let state_guard = ctx.state.try_read();
+        assert!(state_guard.is_ok());
+        let state = state_guard.unwrap();
+        assert!(!state.issues.is_empty());
+    }
+
+    #[test]
+    fn test_app_context_new_test_context_persists_data_file() {
+        let (ctx, data_file) = AppContext::new_test_context();
+        assert!(data_file.exists());
+        assert_eq!(ctx.data_file, data_file);
+        let content = std::fs::read_to_string(&data_file).unwrap();
+        assert!(content.contains("issues"));
+        let _ = std::fs::remove_file(data_file);
+    }
 }
