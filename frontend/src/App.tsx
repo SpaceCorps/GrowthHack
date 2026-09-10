@@ -22,6 +22,7 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 import { PrFlywheel } from "./views/PrFlywheel";
+import { DoctorDemo } from "./views/DoctorDemo";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -41,6 +42,7 @@ export const App: React.FC = () => {
       "agent",
       "review",
       "flywheel",
+      "doctor",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -844,6 +846,8 @@ export const App: React.FC = () => {
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
+
+        {activeTab === "doctor" && <DoctorDemo />}
       </main>
 
       {/* Floating Live Terminal for Real-Time Streaming */}

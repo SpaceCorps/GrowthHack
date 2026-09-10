@@ -13,6 +13,7 @@ import {
   Cpu,
   CheckCheck,
   GitPullRequest,
+  Activity,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -89,6 +90,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: "agent" as ActiveTab,
       label: "Antigravity Console",
       icon: Terminal,
+    },
+    {
+      id: "doctor" as ActiveTab,
+      label: "Doctor & Demo",
+      icon: Activity,
     },
   ];
 
