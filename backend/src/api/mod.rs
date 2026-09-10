@@ -25,6 +25,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/articles/generate", post(articles::generate_article))
         .route("/api/articles/generate-spotlight", post(articles::generate_spotlight))
         .route("/api/articles/{id}/export/ivy-web", post(articles::export_ivy_web))
+        .route("/api/articles/{id}/sync-assets", post(articles::sync_assets))
         .route("/api/articles/{id}/format/{channel}", get(articles::format_article_channel))
         .route("/api/articles/{id}/record-export", post(articles::record_export))
         // Feature Video Demos & LinkedIn

@@ -35,7 +35,33 @@ export interface Article {
   created_at: string;
   published_at?: string;
   slug?: string;
+  image_path?: string;
   exports?: ExportRecord[];
+}
+
+export interface ExportIvyWebRequest {
+  target_dir?: string;
+  target_images_dir?: string;
+  sync_hero_image?: boolean;
+}
+
+export interface ExportIvyWebResponse {
+  success: boolean;
+  file_path: string;
+  slug: string;
+  post_content: string;
+  record: ExportRecord;
+  image_path?: string;
+}
+
+export interface SyncAssetsRequest {
+  target_images_dir?: string;
+}
+
+export interface SyncAssetsResponse {
+  success: boolean;
+  image_path: string;
+  slug: string;
 }
 
 export interface ReviewItem {

@@ -755,9 +755,42 @@ Star the repo on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril ⚡"#,
     }
 }
 
+pub const DEFAULT_HERO_IMAGE: &[u8] = include_bytes!("../../../frontend/src/assets/hero.png");
+
+pub fn sync_hero_asset(
+    slug: &str,
+    target_images_dir: &std::path::Path,
+    title: &str,
+    category: &str,
+) -> Result<std::path::PathBuf, std::io::Error> {
+    tracing::info!(
+        "Syncing hero asset for article '{}' (slug: '{}', category: '{}')",
+        title,
+        slug,
+        category
+    );
+
+    let blog_dir = if target_images_dir
+        .file_name()
+        .and_then(|f| f.to_str())
+        == Some("blog")
+    {
+        target_images_dir.to_path_buf()
+    } else {
+        target_images_dir.join("blog")
+    };
+
+    std::fs::create_dir_all(&blog_dir)?;
+    let dest_file = blog_dir.join(format!("{}-hero.png", slug));
+    std::fs::write(&dest_file, DEFAULT_HERO_IMAGE)?;
+    Ok(dest_file)
+}
+
 #[derive(Deserialize, Default)]
 pub struct ExportIvyWebRequest {
     pub target_dir: Option<String>,
+    pub target_images_dir: Option<String>,
+    pub sync_hero_image: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -767,6 +800,19 @@ pub struct ExportIvyWebResponse {
     pub slug: String,
     pub post_content: String,
     pub record: ExportRecord,
+    pub image_path: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct SyncAssetsRequest {
+    pub target_images_dir: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SyncAssetsResponse {
+    pub success: bool,
+    pub image_path: String,
+    pub slug: String,
 }
 
 #[derive(Serialize)]
@@ -820,6 +866,28 @@ pub async fn export_ivy_web(
             );
         }
 
+        let sync_hero = payload.sync_hero_image.unwrap_or(true);
+        let mut image_path_str = None;
+
+        if sync_hero {
+            let images_dir = payload
+                .target_images_dir
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+
+            match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
+                Ok(img_path) => {
+                    image_path_str = Some(img_path.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) })),
+                    );
+                }
+            }
+        }
+
         let now = Utc::now();
         let record = ExportRecord {
             channel: "ivy-web".to_string(),
@@ -839,8 +907,48 @@ pub async fn export_ivy_web(
                 slug,
                 post_content,
                 record,
+                image_path: image_path_str,
             }).unwrap()),
         )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found" })),
+        )
+    }
+}
+
+pub async fn sync_assets(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    payload: Option<Json<SyncAssetsRequest>>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    if let Some(article) = state.articles.iter().find(|a| a.id == id) {
+        let slug = article
+            .slug
+            .clone()
+            .unwrap_or_else(|| slugify(&article.title));
+
+        let images_dir = payload
+            .and_then(|p| p.0.target_images_dir)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+
+        match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
+            Ok(img_path) => (
+                StatusCode::OK,
+                Json(serde_json::to_value(SyncAssetsResponse {
+                    success: true,
+                    image_path: img_path.to_string_lossy().to_string(),
+                    slug,
+                }).unwrap()),
+            ),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) })),
+            ),
+        }
     } else {
         (
             StatusCode::NOT_FOUND,
@@ -1220,5 +1328,143 @@ mod tests {
             assert!(!title.is_empty(), "Archetype title should not be empty for {}", a);
             assert!(!guide.is_empty(), "Archetype guide should not be empty for {}", a);
         }
+    }
+
+    #[test]
+    fn test_sync_hero_asset_writes_png() {
+        let temp_dir = std::env::temp_dir().join("test_sync_hero_asset");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        let slug = "test-article-slug";
+        let res = sync_hero_asset(slug, &temp_dir, "Test Title", "Architecture");
+        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+
+        let created_path = res.unwrap();
+        assert!(created_path.exists(), "Synced file must exist");
+        assert!(created_path.ends_with("test-article-slug-hero.png"));
+        let bytes = std::fs::read(&created_path).expect("Read created hero image");
+        assert_eq!(bytes, DEFAULT_HERO_IMAGE);
+
+        // Also test when target_images_dir already ends with 'blog'
+        let blog_dir = temp_dir.join("blog");
+        let res2 = sync_hero_asset("test-2", &blog_dir, "Title 2", "Tutorial");
+        assert!(res2.is_ok());
+        let created_path2 = res2.unwrap();
+        assert!(created_path2.exists());
+        assert_eq!(created_path2, blog_dir.join("test-2-hero.png"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_export_ivy_web_syncs_hero_image() {
+        let temp_dir = std::env::temp_dir().join("test_export_ivy_web");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let content_dir = temp_dir.join("content");
+        let images_dir = temp_dir.join("public/site/images");
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let article = Article {
+            id: "art-test-1".to_string(),
+            title: "Test Syncing Article".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Testing hero sync".to_string(),
+            content: "## Body Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: chrono::Utc::now(),
+            published_at: None,
+            slug: Some("test-syncing-article".to_string()),
+            exports: vec![],
+        };
+        growth_state.articles.push(article);
+
+        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
+        let task_manager = crate::agent::TaskManager::new(runner);
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            task_manager,
+            data_file,
+            ivy_web_content_path: content_dir.clone(),
+            ivy_web_images_path: images_dir.clone(),
+        });
+
+        let req = ExportIvyWebRequest {
+            target_dir: Some(content_dir.to_string_lossy().to_string()),
+            target_images_dir: Some(images_dir.to_string_lossy().to_string()),
+            sync_hero_image: Some(true),
+        };
+
+        let resp = export_ivy_web(
+            axum::extract::Path("art-test-1".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Json(req),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        assert!(content_dir.join("test-syncing-article.mdoc").exists());
+        assert!(images_dir.join("blog/test-syncing-article-hero.png").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_sync_assets_endpoint() {
+        let temp_dir = std::env::temp_dir().join("test_sync_assets_endpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let images_dir = temp_dir.join("public/site/images");
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let article = Article {
+            id: "art-test-2".to_string(),
+            title: "Test Sync Assets Endpoint".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Testing sync assets endpoint".to_string(),
+            content: "## Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: chrono::Utc::now(),
+            published_at: None,
+            slug: Some("test-sync-assets-endpoint".to_string()),
+            exports: vec![],
+        };
+        growth_state.articles.push(article);
+
+        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
+        let task_manager = crate::agent::TaskManager::new(runner);
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            task_manager,
+            data_file,
+            ivy_web_content_path: temp_dir.join("content"),
+            ivy_web_images_path: images_dir.clone(),
+        });
+
+        let req = SyncAssetsRequest {
+            target_images_dir: Some(images_dir.to_string_lossy().to_string()),
+        };
+
+        let resp = sync_assets(
+            axum::extract::Path("art-test-2".to_string()),
+            axum::extract::State(ctx),
+            Some(axum::extract::Json(req)),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        assert!(images_dir.join("blog/test-sync-assets-endpoint-hero.png").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
