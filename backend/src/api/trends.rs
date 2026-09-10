@@ -179,6 +179,74 @@ pub fn parse_scouted_topics(raw: &str) -> Vec<ScoutedItem> {
     fallback_items
 }
 
+pub fn build_scout_prompt(sources: Option<&[String]>) -> String {
+    let source_descriptions: Vec<(String, String)> = match sources {
+        Some(list) if !list.is_empty() => list
+            .iter()
+            .map(|s| {
+                let s_trim = s.trim();
+                let desc = match s_trim.to_lowercase().as_str() {
+                    "github" => "GitHub Trending repositories (e.g. CLI agents, LLM harnesses, coding assistants)".to_string(),
+                    "reddit" => "Reddit discussions (r/LocalLLaMA, r/programming, r/ClaudeAI)".to_string(),
+                    "linkedin" => "Tech LinkedIn / Twitter discussions regarding software engineering automation".to_string(),
+                    _ => format!("{} discussions and trending topics", s_trim),
+                };
+                (s_trim.to_string(), desc)
+            })
+            .collect(),
+        _ => vec![
+            ("GitHub".to_string(), "GitHub Trending repositories (e.g. CLI agents, LLM harnesses, coding assistants)".to_string()),
+            ("Reddit".to_string(), "Reddit discussions (r/LocalLLaMA, r/programming, r/ClaudeAI)".to_string()),
+            ("LinkedIn".to_string(), "Tech LinkedIn / Twitter discussions regarding software engineering automation".to_string()),
+        ],
+    };
+
+    let sources_list = source_descriptions
+        .iter()
+        .enumerate()
+        .map(|(idx, (_, desc))| format!("{}. {}", idx + 1, desc))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let source_names = source_descriptions
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let primary_source = source_descriptions
+        .first()
+        .map(|(name, _)| name.as_str())
+        .unwrap_or("GitHub");
+
+    format!(
+        r#"You are an AI developer relations radar scout.
+Research what is currently trending today in AI engineering, coding agents, and developer tools across:
+{}
+
+Identify 3 high-impact trending topics. For each topic provide:
+- source: ({})
+- topic: headline
+- url: thread or repository URL
+- engagement: stars today, reactions, or comment volume
+- summary: core engineering bottleneck, breakthrough, or excitement
+- tendril_tie_in: "direct", "subtle", or "none"
+
+Respond with a JSON array wrapped in ```json ... ```:
+[
+  {{
+    "source": "{}",
+    "topic": "Trending topic headline",
+    "url": "https://example.com/topic",
+    "engagement": "High signal",
+    "summary": "Core engineering breakdown",
+    "tendril_tie_in": "direct"
+  }}
+]"#,
+        sources_list, source_names, primary_source
+    )
+}
+
 pub async fn list_trends(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
     let state = ctx.state.read().await;
     Json(state.trends.clone())
@@ -190,20 +258,23 @@ pub async fn scout_trends(
 ) -> impl IntoResponse {
     let task_id = format!("task-scout-{}", Uuid::new_v4().simple());
     let mode = payload.mode.as_deref().unwrap_or("general");
-    let sources = payload.sources.clone().unwrap_or_else(|| {
-        if mode == "discussions" {
-            vec!["Reddit".to_string(), "Hacker News".to_string()]
-        } else {
-            vec![
-                "GitHub".to_string(),
-                "Reddit".to_string(),
-                "LinkedIn".to_string(),
-            ]
+
+    let message = match &payload.sources {
+        Some(sources) if !sources.is_empty() => {
+            format!(
+                "Trend scout started for {} with Antigravity",
+                sources.join(", ")
+            )
         }
-    });
-    let sources_str = sources.join(", ");
+        _ => "Trend scout started with Antigravity".to_string(),
+    };
 
     let prompt = if mode == "discussions" {
+        let sources = payload
+            .sources
+            .clone()
+            .unwrap_or_else(|| vec!["Reddit".to_string(), "Hacker News".to_string()]);
+        let sources_str = sources.join(", ");
         format!(
             r#"You are an AI developer relations radar scout specializing in real-time social discussion harvesting.
 Investigate developer discussions, complaints, and pain points across {sources_str} (focusing on r/LocalLLaMA, r/programming, r/ClaudeAI, Hacker News).
@@ -234,29 +305,7 @@ Respond with a JSON array wrapped in ```json ... ```:
 ]"#
         )
     } else {
-        format!(
-            r#"You are an AI developer relations radar scout.
-Research what is currently trending today in AI engineering, coding agents, and developer tools across: {sources_str}.
-Identify 3 high-impact trending topics. For each topic provide:
-- source: e.g. "GitHub", "Reddit", or "LinkedIn"
-- topic: headline
-- url: thread or repository URL
-- engagement: stars today, reactions, or comment volume
-- summary: core engineering bottleneck, breakthrough, or excitement
-- tendril_tie_in: "direct", "subtle", or "none"
-
-Respond with a JSON array wrapped in ```json ... ```:
-[
-  {{
-    "source": "GitHub",
-    "topic": "OpenCode CLI v2 trends on GitHub with native terminal multiplexing",
-    "url": "https://github.com/trending",
-    "engagement": "2.4k stars today",
-    "summary": "High momentum for CLI-first AI coding harnesses, though verification gates remain manual.",
-    "tendril_tie_in": "direct"
-  }}
-]"#
-        )
+        build_scout_prompt(payload.sources.as_deref())
     };
 
     let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
@@ -279,8 +328,7 @@ Respond with a JSON array wrapped in ```json ... ```:
 
                     for item in parsed_items {
                         let topic_clean = item.topic.trim().to_string();
-                        let url_clean =
-                            item.url.as_deref().unwrap_or("").trim().to_string();
+                        let url_clean = item.url.as_deref().unwrap_or("").trim().to_string();
 
                         let is_dup = state.trends.iter().any(|t| {
                             t.topic.trim().eq_ignore_ascii_case(&topic_clean)
@@ -289,8 +337,7 @@ Respond with a JSON array wrapped in ```json ... ```:
                         });
 
                         if !is_dup && !topic_clean.is_empty() {
-                            let source =
-                                item.source.unwrap_or_else(|| "Reddit".to_string());
+                            let source = item.source.unwrap_or_else(|| "Reddit".to_string());
                             let url = if url_clean.is_empty() {
                                 "https://github.com/trending".to_string()
                             } else {
@@ -347,7 +394,7 @@ Respond with a JSON array wrapped in ```json ... ```:
         StatusCode::ACCEPTED,
         Json(TrendActionResponse {
             task_id,
-            message: format!("Trend scout ({}) started with Antigravity", mode),
+            message,
         }),
     )
 }
@@ -375,9 +422,7 @@ pub async fn synthesize_trend(
     let tie_in = payload
         .tendril_tie_in
         .unwrap_or_else(|| trend.tendril_tie_in.clone());
-    let channel = payload
-        .channel
-        .unwrap_or_else(|| "Website".to_string());
+    let channel = payload.channel.unwrap_or_else(|| "Website".to_string());
 
     let task_id = format!("task-syn-{}", Uuid::new_v4().simple());
     let article_id = format!("art-trend-{}", Uuid::new_v4().simple());
@@ -409,7 +454,13 @@ Requirements:
 4. Cite authoritative primary sources and link to the original repository/thread.
 5. Provide a bonus section at the bottom with ready-to-use social posts for LinkedIn and Reddit to promote this article.
 6. Format in clean GitHub-flavored Markdown with YAML frontmatter."#,
-        trend.source, trend.topic, trend.summary, trend.engagement, channel, tie_in, tie_in_instruction
+        trend.source,
+        trend.topic,
+        trend.summary,
+        trend.engagement,
+        channel,
+        tie_in,
+        tie_in_instruction
     );
 
     let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
@@ -460,7 +511,9 @@ Requirements:
                     t.tendril_tie_in = tie_in_clone;
                 }
                 let _ = state.save(&data_file);
-                let _ = tx.send("[SYSTEM] Trend article synthesized and saved to website drafts!".to_string());
+                let _ = tx.send(
+                    "[SYSTEM] Trend article synthesized and saved to website drafts!".to_string(),
+                );
             }
             Err(e) => {
                 let _ = tx.send(format!("[ERROR] Synthesis failed: {}", e));
@@ -475,4 +528,41 @@ Requirements:
             message: "Trend synthesis started with Antigravity".to_string(),
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_scout_prompt_default() {
+        let prompt_none = build_scout_prompt(None);
+        assert!(prompt_none.contains("GitHub"));
+        assert!(prompt_none.contains("Reddit"));
+        assert!(prompt_none.contains("LinkedIn"));
+
+        let empty: Vec<String> = vec![];
+        let prompt_empty = build_scout_prompt(Some(&empty));
+        assert!(prompt_empty.contains("GitHub"));
+        assert!(prompt_empty.contains("Reddit"));
+        assert!(prompt_empty.contains("LinkedIn"));
+    }
+
+    #[test]
+    fn test_build_scout_prompt_single_source() {
+        let sources = vec!["GitHub".to_string()];
+        let prompt = build_scout_prompt(Some(&sources));
+        assert!(prompt.contains("GitHub"));
+        assert!(!prompt.contains("Reddit"));
+        assert!(!prompt.contains("LinkedIn"));
+    }
+
+    #[test]
+    fn test_build_scout_prompt_multiple_sources() {
+        let sources = vec!["Reddit".to_string(), "LinkedIn".to_string()];
+        let prompt = build_scout_prompt(Some(&sources));
+        assert!(!prompt.contains("GitHub"));
+        assert!(prompt.contains("Reddit"));
+        assert!(prompt.contains("LinkedIn"));
+    }
 }

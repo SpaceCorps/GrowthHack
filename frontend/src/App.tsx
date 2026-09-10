@@ -224,19 +224,34 @@ export const App: React.FC = () => {
   };
 
   // Trend Handlers
-  const handleScoutTrends = async (mode: "general" | "discussions" = "general") => {
+  const handleScoutTrends = async (
+    sourcesOrMode?: string[] | "general" | "discussions",
+    optionalMode?: "general" | "discussions",
+  ) => {
+    let mode: "general" | "discussions" = "general";
+    let sources: string[] | undefined = undefined;
+
+    if (Array.isArray(sourcesOrMode)) {
+      sources = sourcesOrMode;
+      if (optionalMode) {
+        mode = optionalMode;
+      }
+    } else if (sourcesOrMode === "discussions" || sourcesOrMode === "general") {
+      mode = sourcesOrMode;
+    }
+
     try {
       const res = await fetch("/api/trends/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, sources }),
       });
       const data = await res.json();
       if (data.task_id) {
         setTerminalTitle(
           mode === "discussions"
             ? "Harvester: Social Discussions (Reddit & HN)"
-            : "Scouting GitHub, Reddit, LinkedIn Trends",
+            : `Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`,
         );
         setActiveTaskId(data.task_id);
       }
