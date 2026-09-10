@@ -11,7 +11,17 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("issues");
+  const searchParams =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const initialTabParam = searchParams?.get("tab") as ActiveTab | null;
+  const initialArticleId = searchParams?.get("article");
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    initialTabParam &&
+      ["issues", "articles", "trends", "demos", "listings", "agent"].includes(initialTabParam)
+      ? initialTabParam
+      : "issues",
+  );
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -24,7 +34,7 @@ export const App: React.FC = () => {
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalTab, setArticleModalTab] = useState<
     "content" | "raw" | "backlinks" | "export"
-  >("content");
+  >((searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export") || "content");
 
   // Initial Data Fetching
   const fetchAll = async () => {
@@ -41,6 +51,13 @@ export const App: React.FC = () => {
       setTrends(resTrends);
       setListings(resListings);
       setAgentStatus(resStatus);
+
+      if (initialArticleId && !selectedArticle) {
+        const found = resArticles.find((a: Article) => a.id === initialArticleId);
+        if (found) {
+          setSelectedArticle(found);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch initial data:", err);
     }
