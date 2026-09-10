@@ -43,6 +43,7 @@ export interface ExportIvyWebRequest {
   target_dir?: string;
   target_images_dir?: string;
   sync_hero_image?: boolean;
+  hero_format?: "dual" | "svg" | "png";
 }
 
 export interface ExportIvyWebResponse {

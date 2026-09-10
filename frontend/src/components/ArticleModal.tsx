@@ -88,6 +88,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
   // Hero Image Asset Synchronization state
   const [syncHeroImage, setSyncHeroImage] = useState<boolean>(true);
+  const [heroFormat, setHeroFormat] = useState<"dual" | "svg" | "png">("dual");
   const [ivyTargetImagesDir, setIvyTargetImagesDir] = useState<string>("");
   const [isSyncingHero, setIsSyncingHero] = useState<boolean>(false);
   const [heroSyncResult, setHeroSyncResult] = useState<{
@@ -116,6 +117,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     setIvyExportResult(null);
     setPublishResult(null);
     setHeroSyncResult(null);
+    setHeroFormat("dual");
     if (article) {
       setBannerTheme(getThemeForCategory(article.angle || article.feature || ""));
       setBannerTitle(article.title || "");
@@ -202,6 +204,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           target_dir: ivyTargetDir.trim() || undefined,
           target_images_dir: ivyTargetImagesDir.trim() || undefined,
           sync_hero_image: syncHeroImage,
+          hero_format: heroFormat,
         }),
       });
 
@@ -742,7 +745,11 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                         Hero Image Asset Synchronization
                       </span>
                       <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-[11px] truncate max-w-xs">
-                        /site/images/blog/{currentSlug}-hero.png
+                        {heroFormat === "svg"
+                          ? `/site/images/blog/${currentSlug}-hero.svg`
+                          : heroFormat === "png"
+                            ? `/site/images/blog/${currentSlug}-hero.png`
+                            : `/site/images/blog/${currentSlug}-hero.{png,svg}`}
                       </span>
                     </div>
 
@@ -792,6 +799,92 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                       />
                     </div>
+                  </div>
+
+                  {/* Hero Asset in Frontmatter Selector */}
+                  <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <label className="text-xs font-semibold text-slate-300">
+                        Hero Asset in Frontmatter
+                      </label>
+                      <span className="text-[11px] text-slate-400">
+                        High-DPI clients render vector SVG banners directly, with PNG fallback for
+                        OpenGraph/social crawlers.
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setHeroFormat("dual")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          heroFormat === "dual"
+                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
+                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                        }`}
+                      >
+                        Dual (PNG + SVG Vector){" "}
+                        <span className="text-[10px] opacity-75 font-normal">(Default)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeroFormat("svg")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          heroFormat === "svg"
+                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
+                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                        }`}
+                      >
+                        Vector SVG (.svg)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeroFormat("png")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          heroFormat === "png"
+                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
+                            : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                        }`}
+                      >
+                        Raster PNG (.png)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Frontmatter / Markdown Live Preview */}
+                  <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-semibold text-slate-300">
+                        Frontmatter / Markdoc Live Preview
+                      </span>
+                      <span className="font-mono text-cyan-400 text-[10px]">
+                        Format: {heroFormat.toUpperCase()}
+                      </span>
+                    </div>
+                    <pre className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed">
+                      {`---
+title: "${article.title.replace(/"/g, '\\"')}"
+slug: "${currentSlug}"
+description: "${article.summary.replace(/"/g, '\\"')}"
+publishedAt: "${(article.published_at || article.created_at).substring(0, 10)}"
+type: "blog"
+status: "published"
+categories:
+  - "${article.angle}"
+tags:
+  - "${article.feature}"
+  - "Ivy"
+  - "DevTools"
+${
+  heroFormat === "svg"
+    ? `image: "/site/images/blog/${currentSlug}-hero.svg"\nimage_svg: "/site/images/blog/${currentSlug}-hero.svg"`
+    : heroFormat === "png"
+      ? `image: "/site/images/blog/${currentSlug}-hero.png"`
+      : `image: "/site/images/blog/${currentSlug}-hero.png"\nimage_svg: "/site/images/blog/${currentSlug}-hero.svg"`
+}
+canonical_url: "https://ivy.interactive/blog/${currentSlug}"
+---`}
+                    </pre>
                   </div>
 
                   {heroSyncResult && (

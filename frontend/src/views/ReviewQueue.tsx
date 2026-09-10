@@ -360,7 +360,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             await fetch(`/api/articles/${item.rawId}/export/ivy-web`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sync_hero_image: true }),
+              body: JSON.stringify({ sync_hero_image: true, hero_format: "dual" }),
             });
           } catch (err) {
             console.error("Batch publish export/sync error for article:", item.title, err);
