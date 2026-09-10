@@ -91,12 +91,28 @@ pub struct AgentTask {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VideoDemo {
+    pub id: String,
+    pub feature: String,
+    pub target_platform: String,
+    pub duration_seconds: u32,
+    pub headline: String,
+    pub body: String,
+    pub storyboard: String,
+    pub status: String, // "Pending", "Approved", "Rejected", "Published"
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
     pub articles: Vec<Article>,
     pub trends: Vec<TrendTopic>,
     pub listings: Vec<Listing>,
     pub tasks: Vec<AgentTask>,
+    #[serde(default)]
+    pub video_demos: Vec<VideoDemo>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -105,7 +121,12 @@ impl GrowthState {
     pub fn load_or_init(path: &Path) -> Self {
         if path.exists() {
             if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(state) = serde_json::from_str::<GrowthState>(&content) {
+                if let Ok(mut state) = serde_json::from_str::<GrowthState>(&content) {
+                    if state.video_demos.is_empty() {
+                        let default = Self::seed_default();
+                        state.video_demos = default.video_demos;
+                        let _ = state.save(path);
+                    }
                     tracing::info!("Loaded growth database from {}", path.display());
                     return state;
                 }
@@ -549,12 +570,76 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
 
         let tasks = Vec::new();
 
+        let video_demos = vec![
+            VideoDemo {
+                id: "demo-1".to_string(),
+                feature: "Git Worktrees".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 30,
+                headline: "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)".to_string(),
+                body: "If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nHere is what we do differently in Ivy-Tendril:\nEvery agent gets its own ephemeral Git worktree.\n\n1️⃣ Agent A edits src/auth.ts in /tendril-task-1\n2️⃣ Agent B runs full test suite in /tendril-task-2\n3️⃣ Zero merge collisions. Zero index locks.\n\nWatch the 30-second demo below ⬇️\n\nCheck it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub".to_string(),
+                storyboard: "00:00 - 00:05: Split terminal showing git collision error in traditional setups.\n00:05 - 00:15: Tendril creates 2 isolated worktrees instantly in the background.\n00:15 - 00:25: Both agents work in parallel; tests pass without contention.\n00:25 - 00:30: Verification badge and pull request opened. Tendril GitHub star CTA.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+            VideoDemo {
+                id: "demo-2".to_string(),
+                feature: "Issue to Verified PR".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 45,
+                headline: "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡".to_string(),
+                body: "Chatbot coding demos stop at \"here is a snippet.\"\n\nEngineering teams do not need snippets. They need verified pull requests with passing test suites.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril spins up an agent in an isolated worktree\n3. The agent edits code AND runs your unit tests\n4. Only when the tests pass does it open the PR\n\nSee the autonomous loop in action in the video below ⬇️\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#GitHub #CodingAgents #DevOps #CICD #SoftwareTesting #OpenSource".to_string(),
+                storyboard: "00:00 - 00:06: Import GitHub issue #184 into Tendril.\n00:06 - 00:20: Agent formulates plan, identifies files, writes fix.\n00:20 - 00:35: Automated test runner executes: cargo test passes.\n00:35 - 00:45: PR created with diff breakdown and verification badge.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+            VideoDemo {
+                id: "demo-3".to_string(),
+                feature: "Multi-Agent Orchestration".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 35,
+                headline: "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?".to_string(),
+                body: "Single-agent coding is 2024. Multi-agent software factories are 2026.\n\nWith Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:\n- Claude Code refactors legacy services\n- Codex updates unit test coverage\n- Gemini drafts migration documentation\n\nAll isolated. All verified before git commit.\n\nCheck out the demo ⬇️\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#MultiAgent #ClaudeCode #Gemini #OpenCode #AIProgramming #DevTools".to_string(),
+                storyboard: "00:00 - 00:05: Tendril dashboard launching 3 agent tasks concurrently.\n00:05 - 00:20: Live terminal views showing Claude and Codex executing simultaneously.\n00:20 - 00:30: Individual worktree diffs consolidating into verified commits.\n00:30 - 00:35: Outro with Tendril architecture link.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+            VideoDemo {
+                id: "demo-4".to_string(),
+                feature: "Voice Control".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 25,
+                headline: "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️".to_string(),
+                body: "Typing 500-word prompt context in terminal windows slows down flow state.\n\nIvy-Tendril has built-in voice intelligence:\nSpeak your architectural intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nWatch this 25-second walkthrough ⬇️\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#VoiceAI #Productivity #DeveloperExperience #CodingTools #OpenSource".to_string(),
+                storyboard: "00:00 - 00:05: Developer speaking task instruction into mic.\n00:05 - 00:15: Real-time speech-to-plan transformation in Tendril UI.\n00:15 - 00:25: Agent executes task and opens diff review.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+            VideoDemo {
+                id: "demo-5".to_string(),
+                feature: "Tunneling & Preview".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 20,
+                headline: "Instant Live Previews for AI-Generated Web Features 🌐".to_string(),
+                body: "When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nSee how it works in 20 seconds ⬇️\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#WebDev #FullStack #Staging #DevTools #ProductDesign".to_string(),
+                storyboard: "00:00 - 00:05: Agent finishes web UI change.\n00:05 - 00:12: Click \"Tunnel\" -> instant public URL generated.\n00:12 - 00:20: Live interactive preview loaded on mobile and desktop.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+            },
+        ];
+
         Self {
             issues,
             articles,
             trends,
             listings,
             tasks,
+            video_demos,
         }
     }
 }
