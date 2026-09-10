@@ -13,6 +13,7 @@ import {
   Cpu,
   CheckCheck,
   GitPullRequest,
+  Users,
 } from "lucide-react";
 
 interface NavigationProps {
