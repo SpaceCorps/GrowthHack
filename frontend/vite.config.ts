@@ -13,11 +13,11 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: "happy-dom",
+  },
   fmt: {},
   lint: {
     options: { typeAware: false, typeCheck: false },
-  },
-  test: {
-    environment: "happy-dom",
   },
 });
