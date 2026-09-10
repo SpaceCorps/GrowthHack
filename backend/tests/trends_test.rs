@@ -27,6 +27,7 @@ fn create_test_context() -> Arc<AppContext> {
         data_file,
         ivy_web_content_path,
         ivy_web_images_path,
+        config: growthhack_backend::config::Config::load(),
     })
 }
 
@@ -114,6 +115,18 @@ async fn test_scout_trends_accepts_modes_and_sources() {
     };
     let res2 = scout_trends(State(ctx.clone()), Json(req_general)).await.into_response();
     assert_eq!(res2.status(), StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
+async fn test_scout_trends_discussions_with_custom_sources() {
+    let ctx = create_test_context();
+
+    let req = ScoutTrendsRequest {
+        sources: Some(vec!["r/rust".to_string(), "Lobste.rs".to_string()]),
+        mode: Some("discussions".to_string()),
+    };
+    let res = scout_trends(State(ctx.clone()), Json(req)).await.into_response();
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
 }
 
 #[tokio::test]

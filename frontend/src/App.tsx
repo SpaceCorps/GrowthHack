@@ -5,6 +5,7 @@ import type {
   Article,
   GrowthIssue,
   Listing,
+  PackageManagerTarget,
   ReviewItem,
   TrendTopic,
   VideoDemo,
@@ -16,9 +17,11 @@ import { IssuesHub } from "./views/IssuesHub";
 import { ArticleEngine } from "./views/ArticleEngine";
 import { TrendRadar } from "./views/TrendRadar";
 import { ListingBlitz } from "./views/ListingBlitz";
+import { PackageManagerBlitz } from "./views/PackageManagerBlitz";
 import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
+import { PrFlywheel } from "./views/PrFlywheel";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -34,8 +37,10 @@ export const App: React.FC = () => {
       "trends",
       "demos",
       "listings",
+      "packages",
       "agent",
       "review",
+      "flywheel",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -52,6 +57,7 @@ export const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [trends, setTrends] = useState<TrendTopic[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
 
   // Live Terminal & Modal State
@@ -65,12 +71,13 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resStatus, resDemos] =
+      const [resIssues, resArticles, resTrends, resListings, resPackages, resStatus, resDemos] =
         await Promise.all([
           fetch("/api/issues").then((r) => r.json()),
           fetch("/api/articles").then((r) => r.json()),
           fetch("/api/trends").then((r) => r.json()),
           fetch("/api/listings").then((r) => r.json()),
+          fetch("/api/packages").then((r) => r.json()),
           fetch("/api/agent/status").then((r) => r.json()),
           fetch("/api/demos").then((r) => r.json()),
         ]);
@@ -78,6 +85,7 @@ export const App: React.FC = () => {
       setArticles(resArticles);
       setTrends(resTrends);
       setListings(resListings);
+      setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
 
@@ -103,8 +111,10 @@ export const App: React.FC = () => {
         "trends",
         "demos",
         "listings",
+        "packages",
         "agent",
         "review",
+        "flywheel",
       ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
@@ -253,11 +263,15 @@ export const App: React.FC = () => {
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle(
-          mode === "discussions"
-            ? "Harvester: Social Discussions (Reddit & HN)"
-            : `Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`,
-        );
+        if (mode === "discussions") {
+          const targetsLabel =
+            sources && sources.length > 0
+              ? ` (${sources.slice(0, 3).join(", ")}${sources.length > 3 ? "..." : ""})`
+              : " (Reddit & HN)";
+          setTerminalTitle(`Harvester: Social Discussions${targetsLabel}`);
+        } else {
+          setTerminalTitle(`Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`);
+        }
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
@@ -325,6 +339,59 @@ export const App: React.FC = () => {
       fetchAll();
     } catch (err) {
       console.error("Create listing error:", err);
+    }
+  };
+
+  const handleBatchGenerateBlurbs = async (category?: string, listingIds?: string[]) => {
+    try {
+      const res = await fetch("/api/listings/generate-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: category === "all" ? undefined : category,
+          listing_ids: listingIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_ids && data.task_ids.length > 0) {
+        setTerminalTitle(`Batch Blurb Generation (${data.targeted_count} targets)`);
+        setActiveTaskId(data.task_ids[0]);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Batch generate blurbs error:", err);
+      throw err;
+    }
+  };
+
+  const handleVerifyBacklink = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/verify-backlink`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Verify backlink error:", err);
+      throw err;
+    }
+  };
+
+  const handleUpdatePackageStatus = async (
+    id: string,
+    payload: { status?: string; pr_url?: string; notes?: string },
+  ) => {
+    try {
+      await fetch(`/api/packages/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      fetchAll();
+    } catch (err) {
+      console.error("Update package status error:", err);
     }
   };
 
@@ -479,7 +546,33 @@ export const App: React.FC = () => {
       rawId: trend.id,
     }));
 
-    const listingItems = baseReviewItems.filter((it) => it.type === "listing_blurb");
+    const dynamicListingItems: ReviewItem[] = listings
+      .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
+      .map((l) => ({
+        id: `listing-${l.id}`,
+        type: "listing_blurb" as const,
+        title: l.name,
+        subtitle: `${l.category} • ${l.url}`,
+        channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
+        summary: l.notes || `Submission blurb for ${l.name}`,
+        content: l.submission_blurb,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [l.url],
+        status:
+          l.status === "PR Submitted" ||
+          l.status === "Under Review" ||
+          l.status === "Merged" ||
+          l.status === "Live"
+            ? "Approved"
+            : "Pending",
+        createdAt: l.updated_at,
+        rawId: l.id,
+      }));
+
+    const listingItems =
+      dynamicListingItems.length > 0
+        ? dynamicListingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb");
 
     setReviewItems([
       ...articleItems,
@@ -491,7 +584,7 @@ export const App: React.FC = () => {
         : baseReviewItems.filter((it) => it.type === "trend_synthesis")),
       ...listingItems,
     ]);
-  }, [articles, demos, trends]);
+  }, [articles, demos, trends, listings]);
 
   const handleApproveReviewItem = async (item: ReviewItem) => {
     setReviewItems((prev) =>
@@ -499,6 +592,8 @@ export const App: React.FC = () => {
     );
     if (item.type === "article") {
       await handleUpdateArticleStatus(item.rawId, "Approved");
+    } else if (item.type === "listing_blurb") {
+      await handleUpdateListingStatus(item.rawId, "PR Submitted");
     } else if (item.type === "video_demo") {
       try {
         await fetch(`/api/demos/${item.rawId}`, {
@@ -530,6 +625,8 @@ export const App: React.FC = () => {
     );
     if (item.type === "article") {
       await handleUpdateArticleStatus(item.rawId, "Rejected");
+    } else if (item.type === "listing_blurb") {
+      await handleUpdateListingStatus(item.rawId, "Targeted");
     } else if (item.type === "video_demo") {
       try {
         await fetch(`/api/demos/${item.rawId}`, {
@@ -643,6 +740,7 @@ export const App: React.FC = () => {
         articlesCount={articles.length}
         trendsCount={trends.length}
         listingsCount={listings.length}
+        packagesCount={packages.length}
         reviewCount={pendingReviewCount}
       />
 
@@ -697,8 +795,18 @@ export const App: React.FC = () => {
             onGenerateBlurb={handleGenerateBlurb}
             onUpdateStatus={handleUpdateListingStatus}
             onCreateListing={handleCreateListing}
+            onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+            onVerifyBacklink={handleVerifyBacklink}
           />
         )}
+
+        {activeTab === "packages" && (
+          <PackageManagerBlitz
+            packages={packages}
+            onUpdatePackageStatus={handleUpdatePackageStatus}
+          />
+        )}
+        {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />

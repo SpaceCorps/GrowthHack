@@ -35,13 +35,22 @@ const mockItems: ReviewItem[] = [
 ];
 
 describe("ReviewQueue Component", () => {
+  let vibrateMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    vibrateMock = vi.fn();
+    Object.defineProperty(navigator, "vibrate", {
+      value: vibrateMock,
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("renders card deck with initial review items", () => {
@@ -194,5 +203,67 @@ describe("ReviewQueue Component", () => {
     expect(onApprove).not.toHaveBeenCalled();
     expect(screen.queryByTestId("approved-stamp")).toBeNull();
     expect(screen.getByText("How Git Worktrees Solve Agent Hallucination")).toBeDefined();
+  });
+
+  it("triggers haptic vibration pulse with 15ms when dragging past +120px threshold (swipe right)", () => {
+    render(<ReviewQueue items={mockItems} />);
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 225, clientY: 100 }); // +125px >= 120 threshold
+
+    expect(vibrateMock).toHaveBeenCalledTimes(1);
+    expect(vibrateMock).toHaveBeenCalledWith(15);
+  });
+
+  it("triggers haptic vibration pulse with 15ms when dragging past -120px threshold (swipe left)", () => {
+    render(<ReviewQueue items={mockItems} />);
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 75, clientY: 100 }); // -125px <= -120 threshold
+
+    expect(vibrateMock).toHaveBeenCalledTimes(1);
+    expect(vibrateMock).toHaveBeenCalledWith(15);
+  });
+
+  it("continued dragging past threshold in the same motion does not re-trigger vibration repeatedly", () => {
+    render(<ReviewQueue items={mockItems} />);
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 230, clientY: 100 }); // +130px
+    fireEvent.pointerMove(card, { clientX: 260, clientY: 100 }); // +160px
+    fireEvent.pointerMove(card, { clientX: 300, clientY: 100 }); // +200px
+
+    expect(vibrateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("dragging back below threshold and crossing again calls navigator.vibrate a second time", () => {
+    render(<ReviewQueue items={mockItems} />);
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(card, { clientX: 230, clientY: 100 }); // Cross threshold (+130px)
+    expect(vibrateMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerMove(card, { clientX: 150, clientY: 100 }); // Below threshold (+50px)
+    expect(vibrateMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerMove(card, { clientX: 240, clientY: 100 }); // Cross threshold again (+140px)
+    expect(vibrateMock).toHaveBeenCalledTimes(2);
+    expect(vibrateMock).toHaveBeenLastCalledWith(15);
+  });
+
+  it("when navigator.vibrate is undefined, dragging past threshold works smoothly without throwing errors", () => {
+    Object.defineProperty(navigator, "vibrate", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<ReviewQueue items={mockItems} />);
+    const card = screen.getByTestId("active-card");
+    fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+    expect(() => {
+      fireEvent.pointerMove(card, { clientX: 250, clientY: 100 });
+    }).not.toThrow();
+    fireEvent.pointerUp(card, { clientX: 250, clientY: 100 });
   });
 });

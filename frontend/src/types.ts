@@ -138,6 +138,30 @@ export interface Listing {
   updated_at: string;
 }
 
+export interface PackageManagerTarget {
+  id: string;
+  target_key: string;
+  name: string;
+  os: string;
+  registry_repo: string;
+  package_id: string;
+  install_command: string;
+  status: "Targeted" | "PR Submitted" | "Under Review" | "Merged" | "Live";
+  pr_url?: string;
+  manifest_filename: string;
+  notes: string;
+  updated_at: string;
+}
+
+export interface PackageManifestResponse {
+  target_key: string;
+  filename: string;
+  language: string;
+  content: string;
+  install_command: string;
+  instructions: string;
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;
@@ -150,5 +174,23 @@ export type ActiveTab =
   | "trends"
   | "demos"
   | "listings"
+  | "packages"
   | "agent"
-  | "review";
+  | "review"
+  | "flywheel";
+
+export interface SyndicationSettings {
+  devto_api_key?: string;
+  hashnode_api_key?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
+
+export interface SyndicationStatusResponse {
+  devto_configured: boolean;
+  devto_key_preview?: string;
+  hashnode_configured: boolean;
+  hashnode_key_preview?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
