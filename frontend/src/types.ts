@@ -31,11 +31,26 @@ export interface Article {
   content: string;
   backlinks: string[];
   outbound_citations: string[];
-  status: "Draft" | "Ready" | "Published";
+  status: "Draft" | "Ready" | "Published" | "Approved" | "Rejected";
   created_at: string;
   published_at?: string;
   slug?: string;
   exports?: ExportRecord[];
+}
+
+export interface ReviewItem {
+  id: string;
+  type: "article" | "video_demo" | "trend_synthesis" | "listing_blurb";
+  title: string;
+  subtitle: string;
+  channel: string;
+  summary: string;
+  content: string;
+  backlinks: string[];
+  citations: string[];
+  status: "Pending" | "Approved" | "Rejected";
+  createdAt: string;
+  rawId: string;
 }
 
 export interface TrendTopic {
@@ -69,4 +84,11 @@ export interface AgentStatus {
   version?: string;
 }
 
-export type ActiveTab = "issues" | "articles" | "trends" | "demos" | "listings" | "agent";
+export type ActiveTab =
+  | "issues"
+  | "articles"
+  | "trends"
+  | "demos"
+  | "listings"
+  | "agent"
+  | "review";
