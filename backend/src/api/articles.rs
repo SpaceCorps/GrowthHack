@@ -602,7 +602,11 @@ pub fn clean_markdown_body(content: &str) -> String {
     trimmed.to_string()
 }
 
-pub fn generate_ivy_web_frontmatter(article: &Article, slug: &str) -> String {
+pub fn generate_ivy_web_frontmatter_with_options(
+    article: &Article,
+    slug: &str,
+    hero_format: Option<&str>,
+) -> String {
     let date_str = article
         .published_at
         .unwrap_or(article.created_at)
@@ -611,6 +615,19 @@ pub fn generate_ivy_web_frontmatter(article: &Article, slug: &str) -> String {
 
     let clean_title = article.title.replace('"', "\\\"");
     let clean_desc = article.summary.replace('"', "\\\"");
+
+    let format_choice = hero_format.unwrap_or("dual").to_lowercase();
+    let image_lines = match format_choice.as_str() {
+        "svg" => format!(
+            "image: \"/site/images/blog/{}-hero.svg\"\nimage_svg: \"/site/images/blog/{}-hero.svg\"",
+            slug, slug
+        ),
+        "png" => format!("image: \"/site/images/blog/{}-hero.png\"", slug),
+        _ => format!(
+            "image: \"/site/images/blog/{}-hero.png\"\nimage_svg: \"/site/images/blog/{}-hero.svg\"",
+            slug, slug
+        ),
+    };
 
     format!(
         r#"---
@@ -626,17 +643,29 @@ tags:
   - "{}"
   - "Ivy"
   - "DevTools"
-image: "/site/images/blog/{}-hero.png"
+{}
 canonical_url: "https://ivy.interactive/blog/{}"
 ---"#,
-        clean_title, slug, clean_desc, date_str, article.angle, article.feature, slug, slug
+        clean_title, slug, clean_desc, date_str, article.angle, article.feature, image_lines, slug
     )
 }
 
-pub fn generate_ivy_web_post(article: &Article, slug: &str) -> String {
-    let frontmatter = generate_ivy_web_frontmatter(article, slug);
+pub fn generate_ivy_web_frontmatter(article: &Article, slug: &str) -> String {
+    generate_ivy_web_frontmatter_with_options(article, slug, None)
+}
+
+pub fn generate_ivy_web_post_with_options(
+    article: &Article,
+    slug: &str,
+    hero_format: Option<&str>,
+) -> String {
+    let frontmatter = generate_ivy_web_frontmatter_with_options(article, slug, hero_format);
     let body = clean_markdown_body(&article.content);
     format!("{}\n\n{}\n", frontmatter, body)
+}
+
+pub fn generate_ivy_web_post(article: &Article, slug: &str) -> String {
+    generate_ivy_web_post_with_options(article, slug, None)
 }
 
 pub fn format_for_channel(article: &Article, channel: &str, slug: &str) -> (String, String) {
@@ -792,6 +821,7 @@ pub struct ExportIvyWebRequest {
     pub target_dir: Option<String>,
     pub target_images_dir: Option<String>,
     pub sync_hero_image: Option<bool>,
+    pub hero_format: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -858,7 +888,11 @@ pub async fn export_ivy_web(
         }
 
         let file_path = target_dir.join(format!("{}.mdoc", slug));
-        let post_content = generate_ivy_web_post(article, &slug);
+        let post_content = generate_ivy_web_post_with_options(
+            article,
+            &slug,
+            payload.hero_format.as_deref(),
+        );
 
         if let Err(e) = std::fs::write(&file_path, &post_content) {
             return (
@@ -1739,6 +1773,151 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_ivy_web_frontmatter_dual() {
+        let now = Utc::now();
+        let article = Article {
+            id: "art-test".to_string(),
+            title: "Test Article".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Test summary of the article.".to_string(),
+            content: "# Test\n\nSome body.".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("test-article".to_string()),
+            exports: vec![],
+        };
+
+        let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
+        assert!(fm_default.contains("image: \"/site/images/blog/test-article-hero.png\""));
+        assert!(fm_default.contains("image_svg: \"/site/images/blog/test-article-hero.svg\""));
+
+        let fm_explicit_dual =
+            generate_ivy_web_frontmatter_with_options(&article, "test-article", Some("dual"));
+        assert!(fm_explicit_dual.contains("image: \"/site/images/blog/test-article-hero.png\""));
+        assert!(fm_explicit_dual.contains("image_svg: \"/site/images/blog/test-article-hero.svg\""));
+    }
+
+    #[test]
+    fn test_generate_ivy_web_frontmatter_svg_only() {
+        let now = Utc::now();
+        let article = Article {
+            id: "art-test".to_string(),
+            title: "Test Article".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Test summary of the article.".to_string(),
+            content: "# Test\n\nSome body.".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("test-article".to_string()),
+            exports: vec![],
+        };
+
+        let fm_svg =
+            generate_ivy_web_frontmatter_with_options(&article, "test-article", Some("svg"));
+        assert!(fm_svg.contains("image: \"/site/images/blog/test-article-hero.svg\""));
+        assert!(fm_svg.contains("image_svg: \"/site/images/blog/test-article-hero.svg\""));
+    }
+
+    #[test]
+    fn test_generate_ivy_web_frontmatter_png_only() {
+        let now = Utc::now();
+        let article = Article {
+            id: "art-test".to_string(),
+            title: "Test Article".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Test summary of the article.".to_string(),
+            content: "# Test\n\nSome body.".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("test-article".to_string()),
+            exports: vec![],
+        };
+
+        let fm_png =
+            generate_ivy_web_frontmatter_with_options(&article, "test-article", Some("png"));
+        assert!(fm_png.contains("image: \"/site/images/blog/test-article-hero.png\""));
+        assert!(!fm_png.contains("image_svg:"));
+    }
+
+    #[tokio::test]
+    async fn test_export_ivy_web_endpoint_with_hero_format() {
+        let temp_dir = std::env::temp_dir().join("test_export_ivy_web_hero_format");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let content_dir = temp_dir.join("content");
+        let images_dir = temp_dir.join("public/site/images");
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let article = Article {
+            id: "art-test-fmt".to_string(),
+            title: "Test Format Article".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Testing hero format export".to_string(),
+            content: "## Body Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: chrono::Utc::now(),
+            published_at: None,
+            slug: Some("test-format-article".to_string()),
+            exports: vec![],
+        };
+        growth_state.articles.push(article);
+
+        let runner = crate::agent::AgentRunner::new(std::path::PathBuf::from("agy"));
+        let task_manager = crate::agent::TaskManager::new(runner);
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            task_manager,
+            data_file,
+            ivy_web_content_path: content_dir.clone(),
+            ivy_web_images_path: images_dir.clone(),
+            config: crate::config::Config::load(),
+        });
+
+        let req = ExportIvyWebRequest {
+            target_dir: Some(content_dir.to_string_lossy().to_string()),
+            target_images_dir: Some(images_dir.to_string_lossy().to_string()),
+            sync_hero_image: Some(true),
+            hero_format: Some("dual".to_string()),
+        };
+
+        let resp = export_ivy_web(
+            axum::extract::Path("art-test-fmt".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Json(req),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let mdoc_file = content_dir.join("test-format-article.mdoc");
+        assert!(mdoc_file.exists());
+        let content = std::fs::read_to_string(&mdoc_file).unwrap();
+        assert!(content.contains("image: \"/site/images/blog/test-format-article-hero.png\""));
+        assert!(content.contains("image_svg: \"/site/images/blog/test-format-article-hero.svg\""));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_channel_formatters() {
         let now = Utc::now();
         let article = Article {
@@ -2217,6 +2396,7 @@ mod tests {
             target_dir: Some(content_dir.to_string_lossy().to_string()),
             target_images_dir: Some(images_dir.to_string_lossy().to_string()),
             sync_hero_image: Some(true),
+            hero_format: None,
         };
 
         let resp = export_ivy_web(
