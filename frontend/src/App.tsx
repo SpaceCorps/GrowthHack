@@ -263,11 +263,15 @@ export const App: React.FC = () => {
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle(
-          mode === "discussions"
-            ? "Harvester: Social Discussions (Reddit & HN)"
-            : `Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`,
-        );
+        if (mode === "discussions") {
+          const targetsLabel =
+            sources && sources.length > 0
+              ? ` (${sources.slice(0, 3).join(", ")}${sources.length > 3 ? "..." : ""})`
+              : " (Reddit & HN)";
+          setTerminalTitle(`Harvester: Social Discussions${targetsLabel}`);
+        } else {
+          setTerminalTitle(`Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`);
+        }
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
