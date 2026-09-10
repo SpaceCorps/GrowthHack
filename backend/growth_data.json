@@ -408,6 +408,7 @@
       "pr_url": "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory that plans tasks, orchestrates agents in isolated Git worktrees, and produces verified PRs.",
       "notes": "High authority repo (18k+ stars). PR pending merge in 'Coding Agents' category.",
+      "blurb_status": "Pending",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     },
     {
@@ -419,6 +420,7 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Run multiple coding agents (Claude Code, Gemini, Codex) safely in parallel worktrees.",
       "notes": "Targeting 'Git Utilities & Automation' section.",
+      "blurb_status": "Pending",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     },
     {
@@ -430,6 +432,7 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent development environment with automated verification gates.",
       "notes": "Curated AI for SE list.",
+      "blurb_status": "Pending",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     },
     {
@@ -441,6 +444,7 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril is an open-source alternative to Cursor and proprietary software factories, offering Git worktree isolation and multi-agent orchestration.",
       "notes": "Submit as open-source alternative to Cursor, Devin, and CodeRabbit.",
+      "blurb_status": "Pending",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     },
     {
@@ -452,6 +456,7 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril is an open-source multi-agent software factory that automates issue-to-verified PR workflows.",
       "notes": "Listed on AlternativeTo Cursor and Cline pages.",
+      "blurb_status": "Approved",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     },
     {
@@ -463,6 +468,7 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: Turn GitHub issues into verified pull requests using isolated agent worktrees.",
       "notes": "Launch scheduled for Phase 1 campaign.",
+      "blurb_status": "Pending",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
     }
   ],

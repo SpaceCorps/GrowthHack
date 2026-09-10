@@ -18,6 +18,8 @@ pub struct CreateListingRequest {
     pub url: String,
     pub submission_blurb: String,
     pub notes: String,
+    #[serde(default)]
+    pub blurb_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -26,6 +28,8 @@ pub struct UpdateListingRequest {
     pub pr_url: Option<String>,
     pub submission_blurb: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub blurb_status: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -44,6 +48,13 @@ pub async fn create_listing(
     Json(payload): Json<CreateListingRequest>,
 ) -> impl IntoResponse {
     let mut state = ctx.state.write().await;
+    let blurb_status = payload.blurb_status.or_else(|| {
+        if !payload.submission_blurb.trim().is_empty() {
+            Some("Pending".to_string())
+        } else {
+            None
+        }
+    });
     let new_listing = Listing {
         id: format!("list-{}", Uuid::new_v4().simple()),
         name: payload.name,
@@ -53,6 +64,7 @@ pub async fn create_listing(
         pr_url: None,
         submission_blurb: payload.submission_blurb,
         notes: payload.notes,
+        blurb_status,
         updated_at: Utc::now(),
     };
     state.listings.push(new_listing.clone());
@@ -78,6 +90,9 @@ pub async fn update_listing(
         }
         if let Some(notes) = payload.notes {
             listing.notes = notes;
+        }
+        if let Some(blurb_status) = payload.blurb_status {
+            listing.blurb_status = Some(blurb_status);
         }
         listing.updated_at = Utc::now();
         let cloned = listing.clone();
@@ -140,6 +155,7 @@ Provide:
                 let mut state = state_arc.write().await;
                 if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
                     l.submission_blurb = content;
+                    l.blurb_status = Some("Pending".to_string());
                     l.updated_at = Utc::now();
                 }
                 let _ = state.save(&data_file);
