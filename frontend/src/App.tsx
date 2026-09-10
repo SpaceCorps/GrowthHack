@@ -338,6 +338,43 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleBatchGenerateBlurbs = async (category?: string, listingIds?: string[]) => {
+    try {
+      const res = await fetch("/api/listings/generate-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: category === "all" ? undefined : category,
+          listing_ids: listingIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_ids && data.task_ids.length > 0) {
+        setTerminalTitle(`Batch Blurb Generation (${data.targeted_count} targets)`);
+        setActiveTaskId(data.task_ids[0]);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Batch generate blurbs error:", err);
+      throw err;
+    }
+  };
+
+  const handleVerifyBacklink = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/verify-backlink`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Verify backlink error:", err);
+      throw err;
+    }
+  };
+
   const handleUpdatePackageStatus = async (
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
@@ -505,7 +542,33 @@ export const App: React.FC = () => {
       rawId: trend.id,
     }));
 
-    const listingItems = baseReviewItems.filter((it) => it.type === "listing_blurb");
+    const dynamicListingItems: ReviewItem[] = listings
+      .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
+      .map((l) => ({
+        id: `listing-${l.id}`,
+        type: "listing_blurb" as const,
+        title: l.name,
+        subtitle: `${l.category} • ${l.url}`,
+        channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
+        summary: l.notes || `Submission blurb for ${l.name}`,
+        content: l.submission_blurb,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [l.url],
+        status:
+          l.status === "PR Submitted" ||
+          l.status === "Under Review" ||
+          l.status === "Merged" ||
+          l.status === "Live"
+            ? "Approved"
+            : "Pending",
+        createdAt: l.updated_at,
+        rawId: l.id,
+      }));
+
+    const listingItems =
+      dynamicListingItems.length > 0
+        ? dynamicListingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb");
 
     setReviewItems([
       ...articleItems,
@@ -517,7 +580,7 @@ export const App: React.FC = () => {
         : baseReviewItems.filter((it) => it.type === "trend_synthesis")),
       ...listingItems,
     ]);
-  }, [articles, demos, trends]);
+  }, [articles, demos, trends, listings]);
 
   const handleApproveReviewItem = async (item: ReviewItem) => {
     setReviewItems((prev) =>
@@ -525,6 +588,8 @@ export const App: React.FC = () => {
     );
     if (item.type === "article") {
       await handleUpdateArticleStatus(item.rawId, "Approved");
+    } else if (item.type === "listing_blurb") {
+      await handleUpdateListingStatus(item.rawId, "PR Submitted");
     } else if (item.type === "video_demo") {
       try {
         await fetch(`/api/demos/${item.rawId}`, {
@@ -556,6 +621,8 @@ export const App: React.FC = () => {
     );
     if (item.type === "article") {
       await handleUpdateArticleStatus(item.rawId, "Rejected");
+    } else if (item.type === "listing_blurb") {
+      await handleUpdateListingStatus(item.rawId, "Targeted");
     } else if (item.type === "video_demo") {
       try {
         await fetch(`/api/demos/${item.rawId}`, {
@@ -724,6 +791,8 @@ export const App: React.FC = () => {
             onGenerateBlurb={handleGenerateBlurb}
             onUpdateStatus={handleUpdateListingStatus}
             onCreateListing={handleCreateListing}
+            onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+            onVerifyBacklink={handleVerifyBacklink}
           />
         )}
 
