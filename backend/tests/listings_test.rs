@@ -82,6 +82,7 @@ async fn test_list_and_create_and_update_listing() {
         url: "https://github.com/testorg/test-awesome-list".to_string(),
         submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb".to_string(),
         notes: "Test listing notes".to_string(),
+        blurb_status: None,
     };
 
     let (status, Json(created)) = create_listing(State(ctx.clone()), Json(new_req)).await;
@@ -101,6 +102,7 @@ async fn test_list_and_create_and_update_listing() {
         pr_url: Some("https://github.com/testorg/test-awesome-list/pull/1".to_string()),
         submission_blurb: Some("Updated blurb with checklist".to_string()),
         notes: Some("PR opened successfully".to_string()),
+        blurb_status: None,
     };
 
     let (status, Json(updated_opt)) = update_listing(
@@ -131,6 +133,7 @@ fn test_prompt_tailoring_across_categories() {
         pr_url: None,
         submission_blurb: String::new(),
         notes: String::new(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
     let awesome_prompt = build_tailored_prompt(&awesome_listing);
@@ -146,6 +149,7 @@ fn test_prompt_tailoring_across_categories() {
         pr_url: None,
         submission_blurb: String::new(),
         notes: String::new(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
     let dir_prompt = build_tailored_prompt(&directory_listing);
@@ -161,6 +165,7 @@ fn test_prompt_tailoring_across_categories() {
         pr_url: None,
         submission_blurb: String::new(),
         notes: String::new(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
     let factory_prompt = build_tailored_prompt(&factory_listing);
@@ -176,6 +181,7 @@ fn test_prompt_tailoring_across_categories() {
         pr_url: None,
         submission_blurb: String::new(),
         notes: String::new(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
     let pkg_prompt = build_tailored_prompt(&package_listing);
@@ -191,6 +197,7 @@ fn test_prompt_tailoring_across_categories() {
         pr_url: None,
         submission_blurb: String::new(),
         notes: String::new(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
     let comm_prompt = build_tailored_prompt(&community_listing);
@@ -248,6 +255,7 @@ async fn test_backlink_verification_logic_and_endpoint() {
         pr_url: None,
         submission_blurb: "- [Ivy-Tendril](...)".to_string(),
         notes: "Verification test".to_string(),
+        blurb_status: None,
         updated_at: chrono::Utc::now(),
     };
 

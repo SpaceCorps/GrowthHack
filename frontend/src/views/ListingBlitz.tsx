@@ -239,6 +239,18 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
     }
   };
 
+  const getBlurbStatusBadge = (status?: string) => {
+    switch (status) {
+      case "Approved":
+        return "bg-emerald-950/80 text-emerald-300 border-emerald-800";
+      case "Rejected":
+        return "bg-rose-950/80 text-rose-300 border-rose-800";
+      case "Pending":
+      default:
+        return "bg-amber-950/80 text-amber-300 border-amber-800";
+    }
+  };
+
   const getCategoryCount = (cat: string) => {
     if (cat === "All") return listings.length;
     return listings.filter((l) => l.category === cat).length;
@@ -465,6 +477,19 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {listing.submission_blurb && listing.submission_blurb.trim().length > 0 && (
+                    <span
+                      data-testid={`blurb-badge-${listing.id}`}
+                      className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase border ${getBlurbStatusBadge(listing.blurb_status)}`}
+                    >
+                      {listing.blurb_status === "Approved"
+                        ? "Blurb Approved"
+                        : listing.blurb_status === "Rejected"
+                          ? "Blurb Rejected"
+                          : "Blurb Pending Review"}
+                    </span>
+                  )}
+
                   {/* Status Dropdown */}
                   <select
                     value={listing.status}
