@@ -16,6 +16,7 @@ pub struct AppContext {
     pub state: SharedState,
     pub task_manager: TaskManager,
     pub data_file: std::path::PathBuf,
+    pub ivy_web_content_path: std::path::PathBuf,
 }
 
 #[derive(Deserialize)]
