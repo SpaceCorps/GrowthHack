@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import type { Article, TrendTopic } from "../types";
 import {
   Radio,
@@ -23,6 +23,8 @@ import {
   Search,
   RotateCcw,
   Layers,
+  Plus,
+  X,
 } from "lucide-react";
 
 export type EngagementTier = "viral" | "active" | "emerging";
@@ -98,6 +100,34 @@ export const getTierBadge = (tier: EngagementTier) => {
   }
 };
 
+export const DEFAULT_DISCUSSION_PRESETS = [
+  "r/LocalLLaMA",
+  "r/programming",
+  "r/ClaudeAI",
+  "Hacker News",
+  "r/ChatGPTCoding",
+  "Lobste.rs",
+];
+
+export const STORAGE_KEY_DISCUSSION_SOURCES = "trendradar_discussion_sources";
+
+const getInitialDiscussionSources = (): string[] => {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const saved = window.localStorage.getItem(STORAGE_KEY_DISCUSSION_SOURCES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [...DEFAULT_DISCUSSION_PRESETS];
+};
+
 interface TrendRadarProps {
   trends: TrendTopic[];
   articles?: Article[];
@@ -134,6 +164,42 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
     setSelectedSources((prev) =>
       prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source],
     );
+  };
+
+  const [discussionSources, setDiscussionSources] = useState<string[]>(getInitialDiscussionSources);
+  const [showDiscussionConfig, setShowDiscussionConfig] = useState<boolean>(false);
+  const [customSourceInput, setCustomSourceInput] = useState<string>("");
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(
+          STORAGE_KEY_DISCUSSION_SOURCES,
+          JSON.stringify(discussionSources),
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, [discussionSources]);
+
+  const toggleDiscussionPreset = (preset: string) => {
+    setDiscussionSources((prev) =>
+      prev.includes(preset) ? prev.filter((s) => s !== preset) : [...prev, preset],
+    );
+  };
+
+  const handleAddCustomSource = () => {
+    const trimmed = customSourceInput.trim();
+    if (!trimmed) return;
+    if (!discussionSources.includes(trimmed)) {
+      setDiscussionSources((prev) => [...prev, trimmed]);
+    }
+    setCustomSourceInput("");
+  };
+
+  const removeDiscussionSource = (source: string) => {
+    setDiscussionSources((prev) => prev.filter((s) => s !== source));
   };
 
   // Quick filter states
@@ -284,67 +350,203 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner with Dual Scouting Controls */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="max-w-2xl">
-          <div className="flex items-center space-x-2 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-2">
-            <Radio className="w-4 h-4 animate-pulse" />
-            <span>Multi-Source Trend Radar & Discussion Harvester // Issues #9 & #6</span>
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 border border-slate-800 shadow-xl flex flex-col gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="max-w-2xl">
+            <div className="flex items-center space-x-2 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-2">
+              <Radio className="w-4 h-4 animate-pulse" />
+              <span>Multi-Source Trend Radar & Discussion Harvester // Issues #9 & #6</span>
+            </div>
+            <h2 className="text-2xl font-black text-white tracking-tight">
+              Autonomous Trend Radar & Social Harvester
+            </h2>
+            <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+              Scans GitHub Trending, Reddit discussions, and tech debates across r/LocalLLaMA,
+              r/programming, and r/ClaudeAI. Antigravity synthesizes viral topics into authoritative
+              articles streaming directly into the Human Approval Queue.
+            </p>
           </div>
-          <h2 className="text-2xl font-black text-white tracking-tight">
-            Autonomous Trend Radar & Social Harvester
-          </h2>
-          <p className="mt-1 text-xs text-slate-300 leading-relaxed">
-            Scans GitHub Trending, Reddit discussions, and tech debates across r/LocalLLaMA,
-            r/programming, and r/ClaudeAI. Antigravity synthesizes viral topics into authoritative
-            articles streaming directly into the Human Approval Queue.
-          </p>
-        </div>
 
-        <div className="flex flex-col lg:items-end gap-2.5 shrink-0 self-start lg:self-auto">
-          {/* Source Toggle Pills */}
-          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800">
-            {(["GitHub", "Reddit", "LinkedIn"] as const).map((source) => {
-              const isSelected = selectedSources.includes(source);
-              return (
-                <button
-                  key={source}
-                  type="button"
-                  onClick={() => toggleSource(source)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    isSelected
-                      ? "bg-indigo-600/30 text-indigo-300 border border-indigo-500/50"
-                      : "bg-slate-900/40 text-slate-400 border border-transparent hover:text-slate-200"
+          <div className="flex flex-col lg:items-end gap-2.5 shrink-0 self-start lg:self-auto">
+            {/* Source Toggle Pills */}
+            <div className="flex items-center gap-1.5 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800">
+              {(["GitHub", "Reddit", "LinkedIn"] as const).map((source) => {
+                const isSelected = selectedSources.includes(source);
+                return (
+                  <button
+                    key={source}
+                    type="button"
+                    onClick={() => toggleSource(source)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      isSelected
+                        ? "bg-indigo-600/30 text-indigo-300 border border-indigo-500/50"
+                        : "bg-slate-900/40 text-slate-400 border border-transparent hover:text-slate-200"
+                    }`}
+                  >
+                    <span className="shrink-0">{getSourceIcon(source)}</span>
+                    <span>{source}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() =>
+                  onScoutTrends(selectedSources.length > 0 ? selectedSources : undefined)
+                }
+                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950 transition-all hover:scale-[1.02]"
+                title="Scout GitHub Trending, Reddit, and LinkedIn narratives"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Scout Today's Trends</span>
+              </button>
+
+              <button
+                onClick={() =>
+                  onScoutTrends(
+                    discussionSources.length > 0 ? discussionSources : undefined,
+                    "discussions",
+                  )
+                }
+                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-950 transition-all hover:scale-[1.02]"
+                title="Harvest developer complaints around worktrees, merge collisions & sandboxes (Issue #6)"
+              >
+                <Flame className="w-4 h-4 text-amber-200" />
+                <span>Harvester: Discussions (Issue #6)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDiscussionConfig((prev) => !prev)}
+                className={`flex items-center space-x-1.5 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
+                  showDiscussionConfig
+                    ? "bg-amber-600/20 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-950/50"
+                    : "bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700 hover:border-amber-500/40"
+                }`}
+                title="Configure Discussion Targets"
+                aria-label="Configure Discussion Targets"
+              >
+                <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                <span>Configure Discussion Targets</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                  {discussionSources.length}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                    showDiscussionConfig ? "rotate-180" : ""
                   }`}
-                >
-                  <span className="shrink-0">{getSourceIcon(source)}</span>
-                  <span>{source}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={() =>
-                onScoutTrends(selectedSources.length > 0 ? selectedSources : undefined)
-              }
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950 transition-all hover:scale-[1.02]"
-              title="Scout GitHub Trending, Reddit, and LinkedIn narratives"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Scout Today's Trends</span>
-            </button>
-
-            <button
-              onClick={() => onScoutTrends("discussions")}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold shadow-lg shadow-amber-950 transition-all hover:scale-[1.02]"
-              title="Harvest developer complaints around worktrees, merge collisions & sandboxes (Issue #6)"
-            >
-              <Flame className="w-4 h-4 text-amber-200" />
-              <span>Harvester: Discussions (Issue #6)</span>
-            </button>
+                />
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Expandable Discussion Targets Configuration Panel */}
+        {showDiscussionConfig && (
+          <div
+            data-testid="discussion-targets-panel"
+            className="w-full mt-1 p-4 rounded-xl bg-slate-950/80 border border-amber-900/40 shadow-inner space-y-3"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="flex items-center space-x-2">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Discussion Harvester Targets
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                  {discussionSources.length} Active
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400">
+                Targeted subreddits (r/*) and developer forums
+              </span>
+            </div>
+
+            {/* Preset quick-toggle chips */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                Preset Communities
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {DEFAULT_DISCUSSION_PRESETS.map((preset) => {
+                  const isSelected = discussionSources.includes(preset);
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => toggleDiscussionPreset(preset)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                        isSelected
+                          ? "bg-amber-600/30 text-amber-300 border border-amber-500/50"
+                          : "bg-slate-900/40 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700"
+                      }`}
+                    >
+                      <span>{preset}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Active target chips with remove button */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                Active Targets ({discussionSources.length})
+              </label>
+              {discussionSources.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">
+                  No active targets selected. Default fallback (Reddit &amp; HN) will be used.
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {discussionSources.map((src) => (
+                    <span
+                      key={src}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-950/60 text-amber-200 border border-amber-800/60 shadow-sm"
+                    >
+                      <span>{src}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDiscussionSource(src)}
+                        className="p-0.5 hover:bg-amber-800/60 rounded text-amber-400 hover:text-amber-100 transition-colors"
+                        title={`Remove ${src}`}
+                        aria-label={`Remove ${src}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Custom Target Input */}
+            <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+              <input
+                type="text"
+                value={customSourceInput}
+                onChange={(e) => setCustomSourceInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddCustomSource();
+                  }
+                }}
+                placeholder="Add custom subreddit or forum (e.g. r/rust, forum.cursor.com)..."
+                className="flex-1 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomSource}
+                className="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Add</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Human Approval Queue Card */}
