@@ -1,0 +1,19 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Node & Vite-plus
+node_modules/
+dist/
+.vite-plus/
+pnpm-debug.log*
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local Data (optional to keep or gitignore)
+# growth_data.json

@@ -1,0 +1,329 @@
+{
+  "issues": [
+    {
+      "id": "issue-1",
+      "number": 1,
+      "title": "Daily 10x Feature Article Engine (10 Articles/Day Routine)",
+      "category": "Content Engine",
+      "status": "Active Routine",
+      "priority": "Critical",
+      "description": "Automated high-velocity generation of 10 differentiated technical articles per day across Ivy-Tendril core features. Includes outbound authority citations (Git official docs, Anthropic, SWE-bench) and backlinks to Tendril docs and GitHub.",
+      "direct_actions": [
+        "Rotate through Tendril core features (Worktrees, Multi-Agent, Issue-to-PR, Verification, Voice, Tunneling)",
+        "Format across 10 distinct content archetypes (Benchmarks, Deep Architecture, Cline/OpenHands Comparisons, Postmortems, Tutorials)",
+        "Insert minimum 3 high-authority outbound citations and 2 Tendril GitHub/docs backlinks per post",
+        "Export clean Markdown formatted with YAML frontmatter ready for Dev.to, Hashnode, Medium, and Substack"
+      ],
+      "routine_schedule": "Daily at 08:00 UTC (10 posts/batch)",
+      "run_count": 3,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-2",
+      "number": 2,
+      "title": "Ecosystem Listing & Awesome-Repo Blitz (50+ Targets)",
+      "category": "Distribution",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Systematic submission campaign across curated Awesome GitHub repositories, devtool directories, and software factory catalogs to secure permanent developer discovery and high-domain backlinks.",
+      "direct_actions": [
+        "Auto-generate custom PR descriptions and markdown table entries for each target repo",
+        "Submit to awesome-ai-agents, awesome-devtools, awesome-generative-ai, and software factory registries",
+        "Submit listings to AlternativeTo (Cursor/Cline alternative), OpenAlternative, DevHunt, and LibHunt",
+        "Track reviewer feedback, merge confirmations, and live status"
+      ],
+      "routine_schedule": "Twice weekly (5 submissions/batch)",
+      "run_count": 5,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-3",
+      "number": 3,
+      "title": "VS Code & Cursor Companion Extension",
+      "category": "Product & IDE",
+      "status": "Todo",
+      "priority": "High",
+      "description": "Build a lightweight companion extension bridging the developer's existing IDE (VS Code / Cursor) directly into Tendril's background agent worktrees, diff reviews, and issue-to-PR runner.",
+      "direct_actions": [
+        "Create TypeScript extension scaffold hooking into local Tendril daemon RPC/HTTP",
+        "Add status bar indicator showing active agent worktrees and verification test results",
+        "Implement command palette action: 'Tendril: Send Active File / Issue to Agent Worktree'",
+        "Publish to Visual Studio Marketplace and Open VSX Registry for massive organic discovery"
+      ],
+      "routine_schedule": null,
+      "run_count": 0,
+      "last_run_at": null,
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-4",
+      "number": 4,
+      "title": "Package Manager & One-Line Install Blitz (brew, winget, scoop, npx)",
+      "category": "Developer Experience",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Radically eliminate onboarding friction by publishing Tendril to all native package managers, achieving <60 second time-to-first-run across macOS, Linux, and Windows.",
+      "direct_actions": [
+        "Submit Homebrew formula to ivy-interactive/tap and homebrew-core",
+        "Submit Windows Package Manager manifest to microsoft/winget-pkgs",
+        "Submit Scoop manifest to ScoopInstaller/Extras",
+        "Publish npx @ivy-interactive/tendril zero-install launcher"
+      ],
+      "routine_schedule": null,
+      "run_count": 1,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-5",
+      "number": 5,
+      "title": "'Built with Tendril' PR Flywheel & GitHub Action",
+      "category": "Viral Loops",
+      "status": "In Progress",
+      "priority": "High",
+      "description": "Turn every pull request created or verified by Tendril into a viral distribution channel by adding an elegant verification badge and workflow attribution back to Tendril.",
+      "direct_actions": [
+        "Create standard GitHub Action action.yml for automated verification in CI",
+        "Design clean, respectful PR description footer badge: '⚡ Orchestrated with Ivy-Tendril (3 agents in isolated worktrees)'",
+        "Include benchmark summary (tests passed, tokens saved, worktree diff link) in PR comments"
+      ],
+      "routine_schedule": null,
+      "run_count": 2,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-6",
+      "number": 6,
+      "title": "Real-Time Social Radar & Technical Discussion Monitor",
+      "category": "Community & Social",
+      "status": "Active Routine",
+      "priority": "Medium",
+      "description": "Monitor Hacker News, Reddit (r/programming, r/LocalLLaMA, r/ClaudeAI), and X for developer complaints about agent conflicts, worktree isolation, or code review bottlenecks, auto-drafting helpful technical solutions.",
+      "direct_actions": [
+        "Track keywords: 'Claude Code worktree', 'OpenHands vs', 'coding agent sandbox', 'agent git merge conflict'",
+        "Synthesize grounded, educational answers demonstrating the worktree isolation pattern",
+        "Draft conversational replies with code snippets and non-spam link to Tendril architecture docs"
+      ],
+      "routine_schedule": "Every 4 hours",
+      "run_count": 8,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-7",
+      "number": 7,
+      "title": "Public Daily 'State of Coding Agents' Benchmark Matrix",
+      "category": "Data & Authority",
+      "status": "Todo",
+      "priority": "High",
+      "description": "Publish a daily automated benchmark running standard SWE-bench / synthetic tasks across Claude Code, Codex, Gemini, and OpenCode inside Tendril, measuring cost, pass rate, and rework.",
+      "direct_actions": [
+        "Set up automated runner executing 20 standard tasks daily across supported CLI agents",
+        "Publish auto-generated charts comparing Token Cost, First-Pass PR Success, and Execution Time",
+        "Syndicate benchmark findings to Hacker News Show HN and Substack technical newsletters"
+      ],
+      "routine_schedule": "Weekly on Monday",
+      "run_count": 0,
+      "last_run_at": null,
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-8",
+      "number": 8,
+      "title": "Ready-to-Run Workflow Pack & Recipe Hub",
+      "category": "Product & Ecosystem",
+      "status": "In Progress",
+      "priority": "Medium",
+      "description": "Create a curated public repository of 1-click community recipes and promptware (bugfixer, dependency-upgrader, test-generator, database-migrator) to drive fork-and-star loops.",
+      "direct_actions": [
+        "Build initial 5 gold-standard recipes: Bugfixer, Security Patcher, Test Generator, PR Reviewer, DB Migrator",
+        "Provide 1-line execution: 'tendril run recipe/security-patch'",
+        "Encourage community PR submissions with a GitHub contributor badge program"
+      ],
+      "routine_schedule": null,
+      "run_count": 1,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "issue-9",
+      "number": 9,
+      "title": "Daily Tech Radar & Trend Synthesizer (GitHub, Reddit, LinkedIn Trending → Website Posts)",
+      "category": "Trend Newsroom",
+      "status": "Active Routine",
+      "priority": "Critical",
+      "description": "Daily autonomous trend scout scanning GitHub Trending, Reddit (r/LocalLLaMA, r/programming), and LinkedIn tech posts, synthesizing hot narratives into high-authority website posts with customizable Tendril tie-in.",
+      "direct_actions": [
+        "Daily scout fetching trending GitHub devtool repos, top Reddit AI threads, and LinkedIn AI engineering discussions",
+        "Draft comprehensive analysis articles with adjustable Tendril tie-in (Direct, Subtle, or Pure Tech Commentary)",
+        "Generate ready-to-publish website Markdown with full frontmatter, SEO metadata, and outbound citations",
+        "Auto-generate accompanying LinkedIn and Reddit commentary snippets for social amplification"
+      ],
+      "routine_schedule": "Daily at 07:00 UTC",
+      "run_count": 4,
+      "last_run_at": "2026-09-10T12:11:54.850877100Z",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    }
+  ],
+  "articles": [
+    {
+      "id": "art-1",
+      "title": "How Git Worktrees Solve Agent Hallucination and Workspace Collisions in Multi-Agent Coding",
+      "feature": "Worktrees",
+      "channel": "Website",
+      "angle": "Architecture",
+      "summary": "Deep architectural breakdown of why concurrent AI coding agents corrupt local repositories when sharing a working directory, and how Git worktrees create zero-cost, isolated sandboxes.",
+      "content": "# How Git Worktrees Solve Agent Hallucination and Workspace Collisions in Multi-Agent Coding\n\nWhen running autonomous coding agents like **Claude Code**, **Codex**, or **Gemini CLI**, developers quickly encounter a catastrophic bottleneck: **workspace collision**.\n\nIf two agents write to the same branch or edit files simultaneously, language servers fail, untracked changes collide, and agents hallucinate file states that no longer exist.\n\n## The Problem: Shared State is Fatal for Autonomous Agents\n\nTraditional IDE extensions operate directly within your checked-out working copy. This introduces critical failure modes:\n1. **Dirty Index Corruption**: Agent A modifies `src/auth.ts` while Agent B runs tests on `src/api.ts`. The test suite fails due to incomplete intermediate edits.\n2. **Git Lock Contention**: Concurrent `git status` or `git add` invocations trigger `.git/index.lock` errors.\n3. **Context Drift**: The agent's internal mental model of the codebase drifts from the physical files on disk.\n\n## The Solution: Ephemeral Git Worktrees\n\n[Git Worktrees](https://git-scm.com/docs/git-worktree) allow checking out multiple branches simultaneously from a single local repository, each into its own independent directory.\n\n```bash\n# How Tendril spawns an isolated agent worktree\ngit worktree add ../tendril-agent-task-42 feature/add-jwt-auth\n```\n\nBy leveraging worktrees, **Ivy-Tendril** provides:\n- **True Process Isolation**: Each agent operates in its own physical directory with independent build artifacts (`node_modules`, `target/`).\n- **Parallel Execution**: Run 5 agents simultaneously across 5 different GitHub issues without race conditions.\n- **Automated Verification Gates**: Run unit tests and linters *inside the worktree* before generating a pull request.\n\nExplore the complete architecture in the [Ivy-Tendril GitHub Repository](https://github.com/Ivy-Interactive/Ivy-Tendril).\n",
+      "backlinks": [
+        "https://github.com/Ivy-Interactive/Ivy-Tendril",
+        "https://github.com/Ivy-Interactive/Ivy-Tendril/blob/development/docs/architecture.md"
+      ],
+      "outbound_citations": [
+        "https://git-scm.com/docs/git-worktree",
+        "https://www.swebench.com/",
+        "https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview"
+      ],
+      "status": "Published",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "published_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "art-2",
+      "title": "From GitHub Issue to Verified Pull Request: The 15-Minute Autonomous Loop",
+      "feature": "Issue-to-PR",
+      "channel": "Dev.to",
+      "angle": "Tutorial",
+      "summary": "Step-by-step guide showing how to connect Ivy-Tendril to your GitHub repository, assign an issue to an autonomous agent, and verify passing tests before human code review.",
+      "content": "# From GitHub Issue to Verified Pull Request: The 15-Minute Autonomous Loop\n\nMost \"autonomous coding agent\" demos stop at generating a code snippet in a chat window. But engineering teams don't need snippets—they need **verified pull requests**.\n\nHere is the exact workflow for taking a production GitHub issue and turning it into a tested PR in 15 minutes using [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril).\n\n## Step 1: Import the GitHub Issue\nTendril connects directly to your repository issues. Select the issue and Tendril extracts:\n- Problem description & reproduction steps\n- Affected modules and stack traces\n- Labels and acceptance criteria\n\n## Step 2: Planning & Worktree Provisioning\nRather than making blind edits, Tendril generates an execution plan and clones your repo into a temporary Git worktree.\n\n## Step 3: Verification Gates (The Differentiator)\nBefore opening the PR, Tendril executes your test suite:\n```bash\ncargo test --workspace\n```\nIf a test fails, the agent self-corrects within the worktree. Only when tests pass is the PR opened.\n\nCheck out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril) to run this workflow locally.\n",
+      "backlinks": [
+        "https://github.com/Ivy-Interactive/Ivy-Tendril"
+      ],
+      "outbound_citations": [
+        "https://docs.github.com/en/issues",
+        "https://docs.anthropic.com/"
+      ],
+      "status": "Published",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "published_at": "2026-09-10T12:11:54.850877100Z"
+    }
+  ],
+  "trends": [
+    {
+      "id": "trend-1",
+      "source": "GitHub",
+      "topic": "OpenCode surpasses 200k stars as CLI-first agent adoption surges",
+      "url": "https://github.com/trending",
+      "engagement": "Trending #1 worldwide, 3.2k stars today",
+      "summary": "Developers are migrating from heavy IDE chat plugins to lightweight terminal CLI agents. However, multi-repository orchestration and merge conflicts remain unsolved at the CLI layer.",
+      "tendril_tie_in": "direct",
+      "status": "Scouted",
+      "generated_article_id": null,
+      "created_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "trend-2",
+      "source": "Reddit",
+      "topic": "r/LocalLLaMA debate: 'Why agentic coding frameworks fail on large monorepos'",
+      "url": "https://reddit.com/r/LocalLLaMA/hot",
+      "engagement": "612 upvotes, 284 comments",
+      "summary": "Engineering leads discuss why autonomous agents hallucinate in large repositories (>500k LOC). Key consensus: lack of isolated worktrees and missing verification test gates before git commits.",
+      "tendril_tie_in": "direct",
+      "status": "Scouted",
+      "generated_article_id": null,
+      "created_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "trend-3",
+      "source": "LinkedIn",
+      "topic": "The shift from 'AI Chatbots' to 'Software Factories' in enterprise engineering",
+      "url": "https://www.linkedin.com/feed",
+      "engagement": "1,450 reactions, 180 reposts",
+      "summary": "Analysis of how Fortune 500 teams are moving beyond Copilot autocomplete towards parallel agent orchestration where multiple models work in separate worktrees simultaneously.",
+      "tendril_tie_in": "subtle",
+      "status": "Scouted",
+      "generated_article_id": null,
+      "created_at": "2026-09-10T12:11:54.850877100Z"
+    }
+  ],
+  "listings": [
+    {
+      "id": "list-1",
+      "name": "awesome-ai-agents (e2b-dev)",
+      "category": "Awesome Repo",
+      "url": "https://github.com/e2b-dev/awesome-ai-agents",
+      "status": "PR Submitted",
+      "pr_url": "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
+      "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory that plans tasks, orchestrates agents in isolated Git worktrees, and produces verified PRs.",
+      "notes": "High authority repo (18k+ stars). PR pending merge in 'Coding Agents' category.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "list-2",
+      "name": "awesome-devtools (frenck)",
+      "category": "Awesome Repo",
+      "url": "https://github.com/frenck/awesome-devtools",
+      "status": "Targeted",
+      "pr_url": null,
+      "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Run multiple coding agents (Claude Code, Gemini, Codex) safely in parallel worktrees.",
+      "notes": "Targeting 'Git Utilities & Automation' section.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "list-3",
+      "name": "awesome-software-engineering-ai (youssefHosni)",
+      "category": "Awesome Repo",
+      "url": "https://github.com/youssefHosni/awesome-software-engineering-ai",
+      "status": "Targeted",
+      "pr_url": null,
+      "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent development environment with automated verification gates.",
+      "notes": "Curated AI for SE list.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "list-4",
+      "name": "OpenAlternative",
+      "category": "Dev Directory",
+      "url": "https://openalternative.co/",
+      "status": "Targeted",
+      "pr_url": null,
+      "submission_blurb": "Ivy-Tendril is an open-source alternative to Cursor and proprietary software factories, offering Git worktree isolation and multi-agent orchestration.",
+      "notes": "Submit as open-source alternative to Cursor, Devin, and CodeRabbit.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "list-5",
+      "name": "AlternativeTo (Cursor / Cline)",
+      "category": "Dev Directory",
+      "url": "https://alternativeto.net/software/cursor/",
+      "status": "Live",
+      "pr_url": null,
+      "submission_blurb": "Ivy-Tendril is an open-source multi-agent software factory that automates issue-to-verified PR workflows.",
+      "notes": "Listed on AlternativeTo Cursor and Cline pages.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "list-6",
+      "name": "DevHunt",
+      "category": "Dev Directory",
+      "url": "https://devhunt.org/",
+      "status": "Targeted",
+      "pr_url": null,
+      "submission_blurb": "Ivy-Tendril: Turn GitHub issues into verified pull requests using isolated agent worktrees.",
+      "notes": "Launch scheduled for Phase 1 campaign.",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    }
+  ],
+  "tasks": []
+}
