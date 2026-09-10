@@ -15,6 +15,7 @@ import {
   CheckCheck,
   ExternalLink,
   Send,
+  Loader2,
 } from "lucide-react";
 
 export interface ReviewQueueProps {
@@ -235,11 +236,32 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const [isBatchPublishing, setIsBatchPublishing] = useState<boolean>(false);
+
   const handleBatchPublish = async () => {
-    if (onBatchPublish) {
-      await onBatchPublish(approvedItems);
+    setIsBatchPublishing(true);
+    try {
+      for (const item of approvedItems) {
+        if (item.type === "article") {
+          try {
+            await fetch(`/api/articles/${item.rawId}/export/ivy-web`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sync_hero_image: true }),
+            });
+          } catch (err) {
+            console.error("Batch publish export/sync error for article:", item.title, err);
+          }
+        }
+      }
+
+      if (onBatchPublish) {
+        await onBatchPublish(approvedItems);
+      }
+      setShowExportModal(false);
+    } finally {
+      setIsBatchPublishing(false);
     }
-    setShowExportModal(false);
   };
 
   // Helper badge renderers
@@ -776,10 +798,20 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               </button>
               <button
                 onClick={handleBatchPublish}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 transition-colors"
+                disabled={isBatchPublishing}
+                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 transition-colors disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5" />
-                Publish All
+                {isBatchPublishing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    Publish All
+                  </>
+                )}
               </button>
             </div>
           </div>
