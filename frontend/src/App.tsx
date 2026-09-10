@@ -25,14 +25,27 @@ export const App: React.FC = () => {
   const initialTabParam = searchParams?.get("tab") as ActiveTab | null;
   const initialArticleId = searchParams?.get("article");
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>(
-    initialTabParam &&
-      ["issues", "articles", "trends", "demos", "listings", "agent", "review"].includes(
-        initialTabParam,
-      )
-      ? initialTabParam
-      : "issues",
-  );
+  const getInitialTab = (): ActiveTab => {
+    const hash = window.location.hash.replace("#", "") as ActiveTab;
+    const validTabs: ActiveTab[] = [
+      "issues",
+      "articles",
+      "trends",
+      "demos",
+      "listings",
+      "agent",
+      "review",
+    ];
+    if (validTabs.includes(hash)) return hash;
+    return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
+  };
+
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(getInitialTab);
+
+  const setActiveTab = (tab: ActiveTab) => {
+    setActiveTabState(tab);
+    window.location.hash = tab;
+  };
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -76,6 +89,24 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace("#", "") as ActiveTab;
+      const validTabs: ActiveTab[] = [
+        "issues",
+        "articles",
+        "trends",
+        "demos",
+        "listings",
+        "agent",
+        "review",
+      ];
+      if (validTabs.includes(hash)) {
+        setActiveTabState(hash);
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   // Issue Handlers
@@ -193,16 +224,20 @@ export const App: React.FC = () => {
   };
 
   // Trend Handlers
-  const handleScoutTrends = async () => {
+  const handleScoutTrends = async (mode: "general" | "discussions" = "general") => {
     try {
       const res = await fetch("/api/trends/scout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ mode }),
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle("Scouting GitHub, Reddit, LinkedIn Trends");
+        setTerminalTitle(
+          mode === "discussions"
+            ? "Harvester: Social Discussions (Reddit & HN)"
+            : "Scouting GitHub, Reddit, LinkedIn Trends",
+        );
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
@@ -499,8 +534,11 @@ export const App: React.FC = () => {
         {activeTab === "trends" && (
           <TrendRadar
             trends={trends}
+            articles={articles}
             onScoutTrends={handleScoutTrends}
             onSynthesizeTrend={handleSynthesizeTrend}
+            onSelectArticle={(art) => setSelectedArticle(art)}
+            onUpdateArticleStatus={handleUpdateArticleStatus}
           />
         )}
 
