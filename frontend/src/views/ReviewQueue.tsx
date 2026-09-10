@@ -16,6 +16,8 @@ import {
   ExternalLink,
   Send,
   Loader2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 export interface ReviewQueueProps {
@@ -35,6 +37,53 @@ interface DeckAction {
   item: ReviewItem;
   action: "approve" | "reject" | "skip";
 }
+
+let sharedAudioCtx: AudioContext | null = null;
+
+export const resetSharedAudioContextForTesting = () => {
+  sharedAudioCtx = null;
+};
+
+export const playThresholdClickSound = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    if (
+      !sharedAudioCtx ||
+      sharedAudioCtx.state === "closed" ||
+      !(sharedAudioCtx instanceof AudioContextClass)
+    ) {
+      sharedAudioCtx = new AudioContextClass();
+    }
+    if (sharedAudioCtx.state === "suspended") {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+
+    const ctx = sharedAudioCtx;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(900, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.018);
+
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.02);
+  } catch {
+    // Fail silently in headless, restricted or unsupported environments
+  }
+};
 
 export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   items: initialItems,
@@ -58,7 +107,37 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDraggingRef = React.useRef<boolean>(false);
   const dragOffsetRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const hasVibratedRef = React.useRef<boolean>(false);
+  const hasFeedbackRef = React.useRef<boolean>(false);
+
+  // Audio feedback state (persisted to localStorage)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.localStorage) return true;
+    try {
+      const stored = localStorage.getItem("growth_review_sound_enabled");
+      return stored === null ? true : stored === "true";
+    } catch {
+      return true;
+    }
+  });
+  const soundEnabledRef = React.useRef<boolean>(soundEnabled);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  const handleToggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          localStorage.setItem("growth_review_sound_enabled", String(next));
+        } catch {
+          // Ignore localStorage access errors
+        }
+      }
+      return next;
+    });
+  };
 
   // Edit/Refine state
   const [editTitle, setEditTitle] = useState<string>("");
@@ -183,7 +262,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     dragOffsetRef.current = { x: 0, y: 0 };
     isDraggingRef.current = true;
-    hasVibratedRef.current = false;
+    hasFeedbackRef.current = false;
     setIsDragging(true);
     setDragOffset({ x: 0, y: 0 });
   };
@@ -196,7 +275,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     setDragOffset({ x: dx, y: dy });
 
     const isOverThreshold = Math.abs(dx) >= SWIPE_THRESHOLD;
-    if (isOverThreshold && !hasVibratedRef.current) {
+    if (isOverThreshold && !hasFeedbackRef.current) {
       if (
         typeof navigator !== "undefined" &&
         "vibrate" in navigator &&
@@ -208,9 +287,12 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
           // Ignore environments where vibration is blocked or restricted
         }
       }
-      hasVibratedRef.current = true;
-    } else if (!isOverThreshold && hasVibratedRef.current) {
-      hasVibratedRef.current = false;
+      if (soundEnabledRef.current) {
+        playThresholdClickSound();
+      }
+      hasFeedbackRef.current = true;
+    } else if (!isOverThreshold && hasFeedbackRef.current) {
+      hasFeedbackRef.current = false;
     }
   };
 
@@ -224,7 +306,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       }
     }
     isDraggingRef.current = false;
-    hasVibratedRef.current = false;
+    hasFeedbackRef.current = false;
     setIsDragging(false);
 
     const finalDx =
@@ -252,7 +334,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       }
     }
     isDraggingRef.current = false;
-    hasVibratedRef.current = false;
+    hasFeedbackRef.current = false;
     setIsDragging(false);
     setDragOffset({ x: 0, y: 0 });
     dragOffsetRef.current = { x: 0, y: 0 };
@@ -309,6 +391,9 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       } else if ((e.key === "z" || e.key === "Z") && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
         e.preventDefault();
         handleUndo();
+      } else if (e.key === "m" || e.key === "M" || e.code === "KeyM") {
+        e.preventDefault();
+        handleToggleSound();
       }
     };
 
@@ -512,38 +597,72 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
           ))}
         </div>
 
-        {/* Keyboard Shortcut Cheatsheet */}
-        <div className="hidden lg:flex items-center gap-3 text-[11px] text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/60">
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              ← / R
-            </kbd>
-            Reject
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              → / A
-            </kbd>
-            Approve
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              ↑ / E
-            </kbd>
-            Refine
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              ↓ / Space
-            </kbd>
-            Skip
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-              Z
-            </kbd>
-            Undo
-          </span>
+        <div className="flex items-center gap-3">
+          {/* Sound Feedback Toggle Button */}
+          <button
+            type="button"
+            onClick={handleToggleSound}
+            data-testid="sound-toggle-btn"
+            aria-label={soundEnabled ? "Mute audio feedback" : "Enable audio feedback"}
+            title={soundEnabled ? "Mute threshold click (M)" : "Enable threshold click (M)"}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              soundEnabled
+                ? "bg-slate-900/80 hover:bg-slate-800 text-emerald-400 border-slate-800 hover:border-slate-700"
+                : "bg-slate-900/40 hover:bg-slate-900 text-slate-500 border-slate-800/60 hover:text-slate-400"
+            }`}
+          >
+            {soundEnabled ? (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Sound On</span>
+              </>
+            ) : (
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                <span>Muted</span>
+              </>
+            )}
+          </button>
+
+          {/* Keyboard Shortcut Cheatsheet */}
+          <div className="hidden lg:flex items-center gap-3 text-[11px] text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/60">
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                ← / R
+              </kbd>
+              Reject
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                → / A
+              </kbd>
+              Approve
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                ↑ / E
+              </kbd>
+              Refine
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                ↓ / Space
+              </kbd>
+              Skip
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                M
+              </kbd>
+              Mute
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                Z
+              </kbd>
+              Undo
+            </span>
+          </div>
         </div>
       </div>
 
