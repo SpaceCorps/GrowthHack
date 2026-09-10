@@ -3,6 +3,7 @@ pub mod articles;
 pub mod demos;
 pub mod issues;
 pub mod listings;
+pub mod packages;
 pub mod trends;
 
 use axum::{
@@ -37,6 +38,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/listings", get(listings::list_listings).post(listings::create_listing))
         .route("/api/listings/{id}", put(listings::update_listing))
         .route("/api/listings/{id}/generate-blurb", post(listings::generate_listing_blurb))
+        // Package Manager & One-Line Install Blitz
+        .route("/api/packages", get(packages::list_packages))
+        .route("/api/packages/{target}/manifest", get(packages::get_manifest))
+        .route("/api/packages/{id}/status", put(packages::update_package_status))
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
