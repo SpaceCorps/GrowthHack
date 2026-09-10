@@ -155,7 +155,13 @@ async fn test_get_workflows_endpoint() {
 
     assert!(res.action_yml.contains("name: \"Tendril Verification & PR Flywheel\""));
     assert!(res.action_yml.contains("inputs:"));
+    assert!(res.action_yml.contains("<!-- tendril-flywheel-badge -->"));
+    assert!(res.action_yml.contains("EXISTING_COMMENT_ID"));
+    assert!(res.action_yml.contains("gh api \"repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}\""));
+    assert!(res.action_yml.contains("gh pr comment \"${PR_NUMBER}\""));
     assert!(res.workflow_yml.contains("name: Tendril Verification & PR Flywheel"));
     assert!(res.workflow_yml.contains("on:"));
     assert!(res.workflow_yml.contains("pull_request:"));
+    assert!(res.workflow_yml.contains("pull-requests: write"));
+    assert!(res.workflow_yml.contains("issues: write"));
 }
