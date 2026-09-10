@@ -149,6 +149,41 @@ pub struct PackageManagerTarget {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct RecipeParameter {
+    pub name: String,
+    pub description: String,
+    pub default_value: String,
+    pub required: bool,
+    pub param_type: String, // "string", "number", "boolean", "select"
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Recipe {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub category: String, // "Maintenance", "Security", "Testing", "Code Quality", "Database"
+    pub author: String,
+    #[serde(default)]
+    pub author_avatar: Option<String>,
+    pub version: String,
+    pub tags: Vec<String>,
+    pub promptware_template: String,
+    pub parameters: Vec<RecipeParameter>,
+    pub cli_snippet: String,
+    pub forks_count: u32,
+    pub stars_count: u32,
+    pub is_official: bool,
+    #[serde(default)]
+    pub badge: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
@@ -162,6 +197,8 @@ pub struct GrowthState {
     pub syndication_settings: SyndicationSettings,
     #[serde(default)]
     pub packages: Vec<PackageManagerTarget>,
+    #[serde(default)]
+    pub recipes: Vec<Recipe>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -179,6 +216,10 @@ impl GrowthState {
                     tracing::info!("Loaded growth database from {}", path.display());
                     if state.packages.is_empty() {
                         state.packages = Self::seed_packages(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if state.recipes.is_empty() {
+                        state.recipes = Self::seed_recipes(Utc::now());
                         let _ = state.save(path);
                     }
                     return state;
@@ -556,6 +597,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
 
         let tasks = Vec::new();
         let packages = Self::seed_packages(now);
+        let recipes = Self::seed_recipes(now);
 
         let video_demos = vec![
             VideoDemo {
@@ -629,6 +671,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             video_demos,
             syndication_settings: SyndicationSettings::default(),
             packages,
+            recipes,
         }
     }
 
@@ -1326,6 +1369,295 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 pr_url: None,
                 manifest_filename: "package.json".to_string(),
                 notes: "Sub-60-second time-to-first-run zero-install launcher published on npm.".to_string(),
+                updated_at: now,
+            },
+        ]
+    }
+
+    pub fn seed_recipes(now: DateTime<Utc>) -> Vec<Recipe> {
+        vec![
+            Recipe {
+                id: "recipe-bugfixer".to_string(),
+                slug: "bugfixer".to_string(),
+                name: "Bugfixer".to_string(),
+                description: "Autonomous issue reproduction script generation, isolated worktree test creation, and targeted bug repair.".to_string(),
+                category: "Maintenance".to_string(),
+                author: "Tendril Core Team".to_string(),
+                author_avatar: None,
+                version: "1.0.0".to_string(),
+                tags: vec![
+                    "bugfix".to_string(),
+                    "git-worktrees".to_string(),
+                    "reproduction".to_string(),
+                    "automated-repair".to_string(),
+                ],
+                promptware_template: r#"name: Bugfixer
+version: 1.0.0
+description: Autonomous issue reproduction and targeted bug repair
+steps:
+  - id: reproduce
+    action: Generate isolated reproduction script or test case
+    gate: Verification/ReproductionTest
+  - id: fix
+    action: Implement targeted bug fix in isolated worktree
+    gate: Verification/PreExecution
+  - id: verify
+    action: Execute project test suite and formatting gates
+    gate: Verification/AllTests
+"#.to_string(),
+                parameters: vec![
+                    RecipeParameter {
+                        name: "issue_id".to_string(),
+                        description: "Target GitHub issue ID or bug description".to_string(),
+                        default_value: "42".to_string(),
+                        required: true,
+                        param_type: "string".to_string(),
+                        options: None,
+                    },
+                    RecipeParameter {
+                        name: "test_first".to_string(),
+                        description: "Generate failing reproduction test before implementing fix".to_string(),
+                        default_value: "true".to_string(),
+                        required: false,
+                        param_type: "boolean".to_string(),
+                        options: None,
+                    },
+                ],
+                cli_snippet: "tendril run recipe/bugfixer --issue=<issue_id>".to_string(),
+                forks_count: 142,
+                stars_count: 580,
+                is_official: true,
+                badge: Some("Core Team".to_string()),
+                created_at: now,
+                updated_at: now,
+            },
+            Recipe {
+                id: "recipe-security-patcher".to_string(),
+                slug: "security-patcher".to_string(),
+                name: "Security Patcher".to_string(),
+                description: "Automated CVE dependency auditing, breaking-change risk analysis, and automated version bump PRs.".to_string(),
+                category: "Security".to_string(),
+                author: "Tendril Core Team".to_string(),
+                author_avatar: None,
+                version: "1.0.0".to_string(),
+                tags: vec![
+                    "security".to_string(),
+                    "cve".to_string(),
+                    "audit".to_string(),
+                    "dependencies".to_string(),
+                ],
+                promptware_template: r#"name: Security Patcher
+version: 1.0.0
+description: Automated CVE dependency auditing and security upgrade PRs
+steps:
+  - id: audit
+    action: Scan dependencies for CVE vulnerabilities
+    gate: Verification/SecurityAudit
+  - id: patch
+    action: Upgrade vulnerable package versions and resolve breaking changes
+    gate: Verification/CargoClippy
+  - id: test
+    action: Run regression test suite
+    gate: Verification/RegressionTests
+"#.to_string(),
+                parameters: vec![
+                    RecipeParameter {
+                        name: "cve_id".to_string(),
+                        description: "Target CVE identifier or dependency advisory".to_string(),
+                        default_value: "CVE-2026-1042".to_string(),
+                        required: true,
+                        param_type: "string".to_string(),
+                        options: None,
+                    },
+                    RecipeParameter {
+                        name: "severity_threshold".to_string(),
+                        description: "Minimum vulnerability severity level to trigger auto-patching".to_string(),
+                        default_value: "High".to_string(),
+                        required: false,
+                        param_type: "select".to_string(),
+                        options: Some(vec![
+                            "Critical".to_string(),
+                            "High".to_string(),
+                            "Medium".to_string(),
+                            "Low".to_string(),
+                        ]),
+                    },
+                ],
+                cli_snippet: "tendril run recipe/security-patcher --cve=<cve_id>".to_string(),
+                forks_count: 89,
+                stars_count: 412,
+                is_official: true,
+                badge: Some("Core Team".to_string()),
+                created_at: now,
+                updated_at: now,
+            },
+            Recipe {
+                id: "recipe-test-generator".to_string(),
+                slug: "test-generator".to_string(),
+                name: "Test Generator".to_string(),
+                description: "Differential coverage analysis and edge-case unit and integration test synthesis with mock verification.".to_string(),
+                category: "Testing".to_string(),
+                author: "Tendril Core Team".to_string(),
+                author_avatar: None,
+                version: "1.0.0".to_string(),
+                tags: vec![
+                    "testing".to_string(),
+                    "coverage".to_string(),
+                    "unit-tests".to_string(),
+                    "edge-cases".to_string(),
+                ],
+                promptware_template: r#"name: Test Generator
+version: 1.0.0
+description: Differential coverage analysis and edge-case unit and integration test synthesis
+steps:
+  - id: analyze_coverage
+    action: Calculate uncovered branches and public interface edges
+    gate: Verification/CoverageMap
+  - id: synthesize_tests
+    action: Write comprehensive unit and mock integration tests
+    gate: Verification/TestExecution
+"#.to_string(),
+                parameters: vec![
+                    RecipeParameter {
+                        name: "test_scope".to_string(),
+                        description: "Target file, module, or test scope path".to_string(),
+                        default_value: "src/api/recipes.rs".to_string(),
+                        required: true,
+                        param_type: "string".to_string(),
+                        options: None,
+                    },
+                    RecipeParameter {
+                        name: "framework".to_string(),
+                        description: "Testing framework adapter".to_string(),
+                        default_value: "auto".to_string(),
+                        required: false,
+                        param_type: "select".to_string(),
+                        options: Some(vec![
+                            "auto".to_string(),
+                            "cargo-test".to_string(),
+                            "vitest".to_string(),
+                            "pytest".to_string(),
+                        ]),
+                    },
+                ],
+                cli_snippet: "tendril run recipe/test-generator --scope=<test_scope>".to_string(),
+                forks_count: 215,
+                stars_count: 890,
+                is_official: true,
+                badge: Some("Core Team".to_string()),
+                created_at: now,
+                updated_at: now,
+            },
+            Recipe {
+                id: "recipe-pr-reviewer".to_string(),
+                slug: "pr-reviewer".to_string(),
+                name: "PR Reviewer".to_string(),
+                description: "Deep architectural analysis, code smell detection, and constructive review comment synthesis on open PRs.".to_string(),
+                category: "Code Quality".to_string(),
+                author: "Tendril Core Team".to_string(),
+                author_avatar: None,
+                version: "1.0.0".to_string(),
+                tags: vec![
+                    "code-quality".to_string(),
+                    "pr-review".to_string(),
+                    "architecture".to_string(),
+                    "diff-analysis".to_string(),
+                ],
+                promptware_template: r#"name: PR Reviewer
+version: 1.0.0
+description: Deep architectural analysis and constructive review comment synthesis
+steps:
+  - id: diff_analysis
+    action: Inspect PR changes against default branch
+    gate: Verification/DiffAudit
+  - id: review_comments
+    action: Synthesize architectural and code quality feedback
+    gate: Verification/ReviewOutput
+"#.to_string(),
+                parameters: vec![
+                    RecipeParameter {
+                        name: "pr_number".to_string(),
+                        description: "Pull request number or GitHub URL".to_string(),
+                        default_value: "105".to_string(),
+                        required: true,
+                        param_type: "string".to_string(),
+                        options: None,
+                    },
+                    RecipeParameter {
+                        name: "strictness".to_string(),
+                        description: "Review strictness and feedback depth".to_string(),
+                        default_value: "Standard".to_string(),
+                        required: false,
+                        param_type: "select".to_string(),
+                        options: Some(vec![
+                            "Standard".to_string(),
+                            "Strict".to_string(),
+                            "Lenient".to_string(),
+                        ]),
+                    },
+                ],
+                cli_snippet: "tendril run recipe/pr-reviewer --pr=<pr_number>".to_string(),
+                forks_count: 178,
+                stars_count: 670,
+                is_official: true,
+                badge: Some("Core Team".to_string()),
+                created_at: now,
+                updated_at: now,
+            },
+            Recipe {
+                id: "recipe-db-migrator".to_string(),
+                slug: "db-migrator".to_string(),
+                name: "DB Migrator".to_string(),
+                description: "Schema diff detection, safe migration script generation (up and down), and backward compatibility verification.".to_string(),
+                category: "Database".to_string(),
+                author: "Tendril Core Team".to_string(),
+                author_avatar: None,
+                version: "1.0.0".to_string(),
+                tags: vec![
+                    "database".to_string(),
+                    "migration".to_string(),
+                    "schema".to_string(),
+                    "sql".to_string(),
+                ],
+                promptware_template: r#"name: DB Migrator
+version: 1.0.0
+description: Schema diff detection, migration script synthesis, and rollback verification
+steps:
+  - id: diff_schema
+    action: Detect changes between models and current database schema
+    gate: Verification/SchemaDiff
+  - id: generate_migrations
+    action: Generate reversible up and down migration scripts
+    gate: Verification/MigrationDryRun
+"#.to_string(),
+                parameters: vec![
+                    RecipeParameter {
+                        name: "schema_target".to_string(),
+                        description: "Target table, model, or migration name".to_string(),
+                        default_value: "add_recipes_table".to_string(),
+                        required: true,
+                        param_type: "string".to_string(),
+                        options: None,
+                    },
+                    RecipeParameter {
+                        name: "engine".to_string(),
+                        description: "Database dialect or ORM".to_string(),
+                        default_value: "postgres".to_string(),
+                        required: false,
+                        param_type: "select".to_string(),
+                        options: Some(vec![
+                            "postgres".to_string(),
+                            "mysql".to_string(),
+                            "sqlite".to_string(),
+                        ]),
+                    },
+                ],
+                cli_snippet: "tendril run recipe/db-migrator --name=<schema_target>".to_string(),
+                forks_count: 64,
+                stars_count: 320,
+                is_official: true,
+                badge: Some("Core Team".to_string()),
+                created_at: now,
                 updated_at: now,
             },
         ]

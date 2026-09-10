@@ -6,6 +6,7 @@ pub mod demos;
 pub mod issues;
 pub mod listings;
 pub mod packages;
+pub mod recipes;
 pub mod trends;
 
 use axum::{
@@ -110,6 +111,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/badges/generate", post(badges::generate_badge))
         .route("/api/badges/svg", get(badges::render_svg_badge))
         .route("/api/badges/workflows", get(badges::get_workflow_templates))
+        // Ready-to-Run Recipes & Community Hub
+        .route(
+            "/api/recipes",
+            get(recipes::list_recipes).post(recipes::create_or_update_recipe),
+        )
+        .route("/api/recipes/{id}", get(recipes::get_recipe))
+        .route("/api/recipes/{id}/run", post(recipes::run_recipe))
+        .route("/api/recipes/submit", post(recipes::submit_recipe))
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
