@@ -1,17 +1,15 @@
-import React, { useState } from 'react';
-import type { Listing } from '../types';
-import { 
-  ListTree, 
-  ExternalLink, 
-  GitPullRequest, 
-  Sparkles, 
-  Copy, 
-  Check, 
-  Plus, 
-  CheckCircle2, 
-  Clock, 
-  Filter
-} from 'lucide-react';
+import React, { useState } from "react";
+import type { Listing } from "../types";
+import {
+  ListTree,
+  ExternalLink,
+  GitPullRequest,
+  Sparkles,
+  Copy,
+  Check,
+  Plus,
+  Filter,
+} from "lucide-react";
 
 interface ListingBlitzProps {
   listings: Listing[];
@@ -26,23 +24,23 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
   onUpdateStatus,
   onCreateListing,
 }) => {
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
 
   // Add Listing Form
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<Listing['category']>('Awesome Repo');
-  const [url, setUrl] = useState('');
-  const [blurb, setBlurb] = useState('');
-  const [notes, setNotes] = useState('');
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState<Listing["category"]>("Awesome Repo");
+  const [url, setUrl] = useState("");
+  const [blurb, setBlurb] = useState("");
+  const [notes, setNotes] = useState("");
 
   const categories = Array.from(new Set(listings.map((l) => l.category)));
 
   const filteredListings = listings.filter((l) => {
-    const matchesCategory = filterCategory === 'all' || l.category === filterCategory;
-    const matchesStatus = filterStatus === 'all' || l.status === filterStatus;
+    const matchesCategory = filterCategory === "all" || l.category === filterCategory;
+    const matchesStatus = filterStatus === "all" || l.status === filterStatus;
     return matchesCategory && matchesStatus;
   });
 
@@ -64,25 +62,25 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
       notes,
     });
 
-    setName('');
-    setUrl('');
-    setBlurb('');
-    setNotes('');
+    setName("");
+    setUrl("");
+    setBlurb("");
+    setNotes("");
     setShowAddModal(false);
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'Live':
-        return 'bg-emerald-950/80 text-emerald-300 border-emerald-800';
-      case 'Merged':
-        return 'bg-cyan-950/80 text-cyan-300 border-cyan-800';
-      case 'PR Submitted':
-        return 'bg-indigo-950/80 text-indigo-300 border-indigo-800';
-      case 'Under Review':
-        return 'bg-amber-950/80 text-amber-300 border-amber-800';
+      case "Live":
+        return "bg-emerald-950/80 text-emerald-300 border-emerald-800";
+      case "Merged":
+        return "bg-cyan-950/80 text-cyan-300 border-cyan-800";
+      case "PR Submitted":
+        return "bg-indigo-950/80 text-indigo-300 border-indigo-800";
+      case "Under Review":
+        return "bg-amber-950/80 text-amber-300 border-amber-800";
       default:
-        return 'bg-slate-800 text-slate-400 border-slate-700';
+        return "bg-slate-800 text-slate-400 border-slate-700";
     }
   };
 
@@ -99,7 +97,9 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
             List Ivy-Tendril Everywhere Developers Look
           </h2>
           <p className="mt-1 text-xs text-slate-300 leading-relaxed">
-            Awesome repositories, software factory registries, developer directories (AlternativeTo, OpenAlternative, DevHunt). Antigravity generates tailored PR descriptions and markdown table entries for instant merging.
+            Awesome repositories, software factory registries, developer directories (AlternativeTo,
+            OpenAlternative, DevHunt). Antigravity generates tailored PR descriptions and markdown
+            table entries for instant merging.
           </p>
         </div>
 
@@ -121,19 +121,22 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-slate-400">PRs Submitted:</span>
           <p className="text-xl font-bold text-indigo-400 mt-1">
-            {listings.filter((l) => l.status === 'PR Submitted' || l.status === 'Under Review').length}
+            {
+              listings.filter((l) => l.status === "PR Submitted" || l.status === "Under Review")
+                .length
+            }
           </p>
         </div>
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-slate-400">Merged PRs:</span>
           <p className="text-xl font-bold text-cyan-400 mt-1">
-            {listings.filter((l) => l.status === 'Merged').length}
+            {listings.filter((l) => l.status === "Merged").length}
           </p>
         </div>
         <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800">
           <span className="text-slate-400">Live Backlinks:</span>
           <p className="text-xl font-bold text-emerald-400 mt-1">
-            {listings.filter((l) => l.status === 'Live').length}
+            {listings.filter((l) => l.status === "Live").length}
           </p>
         </div>
       </div>
@@ -241,14 +244,14 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                 ) : (
                   <Copy className="w-3 h-3" />
                 )}
-                <span>{copiedId === listing.id ? 'Copied' : 'Copy'}</span>
+                <span>{copiedId === listing.id ? "Copied" : "Copy"}</span>
               </button>
             </div>
 
             {/* Bottom Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs">
               <span className="text-slate-400 italic">
-                Notes: {listing.notes || 'No notes added.'}
+                Notes: {listing.notes || "No notes added."}
               </span>
 
               <button

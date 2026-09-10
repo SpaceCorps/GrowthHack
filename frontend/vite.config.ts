@@ -3,10 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-  ],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
@@ -19,5 +16,8 @@ export default defineConfig({
   fmt: {},
   lint: {
     options: { typeAware: false, typeCheck: false },
+  },
+  test: {
+    environment: "happy-dom",
   },
 });

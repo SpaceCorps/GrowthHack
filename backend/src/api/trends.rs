@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct ScoutTrendsRequest {
+    #[allow(dead_code)]
     pub sources: Option<Vec<String>>, // ["GitHub", "Reddit", "LinkedIn"]
 }
 
