@@ -163,6 +163,14 @@ export interface PackageManifestResponse {
   instructions: string;
 }
 
+export interface DispatchPackagePrResponse {
+  task_id: string;
+  message: string;
+  target_key: string;
+  upstream_repo: string;
+  commands: string[];
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;

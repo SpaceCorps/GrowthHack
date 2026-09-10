@@ -395,6 +395,25 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleDispatchPackagePr = async (id: string, version?: string) => {
+    try {
+      const res = await fetch(`/api/packages/${id}/dispatch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version }),
+      });
+      const data = await res.json();
+      if (data && data.task_id) {
+        setTerminalTitle("Antigravity Upstream PR Dispatcher");
+        setActiveTaskId(data.task_id);
+      }
+      fetchAll();
+      return data?.task_id;
+    } catch (err) {
+      console.error("Dispatch package PR error:", err);
+    }
+  };
+
   const handleGenerateDemo = async (feature: string, platform: string, duration: number) => {
     try {
       const res = await fetch("/api/demos/generate", {
@@ -837,6 +856,7 @@ export const App: React.FC = () => {
           <PackageManagerBlitz
             packages={packages}
             onUpdatePackageStatus={handleUpdatePackageStatus}
+            onDispatchPackagePr={handleDispatchPackagePr}
           />
         )}
         {activeTab === "flywheel" && <PrFlywheel />}
