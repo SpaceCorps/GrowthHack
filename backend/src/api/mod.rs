@@ -4,6 +4,7 @@ pub mod badges;
 pub mod demos;
 pub mod issues;
 pub mod listings;
+pub mod packages;
 pub mod trends;
 
 use axum::{
@@ -90,6 +91,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/{id}/generate-blurb",
             post(listings::generate_listing_blurb),
         )
+        // Package Manager & One-Line Install Blitz
+        .route("/api/packages", get(packages::list_packages))
+        .route("/api/packages/{target}/manifest", get(packages::get_manifest))
+        .route("/api/packages/{id}/status", put(packages::update_package_status))
         // PR Badges and Workflows Flywheel
         .route("/api/badges/generate", post(badges::generate_badge))
         .route("/api/badges/svg", get(badges::render_svg_badge))
