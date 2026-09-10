@@ -672,7 +672,18 @@ export const App: React.FC = () => {
   };
 
   const handleRefineReviewItem = async (item: ReviewItem, updated: Partial<ReviewItem>) => {
-    setReviewItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, ...updated } : it)));
+    let nextUpdated = { ...updated };
+    if (
+      item.type === "listing_blurb" &&
+      updated.content !== undefined &&
+      updated.content !== item.content &&
+      !updated.status
+    ) {
+      nextUpdated.status = "Pending";
+    }
+    setReviewItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, ...nextUpdated } : it)),
+    );
     if (item.type === "article") {
       try {
         await fetch(`/api/articles/${item.rawId}`, {
@@ -722,12 +733,15 @@ export const App: React.FC = () => {
       }
     } else if (item.type === "listing_blurb") {
       try {
+        const isModified = updated.content !== undefined && updated.content !== item.content;
+        const blurbStatus = nextUpdated.status ?? (isModified ? "Pending" : undefined);
         await fetch(`/api/listings/${item.rawId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             submission_blurb: updated.content,
             notes: updated.summary,
+            ...(blurbStatus ? { blurb_status: blurbStatus } : {}),
           }),
         });
         fetchAll();
