@@ -196,6 +196,126 @@
       "last_run_at": "2026-09-10T12:11:54.850877100Z",
       "created_at": "2026-09-10T12:11:54.850877100Z",
       "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "priority": "Critical",
+      "id": "issue-11",
+      "routine_schedule": null,
+      "status": "In Progress",
+      "number": 11,
+      "created_at": "2026-09-10T12:38:55.1865236Z",
+      "run_count": 0,
+      "category": "Developer Experience & Activation",
+      "last_run_at": null,
+      "direct_actions": [
+        "Implement \tendril doctor CLI command validating Git worktree support, installed agent CLIs (Claude Code, Gemini, Codex), API keys, and port availability",
+        "Bundle a pre-packaged sample repo (\tendril demo) allowing anyone to run an issue-to-verified-PR workflow in 60 seconds without configuring external dependencies",
+        "Add automatic post-success prompt on first verified PR: 'Enjoying Tendril? Star us on GitHub! ⭐'",
+        "Surface actionable fix suggestions for common errors (missing Git worktree permissions, stale CLI paths, missing node/cargo)"
+      ],
+      "title": "tendril doctor & Replayable Zero-Config Demo Mode",
+      "description": "Eliminate first-run activation friction so developers achieve immediate success within 5 minutes of installation. Build a diagnostic CLI tool and bundle a replayable sample repository.",
+      "updated_at": "2026-09-10T12:38:55.1887007Z"
+    },
+    {
+      "priority": "Critical",
+      "id": "issue-12",
+      "routine_schedule": null,
+      "status": "In Progress",
+      "number": 12,
+      "created_at": "2026-09-10T12:38:55.1887530Z",
+      "run_count": 0,
+      "category": "Distribution & Launches",
+      "last_run_at": null,
+      "direct_actions": [
+        "Draft an engineering-first, high-authenticity Show HN post: 'Show HN: Tendril – Run multiple coding agents safely in isolated Git worktrees'",
+        "Prepare a 90-second uncut technical demo video showcasing simultaneous agent execution and automated test verification",
+        "Recruit and coordinate 20 technical beta testers from the community to seed substantive technical discussion within the first 60 minutes",
+        "Submit coordinated launch across Product Hunt, Reddit r/programming, and developer newsletters (TLDR, Console.dev, Changelog)"
+      ],
+      "title": "Coordinated 'Show HN' (Hacker News) & Product Hunt Launch Campaign",
+      "description": "Orchestrate a high-density 48-hour launch event across Hacker News, Product Hunt, and developer communities to trigger the initial 2,000–5,000 star influx and trend #1 globally on GitHub.",
+      "updated_at": "2026-09-10T12:38:55.1887787Z"
+    },
+    {
+      "priority": "High",
+      "id": "issue-13",
+      "routine_schedule": null,
+      "status": "Todo",
+      "number": 13,
+      "created_at": "2026-09-10T12:38:55.1888026Z",
+      "run_count": 0,
+      "category": "Team & Ecosystem",
+      "last_run_at": null,
+      "direct_actions": [
+        "Build lightweight Slack bot command: /tendril fix <github-issue-url> to trigger background worktree runs",
+        "Build Linear webhook integration: assigning a Linear issue with label 'tendril' automatically spawns a branch and opens a verified PR",
+        "Post real-time verification status, test results, and PR diff preview links directly back to the Slack channel / Linear issue thread",
+        "Support team approval gates via interactive Slack buttons before merging"
+      ],
+      "title": "Slack & Linear Bot Integration ('ChatOps for Tendril')",
+      "description": "Enable viral word-of-mouth adoption inside engineering teams by embedding Tendril agent orchestration directly into existing team communication and project management tools.",
+      "updated_at": "2026-09-10T12:38:55.1888199Z"
+    },
+    {
+      "priority": "High",
+      "id": "issue-14",
+      "routine_schedule": null,
+      "status": "Todo",
+      "number": 14,
+      "created_at": "2026-09-10T12:38:55.1888415Z",
+      "run_count": 0,
+      "category": "Community & Open Source",
+      "last_run_at": null,
+      "direct_actions": [
+        "Curate 15 'good first issue' and 'help wanted' issues with clear reproduction steps and code pointers",
+        "Write a streamlined CONTRIBUTING.md guaranteeing a <15-minute path from git clone to running all local unit tests",
+        "Set up automated contributor recognition with @all-contributors bot displaying contributor avatars on the README",
+        "Host monthly maintainer office hours and create an active Discord/GitHub Discussions support SLA"
+      ],
+      "title": "Contributor Flywheel & Fast-Track Onboarding (<15m to Merged PR)",
+      "description": "Transform Tendril from a single-company tool into a vibrant community-driven platform. Projects with 50k+ stars rely on hundreds of external contributors who champion the project.",
+      "updated_at": "2026-09-10T12:38:55.1888585Z"
+    },
+    {
+      "priority": "Critical",
+      "id": "issue-15",
+      "routine_schedule": null,
+      "status": "In Progress",
+      "number": 15,
+      "created_at": "2026-09-10T12:38:55.1888820Z",
+      "run_count": 0,
+      "category": "Licensing & Policy",
+      "last_run_at": null,
+      "direct_actions": [
+        "Draft a comprehensive Licensing FAQ explaining permitted personal, commercial, and plugin usage under FSL-1.1",
+        "Evaluate an Open-Core split: release the core orchestration engine (worktrees, agent adapters) under MIT / Apache-2.0, keeping enterprise/cloud features source-available",
+        "Publish a transparent public statement addressing licensing to remove hesitation on Hacker News and Reddit r/programming",
+        "Ensure packaging compatibility with Debian, Homebrew-core, and Arch AUR guidelines"
+      ],
+      "title": "Open-Source Licensing Strategy & Permissive Core Clarification",
+      "description": "Address the adoption barrier created by FSL-1.1-ALv2 (source-available). Clarify commercial boundaries and evaluate an Open-Core split (permissive MIT/Apache-2.0 core engine) to unlock enterprise contributors and package maintainers.",
+      "updated_at": "2026-09-10T12:38:55.1888997Z"
+    },
+    {
+      "priority": "High",
+      "id": "issue-16",
+      "routine_schedule": null,
+      "status": "Todo",
+      "number": 16,
+      "created_at": "2026-09-10T12:38:55.1889213Z",
+      "run_count": 0,
+      "category": "Product & Top-of-Funnel",
+      "last_run_at": null,
+      "direct_actions": [
+        "Build a browser-based interactive simulation demo (using mock worktrees / WebContainers) at tendril.run or demo subpath",
+        "Allow visitors to click 'Import Sample Issue', watch simulated agents edit code, run automated tests, and inspect diffs in real time",
+        "Add a prominent 'Try Tendril in 30 Seconds in Browser' banner above the fold on the README and website",
+        "Include an instant one-click 'Star on GitHub' CTA upon completing the interactive browser walkthrough"
+      ],
+      "title": "Interactive Browser Web Playground (tendril.run)",
+      "description": "Eliminate the desktop download barrier for top-of-funnel visitors. Build an interactive web playground allowing developers to test Tendril's issue-to-verified-PR workflow in their browser in 30 seconds.",
+      "updated_at": "2026-09-10T12:38:55.1889379Z"
     }
   ],
   "articles": [
