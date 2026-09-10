@@ -131,3 +131,19 @@ export type ActiveTab =
   | "listings"
   | "agent"
   | "review";
+
+export interface SyndicationSettings {
+  devto_api_key?: string;
+  hashnode_api_key?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
+
+export interface SyndicationStatusResponse {
+  devto_configured: boolean;
+  devto_key_preview?: string;
+  hashnode_configured: boolean;
+  hashnode_key_preview?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}

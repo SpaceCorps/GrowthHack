@@ -37,7 +37,7 @@ pub struct UpdateArticleRequest {
 #[derive(Deserialize)]
 pub struct GenerateArticleRequest {
     pub feature: String, // "Worktrees", "Multi-Agent Orchestration", "Issue-to-PR", "Verification Gates", "Voice Control", "Tunneling", "Review & Diffs"
-    pub angle: String,   // "Benchmark", "Architecture", "Comparison", "Tutorial", "Postmortem", "Ecosystem"
+    pub angle: String, // "Benchmark", "Architecture", "Comparison", "Tutorial", "Postmortem", "Ecosystem"
     pub channel: String, // "Website", "Dev.to", "Hashnode", "Medium", "Substack", "XThread", "Reddit"
     pub extra_context: Option<String>,
 }
@@ -627,14 +627,7 @@ tags:
 image: "/site/images/blog/{}-hero.png"
 canonical_url: "https://ivy.interactive/blog/{}"
 ---"#,
-        clean_title,
-        slug,
-        clean_desc,
-        date_str,
-        article.angle,
-        article.feature,
-        slug,
-        slug
+        clean_title, slug, clean_desc, date_str, article.angle, article.feature, slug, slug
     )
 }
 
@@ -1006,6 +999,538 @@ pub async fn record_export(
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SyndicationSettingsResponse {
+    pub devto_configured: bool,
+    pub devto_key_preview: Option<String>,
+    pub hashnode_configured: bool,
+    pub hashnode_key_preview: Option<String>,
+    pub hashnode_publication_id: Option<String>,
+    pub publish_as_draft: bool,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct UpdateSyndicationSettingsRequest {
+    pub devto_api_key: Option<String>,
+    pub hashnode_api_key: Option<String>,
+    pub hashnode_publication_id: Option<String>,
+    pub publish_as_draft: Option<bool>,
+}
+
+fn mask_api_key(key: Option<&str>) -> (bool, Option<String>) {
+    match key {
+        Some(k) if !k.trim().is_empty() => {
+            let trimmed = k.trim();
+            let preview = if trimmed.len() <= 4 {
+                "****".to_string()
+            } else {
+                format!("...{}", &trimmed[trimmed.len() - 4..])
+            };
+            (true, Some(preview))
+        }
+        _ => (false, None),
+    }
+}
+
+pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    let devto_key = state
+        .syndication_settings
+        .devto_api_key
+        .as_deref()
+        .or(ctx.config.devto_api_key.as_deref());
+    let hashnode_key = state
+        .syndication_settings
+        .hashnode_api_key
+        .as_deref()
+        .or(ctx.config.hashnode_api_key.as_deref());
+    let hashnode_pub_id = state
+        .syndication_settings
+        .hashnode_publication_id
+        .as_deref()
+        .or(ctx.config.hashnode_publication_id.as_deref())
+        .map(|s| s.to_string());
+
+    let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
+    let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+
+    let res = SyndicationSettingsResponse {
+        devto_configured,
+        devto_key_preview,
+        hashnode_configured,
+        hashnode_key_preview,
+        hashnode_publication_id: hashnode_pub_id,
+        publish_as_draft: state.syndication_settings.publish_as_draft,
+    };
+
+    (StatusCode::OK, Json(res))
+}
+
+pub async fn update_syndication_settings(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<UpdateSyndicationSettingsRequest>,
+) -> impl IntoResponse {
+    let mut state = ctx.state.write().await;
+    if let Some(ref k) = payload.devto_api_key {
+        state.syndication_settings.devto_api_key = if k.trim().is_empty() {
+            None
+        } else {
+            Some(k.trim().to_string())
+        };
+    }
+    if let Some(ref k) = payload.hashnode_api_key {
+        state.syndication_settings.hashnode_api_key = if k.trim().is_empty() {
+            None
+        } else {
+            Some(k.trim().to_string())
+        };
+    }
+    if let Some(ref pid) = payload.hashnode_publication_id {
+        state.syndication_settings.hashnode_publication_id = if pid.trim().is_empty() {
+            None
+        } else {
+            Some(pid.trim().to_string())
+        };
+    }
+    if let Some(pad) = payload.publish_as_draft {
+        state.syndication_settings.publish_as_draft = pad;
+    }
+
+    let _ = state.save(&ctx.data_file);
+
+    let devto_key = state
+        .syndication_settings
+        .devto_api_key
+        .as_deref()
+        .or(ctx.config.devto_api_key.as_deref());
+    let hashnode_key = state
+        .syndication_settings
+        .hashnode_api_key
+        .as_deref()
+        .or(ctx.config.hashnode_api_key.as_deref());
+    let hashnode_pub_id = state
+        .syndication_settings
+        .hashnode_publication_id
+        .as_deref()
+        .or(ctx.config.hashnode_publication_id.as_deref())
+        .map(|s| s.to_string());
+
+    let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
+    let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+
+    let res = SyndicationSettingsResponse {
+        devto_configured,
+        devto_key_preview,
+        hashnode_configured,
+        hashnode_key_preview,
+        hashnode_publication_id: hashnode_pub_id,
+        publish_as_draft: state.syndication_settings.publish_as_draft,
+    };
+
+    (StatusCode::OK, Json(res))
+}
+
+pub fn format_devto_payload(article: &Article, slug: &str, published: bool) -> serde_json::Value {
+    let body = clean_markdown_body(&article.content);
+    serde_json::json!({
+        "article": {
+            "title": article.title,
+            "body_markdown": body,
+            "published": published,
+            "description": article.summary,
+            "tags": ["ivy", "devtools", "ai", "programming"],
+            "canonical_url": format!("https://ivy.interactive/blog/{}", slug),
+            "main_image": format!("https://ivy.interactive/site/images/blog/{}-hero.png", slug)
+        }
+    })
+}
+
+pub fn format_hashnode_publish_mutation(
+    article: &Article,
+    slug: &str,
+    publication_id: &str,
+    original_url: &str,
+) -> serde_json::Value {
+    let body = clean_markdown_body(&article.content);
+    serde_json::json!({
+        "query": "mutation PublishPost($input: PublishPostInput!) {\n  publishPost(input: $input) {\n    post {\n      id\n      title\n      slug\n      url\n    }\n  }\n}",
+        "variables": {
+            "input": {
+                "publicationId": publication_id,
+                "title": article.title,
+                "subtitle": article.summary,
+                "contentMarkdown": body,
+                "slug": slug,
+                "tags": [
+                    { "name": "Ivy", "slug": "ivy" },
+                    { "name": "Developer Tools", "slug": "devtools" },
+                    { "name": "AI Coding", "slug": "ai-coding" },
+                    { "name": "Software Engineering", "slug": "software-engineering" }
+                ],
+                "originalArticleURL": original_url,
+                "coverImageOptions": {
+                    "coverImageURL": format!("https://ivy.interactive/site/images/blog/{}-hero.png", slug)
+                }
+            }
+        }
+    })
+}
+
+pub async fn publish_devto(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let (article, devto_key, publish_as_draft) = {
+        let state = ctx.state.read().await;
+        let art = state.articles.iter().find(|a| a.id == id).cloned();
+        let key = state
+            .syndication_settings
+            .devto_api_key
+            .clone()
+            .or_else(|| ctx.config.devto_api_key.clone());
+        let draft = state.syndication_settings.publish_as_draft;
+        (art, key, draft)
+    };
+
+    let article = match article {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Article not found" })),
+            )
+        }
+    };
+
+    let devto_key = match devto_key {
+        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Dev.to API key is not configured. Please configure your API key in Syndication Settings."
+                })),
+            )
+        }
+    };
+
+    let slug = article
+        .slug
+        .clone()
+        .unwrap_or_else(|| slugify(&article.title));
+    let payload = format_devto_payload(&article, &slug, !publish_as_draft);
+
+    let client = match reqwest::Client::builder()
+        .user_agent("IvyTendrilGrowthHack/1.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("HTTP client error: {}", e) })),
+            )
+        }
+    };
+
+    let res = match client
+        .post("https://dev.to/api/articles")
+        .header("api-key", &devto_key)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": format!("Failed to connect to Dev.to: {}", e) })),
+            )
+        }
+    };
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_default();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Dev.to API returned error ({}): {}", status, err_body)
+            })),
+        );
+    }
+
+    let res_json: serde_json::Value = match res.json().await {
+        Ok(j) => j,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(
+                    serde_json::json!({ "error": format!("Failed to parse Dev.to response: {}", e) }),
+                ),
+            )
+        }
+    };
+
+    let published_url = res_json["url"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            if let Some(num) = res_json["id"].as_i64() {
+                format!("https://dev.to/article/{}", num)
+            } else {
+                format!("https://dev.to/{}/{}", slug, id)
+            }
+        });
+
+    let mut state = ctx.state.write().await;
+    if let Some(art) = state.articles.iter_mut().find(|a| a.id == id) {
+        if art.slug.is_none() {
+            art.slug = Some(slug.clone());
+        }
+        let record = ExportRecord {
+            channel: "Dev.to".to_string(),
+            exported_at: Utc::now(),
+            target_path: Some(published_url.clone()),
+            status: "Published".to_string(),
+        };
+        art.exports.push(record.clone());
+        let _ = state.save(&ctx.data_file);
+
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "url": published_url,
+                "record": record
+            })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found during state update" })),
+        )
+    }
+}
+
+pub async fn publish_hashnode(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let (article, hashnode_key, hashnode_pub_id) = {
+        let state = ctx.state.read().await;
+        let art = state.articles.iter().find(|a| a.id == id).cloned();
+        let key = state
+            .syndication_settings
+            .hashnode_api_key
+            .clone()
+            .or_else(|| ctx.config.hashnode_api_key.clone());
+        let pub_id = state
+            .syndication_settings
+            .hashnode_publication_id
+            .clone()
+            .or_else(|| ctx.config.hashnode_publication_id.clone());
+        (art, key, pub_id)
+    };
+
+    let article = match article {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Article not found" })),
+            )
+        }
+    };
+
+    let hashnode_key = match hashnode_key {
+        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "Hashnode API key is not configured. Please configure your Personal Access Token in Syndication Settings."
+                })),
+            )
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .user_agent("IvyTendrilGrowthHack/1.0")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("HTTP client error: {}", e) })),
+            )
+        }
+    };
+
+    // Auto-discover publication ID if not configured
+    let publication_id = match hashnode_pub_id {
+        Some(ref pid) if !pid.trim().is_empty() => pid.trim().to_string(),
+        _ => {
+            let disc_query = serde_json::json!({
+                "query": "query { me { publications(first: 1) { edges { node { id title } } } } }"
+            });
+
+            let disc_res = match client
+                .post("https://gql.hashnode.com")
+                .header("Authorization", &hashnode_key)
+                .header("Content-Type", "application/json")
+                .json(&disc_query)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        Json(
+                            serde_json::json!({ "error": format!("Failed to connect to Hashnode for publication discovery: {}", e) }),
+                        ),
+                    )
+                }
+            };
+
+            let disc_json: serde_json::Value = match disc_res.json().await {
+                Ok(j) => j,
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(
+                            serde_json::json!({ "error": format!("Failed to parse Hashnode discovery response: {}", e) }),
+                        ),
+                    )
+                }
+            };
+
+            if let Some(pub_id) = disc_json["data"]["me"]["publications"]["edges"]
+                .as_array()
+                .and_then(|edges| edges.first())
+                .and_then(|edge| edge["node"]["id"].as_str())
+            {
+                let found_id = pub_id.to_string();
+                // Cache discovered publication ID in state
+                {
+                    let mut state = ctx.state.write().await;
+                    state.syndication_settings.hashnode_publication_id = Some(found_id.clone());
+                    let _ = state.save(&ctx.data_file);
+                }
+                found_id
+            } else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "No Hashnode publication found for this account. Please specify your publication ID in Syndication Settings."
+                    })),
+                );
+            }
+        }
+    };
+
+    let slug = article
+        .slug
+        .clone()
+        .unwrap_or_else(|| slugify(&article.title));
+    let canonical_url = format!("https://ivy.interactive/blog/{}", slug);
+    let payload =
+        format_hashnode_publish_mutation(&article, &slug, &publication_id, &canonical_url);
+
+    let res = match client
+        .post("https://gql.hashnode.com")
+        .header("Authorization", &hashnode_key)
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(
+                    serde_json::json!({ "error": format!("Failed to connect to Hashnode: {}", e) }),
+                ),
+            )
+        }
+    };
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_default();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Hashnode GraphQL HTTP error ({}): {}", status, err_body)
+            })),
+        );
+    }
+
+    let res_json: serde_json::Value = match res.json().await {
+        Ok(j) => j,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(
+                    serde_json::json!({ "error": format!("Failed to parse Hashnode GraphQL response: {}", e) }),
+                ),
+            )
+        }
+    };
+
+    if let Some(errs) = res_json["errors"].as_array() {
+        if !errs.is_empty() {
+            let msg = errs[0]["message"]
+                .as_str()
+                .unwrap_or("Unknown GraphQL error");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Hashnode GraphQL error: {}", msg)
+                })),
+            );
+        }
+    }
+
+    let published_url = res_json["data"]["publishPost"]["post"]["url"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("https://hashnode.com/@ivy/{}", slug));
+
+    let mut state = ctx.state.write().await;
+    if let Some(art) = state.articles.iter_mut().find(|a| a.id == id) {
+        if art.slug.is_none() {
+            art.slug = Some(slug.clone());
+        }
+        let record = ExportRecord {
+            channel: "Hashnode".to_string(),
+            exported_at: Utc::now(),
+            target_path: Some(published_url.clone()),
+            status: "Published".to_string(),
+        };
+        art.exports.push(record.clone());
+        let _ = state.save(&ctx.data_file);
+
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "url": published_url,
+                "record": record
+            })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found during state update" })),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1094,7 +1619,9 @@ mod tests {
         let (medium, t3) = format_for_channel(&article, "Medium", "test-article");
         assert_eq!(t3, "markdown");
         assert!(medium.contains("# Test Article"));
-        assert!(medium.contains("*Originally published at https://ivy.interactive/blog/test-article*"));
+        assert!(
+            medium.contains("*Originally published at https://ivy.interactive/blog/test-article*")
+        );
 
         let (substack, t4) = format_for_channel(&article, "Substack", "test-article");
         assert_eq!(t4, "markdown");
@@ -1114,7 +1641,8 @@ mod tests {
 
     #[test]
     fn test_export_ivy_web_file_write() {
-        let temp_dir = std::env::temp_dir().join(format!("growthhack_test_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("growthhack_test_{}", uuid::Uuid::new_v4().simple()));
         let now = Utc::now();
         let article = Article {
             id: "art-test".to_string(),
@@ -1245,7 +1773,10 @@ mod tests {
                     prompt.contains("SpaceCorps Engineering"),
                     "Prompt should specify author"
                 );
-                assert!(prompt.contains(feature), "Prompt should contain feature name");
+                assert!(
+                    prompt.contains(feature),
+                    "Prompt should contain feature name"
+                );
                 assert!(
                     prompt.contains(archetype),
                     "Prompt should contain archetype name"
@@ -1318,16 +1849,152 @@ mod tests {
 
         for f in &features {
             let (title, bg, citations) = get_feature_details(f);
-            assert!(!title.is_empty(), "Feature title should not be empty for {}", f);
+            assert!(
+                !title.is_empty(),
+                "Feature title should not be empty for {}",
+                f
+            );
             assert!(!bg.is_empty(), "Feature bg should not be empty for {}", f);
-            assert!(citations.len() >= 3, "Feature should have >= 3 citations for {}", f);
+            assert!(
+                citations.len() >= 3,
+                "Feature should have >= 3 citations for {}",
+                f
+            );
         }
 
         for a in &archetypes {
             let (title, guide) = get_archetype_details(a);
-            assert!(!title.is_empty(), "Archetype title should not be empty for {}", a);
-            assert!(!guide.is_empty(), "Archetype guide should not be empty for {}", a);
+            assert!(
+                !title.is_empty(),
+                "Archetype title should not be empty for {}",
+                a
+            );
+            assert!(
+                !guide.is_empty(),
+                "Archetype guide should not be empty for {}",
+                a
+            );
         }
+    }
+
+    #[test]
+    fn test_devto_payload_formatting() {
+        let now = Utc::now();
+        let article = Article {
+            id: "art-devto".to_string(),
+            title: "Scaling Autonomous Agents With Worktrees".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Dev.to".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Worktrees eliminate git dirty-index collisions.".to_string(),
+            content: "---\nfrontmatter: true\n---\n# Real Content Here".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: now,
+            published_at: None,
+            slug: Some("scaling-autonomous-agents-with-worktrees".to_string()),
+            exports: vec![],
+        };
+
+        let payload =
+            format_devto_payload(&article, "scaling-autonomous-agents-with-worktrees", false);
+        let art = &payload["article"];
+        assert_eq!(art["title"], "Scaling Autonomous Agents With Worktrees");
+        assert_eq!(art["body_markdown"], "# Real Content Here");
+        assert_eq!(art["published"], false);
+        assert_eq!(
+            art["description"],
+            "Worktrees eliminate git dirty-index collisions."
+        );
+        assert_eq!(
+            art["tags"],
+            serde_json::json!(["ivy", "devtools", "ai", "programming"])
+        );
+        assert_eq!(
+            art["canonical_url"],
+            "https://ivy.interactive/blog/scaling-autonomous-agents-with-worktrees"
+        );
+        assert_eq!(art["main_image"], "https://ivy.interactive/site/images/blog/scaling-autonomous-agents-with-worktrees-hero.png");
+    }
+
+    #[test]
+    fn test_hashnode_graphql_query_formatting() {
+        let now = Utc::now();
+        let article = Article {
+            id: "art-hashnode".to_string(),
+            title: "15-Minute Issue to PR Autonomous Loop".to_string(),
+            feature: "Issue-to-PR".to_string(),
+            channel: "Hashnode".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "Automate routine engineering tasks safely.".to_string(),
+            content: "Markdown body for Hashnode.".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Draft".to_string(),
+            created_at: now,
+            published_at: None,
+            slug: Some("15-minute-issue-to-pr-autonomous-loop".to_string()),
+            exports: vec![],
+        };
+
+        let payload = format_hashnode_publish_mutation(
+            &article,
+            "15-minute-issue-to-pr-autonomous-loop",
+            "pub-12345",
+            "https://ivy.interactive/blog/15-minute-issue-to-pr-autonomous-loop",
+        );
+
+        assert!(payload["query"]
+            .as_str()
+            .unwrap()
+            .contains("mutation PublishPost"));
+        let input = &payload["variables"]["input"];
+        assert_eq!(input["publicationId"], "pub-12345");
+        assert_eq!(input["title"], "15-Minute Issue to PR Autonomous Loop");
+        assert_eq!(
+            input["subtitle"],
+            "Automate routine engineering tasks safely."
+        );
+        assert_eq!(input["contentMarkdown"], "Markdown body for Hashnode.");
+        assert_eq!(input["slug"], "15-minute-issue-to-pr-autonomous-loop");
+        assert_eq!(
+            input["originalArticleURL"],
+            "https://ivy.interactive/blog/15-minute-issue-to-pr-autonomous-loop"
+        );
+        assert_eq!(
+            input["coverImageOptions"]["coverImageURL"],
+            "https://ivy.interactive/site/images/blog/15-minute-issue-to-pr-autonomous-loop-hero.png"
+        );
+        let tags = input["tags"].as_array().unwrap();
+        assert_eq!(tags.len(), 4);
+        assert_eq!(tags[0]["slug"], "ivy");
+    }
+
+    #[test]
+    fn test_syndication_settings_serialization() {
+        use crate::db::SyndicationSettings;
+
+        // Verify default fallback values
+        let default_json = "{}";
+        let parsed: SyndicationSettings =
+            serde_json::from_str(default_json).expect("deserialize default");
+        assert_eq!(parsed.devto_api_key, None);
+        assert_eq!(parsed.hashnode_api_key, None);
+        assert_eq!(parsed.hashnode_publication_id, None);
+        assert_eq!(parsed.publish_as_draft, true);
+
+        // Verify round-trip persistence
+        let populated = SyndicationSettings {
+            devto_api_key: Some("devto_secret_key_123".to_string()),
+            hashnode_api_key: Some("hashnode_pat_456".to_string()),
+            hashnode_publication_id: Some("pub_789".to_string()),
+            publish_as_draft: false,
+        };
+        let serialized = serde_json::to_string(&populated).expect("serialize");
+        let deserialized: SyndicationSettings =
+            serde_json::from_str(&serialized).expect("deserialize");
+        assert_eq!(populated, deserialized);
     }
 
     #[test]
@@ -1391,6 +2058,7 @@ mod tests {
             data_file,
             ivy_web_content_path: content_dir.clone(),
             ivy_web_images_path: images_dir.clone(),
+            config: crate::config::Config::load(),
         });
 
         let req = ExportIvyWebRequest {
@@ -1448,6 +2116,7 @@ mod tests {
             data_file,
             ivy_web_content_path: temp_dir.join("content"),
             ivy_web_images_path: images_dir.clone(),
+            config: crate::config::Config::load(),
         });
 
         let req = SyncAssetsRequest {

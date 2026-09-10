@@ -11,7 +11,7 @@ pub struct GrowthIssue {
     pub number: u32,
     pub title: String,
     pub category: String,
-    pub status: String, // "Todo", "In Progress", "Active Routine", "Done"
+    pub status: String,   // "Todo", "In Progress", "Active Routine", "Done"
     pub priority: String, // "Critical", "High", "Medium"
     pub description: String,
     pub direct_actions: Vec<String>,
@@ -59,7 +59,7 @@ pub struct TrendTopic {
     pub engagement: String, // e.g. "2.4k stars today", "480 comments on r/LocalLLaMA"
     pub summary: String,
     pub tendril_tie_in: String, // "direct", "subtle", "none"
-    pub status: String, // "Scouted", "Synthesizing", "Published"
+    pub status: String,         // "Scouted", "Synthesizing", "Published"
     pub generated_article_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -90,6 +90,33 @@ pub struct AgentTask {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
+fn default_publish_as_draft() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyndicationSettings {
+    #[serde(default)]
+    pub devto_api_key: Option<String>,
+    #[serde(default)]
+    pub hashnode_api_key: Option<String>,
+    #[serde(default)]
+    pub hashnode_publication_id: Option<String>,
+    #[serde(default = "default_publish_as_draft")]
+    pub publish_as_draft: bool,
+}
+
+impl Default for SyndicationSettings {
+    fn default() -> Self {
+        Self {
+            devto_api_key: None,
+            hashnode_api_key: None,
+            hashnode_publication_id: None,
+            publish_as_draft: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VideoDemo {
     pub id: String,
@@ -113,6 +140,8 @@ pub struct GrowthState {
     pub tasks: Vec<AgentTask>,
     #[serde(default)]
     pub video_demos: Vec<VideoDemo>,
+    #[serde(default)]
+    pub syndication_settings: SyndicationSettings,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -640,6 +669,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             listings,
             tasks,
             video_demos,
+            syndication_settings: SyndicationSettings::default(),
         }
     }
 }
