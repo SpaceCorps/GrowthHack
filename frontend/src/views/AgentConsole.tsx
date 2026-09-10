@@ -1,46 +1,43 @@
-import React, { useState } from 'react';
-import type { AgentStatus } from '../types';
-import { 
-  Terminal, 
-  Play, 
-  Cpu, 
-  Sparkles, 
-  FolderGit2, 
-  FileCode2, 
+import React, { useState } from "react";
+import type { AgentStatus } from "../types";
+import {
+  Terminal,
+  Play,
+  Cpu,
+  Sparkles,
+  FolderGit2,
+  FileCode2,
   CheckCircle,
-  AlertTriangle
-} from 'lucide-react';
+  AlertTriangle,
+} from "lucide-react";
 
 interface AgentConsoleProps {
   agentStatus: AgentStatus | null;
   onRunCustomPrompt: (prompt: string) => void;
 }
 
-export const AgentConsole: React.FC<AgentConsoleProps> = ({
-  agentStatus,
-  onRunCustomPrompt,
-}) => {
-  const [prompt, setPrompt] = useState('');
+export const AgentConsole: React.FC<AgentConsoleProps> = ({ agentStatus, onRunCustomPrompt }) => {
+  const [prompt, setPrompt] = useState("");
 
   const quickPrompts = [
     {
-      label: 'Draft 10x Worktrees Article',
-      text: 'Write an authoritative 10x technical article about Ivy-Tendril Git Worktree isolation for Claude Code and Codex with benchmark comparisons and outbound citations.',
+      label: "Draft 10x Worktrees Article",
+      text: "Write an authoritative 10x technical article about Ivy-Tendril Git Worktree isolation for Claude Code and Codex with benchmark comparisons and outbound citations.",
     },
     {
-      label: 'Scout Trending Discussions',
-      text: 'Search and analyze what is currently trending on GitHub, Reddit (r/LocalLLaMA, r/programming), and LinkedIn in coding agents today.',
+      label: "Scout Trending Discussions",
+      text: "Search and analyze what is currently trending on GitHub, Reddit (r/LocalLLaMA, r/programming), and LinkedIn in coding agents today.",
     },
     {
-      label: 'Awesome-AI-Agents PR Blurb',
-      text: 'Generate a GitHub Pull Request description to add Ivy-Tendril to e2b-dev/awesome-ai-agents conforming to the repo style and guidelines.',
+      label: "Awesome-AI-Agents PR Blurb",
+      text: "Generate a GitHub Pull Request description to add Ivy-Tendril to e2b-dev/awesome-ai-agents conforming to the repo style and guidelines.",
     },
     {
-      label: 'VS Code Extension Architecture',
-      text: 'Outline the technical architecture and commands for an Ivy-Tendril VS Code companion extension that bridges to the background agent daemon.',
+      label: "VS Code Extension Architecture",
+      text: "Outline the technical architecture and commands for an Ivy-Tendril VS Code companion extension that bridges to the background agent daemon.",
     },
     {
-      label: 'Hacker News Show HN Pitch',
+      label: "Hacker News Show HN Pitch",
       text: 'Draft a high-authenticity Show HN post announcing Ivy-Tendril: "Show HN: We automated issue-to-verified PRs using multi-agent Git worktrees".',
     },
   ];
@@ -49,7 +46,7 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({
     e.preventDefault();
     if (!prompt.trim()) return;
     onRunCustomPrompt(prompt);
-    setPrompt('');
+    setPrompt("");
   };
 
   return (
@@ -69,7 +66,8 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({
                 </span>
               </div>
               <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xl">
-                Executable: {agentStatus?.agy_path || 'C:\\Users\\pavel\\AppData\\Local\\agy\\bin\\agy.exe'}
+                Executable:{" "}
+                {agentStatus?.agy_path || "C:\\Users\\pavel\\AppData\\Local\\agy\\bin\\agy.exe"}
               </p>
             </div>
           </div>
@@ -131,8 +129,9 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({
           How Antigravity Automation Works in GrowthHack
         </h4>
         <p>
-          Every action triggered in GrowthHack directly calls <code>agy --print</code> in the background via the Rust <code>axum</code> backend. 
-          Real-time execution logs are broadcast over Server-Sent Events (SSE) directly into the terminal interface.
+          Every action triggered in GrowthHack directly calls <code>agy --print</code> in the
+          background via the Rust <code>axum</code> backend. Real-time execution logs are broadcast
+          over Server-Sent Events (SSE) directly into the terminal interface.
         </p>
       </div>
     </div>
