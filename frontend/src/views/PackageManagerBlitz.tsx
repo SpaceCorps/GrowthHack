@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Laptop,
   X,
+  RefreshCw,
 } from "lucide-react";
 
 interface PackageManagerBlitzProps {
@@ -36,6 +37,9 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const [editStatus, setEditStatus] = useState<string>("");
   const [editPrUrl, setEditPrUrl] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
+  const [manifestCache, setManifestCache] = useState<Record<string, PackageManifestResponse>>({});
+  const [isLoadingManifest, setIsLoadingManifest] = useState<boolean>(false);
+  const [isRefreshingRelease, setIsRefreshingRelease] = useState<boolean>(false);
 
   // Manifest content cache/fallback
   const defaultManifests: Record<string, PackageManifestResponse> = {
@@ -231,9 +235,51 @@ Installers:
     URL.revokeObjectURL(url);
   };
 
+  const fetchManifest = async (targetKey: string, refresh = false) => {
+    setIsLoadingManifest(true);
+    try {
+      const url = refresh
+        ? `/api/packages/${targetKey}/manifest?refresh=true`
+        : `/api/packages/${targetKey}/manifest`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: PackageManifestResponse | null = await res.json();
+        if (data) {
+          setManifestCache((prev) => ({
+            ...prev,
+            [targetKey]: data,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch manifest:", err);
+    } finally {
+      setIsLoadingManifest(false);
+    }
+  };
+
+  const handleRefreshRelease = async () => {
+    setIsRefreshingRelease(true);
+    try {
+      await fetchManifest(activeManifestTab, true);
+    } finally {
+      setIsRefreshingRelease(false);
+    }
+  };
+
   const openDrawerForTab = (targetKey: string) => {
     setActiveManifestTab(targetKey);
     setShowManifestDrawer(true);
+    if (!manifestCache[targetKey]) {
+      fetchManifest(targetKey, false);
+    }
+  };
+
+  const handleTabSwitch = (targetKey: string) => {
+    setActiveManifestTab(targetKey);
+    if (!manifestCache[targetKey]) {
+      fetchManifest(targetKey, false);
+    }
   };
 
   const handleOpenEdit = (target: PackageManagerTarget) => {
@@ -273,7 +319,10 @@ Installers:
     }
   };
 
-  const activeManifest = defaultManifests[activeManifestTab] || defaultManifests["homebrew"];
+  const activeManifest =
+    manifestCache[activeManifestTab] ||
+    defaultManifests[activeManifestTab] ||
+    defaultManifests["homebrew"];
   const activePrsCount = packages.filter((p) => p.pr_url).length;
 
   return (
@@ -611,19 +660,49 @@ Installers:
         >
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <FileCode className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">
-                  Package Manifest Inspector: {activeManifest.filename}
-                </h3>
+            <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2">
+                  <FileCode className="w-5 h-5 text-indigo-400" />
+                  <h3 className="text-base font-bold text-white">
+                    Package Manifest Inspector: {activeManifest.filename}
+                  </h3>
+                </div>
+                {/* Release status pill */}
+                <div
+                  data-testid="release-status-pill"
+                  className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-mono"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Release: {activeManifest.release_tag || "v0.8.4"} (Dynamic)</span>
+                </div>
               </div>
-              <button
-                onClick={() => setShowManifestDrawer(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleRefreshRelease}
+                  disabled={isRefreshingRelease || isLoadingManifest}
+                  data-testid="refresh-github-btn"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-colors disabled:opacity-50"
+                  title="Refresh from GitHub Releases API"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${
+                      isRefreshingRelease || isLoadingManifest ? "animate-spin text-indigo-400" : ""
+                    }`}
+                  />
+                  <span>
+                    {isRefreshingRelease || isLoadingManifest
+                      ? "Refreshing..."
+                      : "Refresh from GitHub"}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setShowManifestDrawer(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Manifest Target Tabs */}
@@ -635,7 +714,7 @@ Installers:
                   <button
                     key={tabKey}
                     data-testid={`manifest-tab-${tabKey}`}
-                    onClick={() => setActiveManifestTab(tabKey)}
+                    onClick={() => handleTabSwitch(tabKey)}
                     className={`px-3.5 py-2 text-xs font-mono font-medium rounded-t-lg transition-all border-b-2 flex items-center gap-1.5 ${
                       isTabActive
                         ? "border-indigo-500 text-indigo-300 bg-slate-800/60"
