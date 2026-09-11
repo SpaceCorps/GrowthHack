@@ -22,6 +22,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { EngagementVelocityChart } from "../components/EngagementVelocityChart";
+import { ActionButton } from "../components/ActionButton";
 
 export interface ArticleEngineProps {
   articles: Article[];
@@ -401,13 +402,14 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                     <span>Auto-inserts: 3+ Primary Citations + 2 Tendril Backlinks</span>
                   </div>
 
-                  <button
+                  <ActionButton
                     type="submit"
-                    className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-all hover:scale-[1.02]"
+                    size="md"
+                    icon={<Sparkles className="w-4 h-4" />}
+                    className="hover:scale-[1.02]"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Generate with Antigravity</span>
-                  </button>
+                    Generate with Antigravity
+                  </ActionButton>
                 </div>
               </form>
             </>
@@ -1078,17 +1080,15 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 </button>
 
                 {article.status !== "Published" && (
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={(e) => {
                       e.stopPropagation();
                       onUpdateStatus(article.id, "Published");
                     }}
-                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors"
+                    icon={<Send className="w-3.5 h-3.5" />}
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Publish</span>
-                  </button>
+                    Publish
+                  </ActionButton>
                 )}
               </div>
             </div>

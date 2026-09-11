@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { GrowthIssue } from "../types";
 import { Play, CheckCircle2, Flame, Plus, Calendar, RotateCw, Search, Filter } from "lucide-react";
+import { ActionButton } from "../components/ActionButton";
 
 interface IssuesHubProps {
   issues: GrowthIssue[];
@@ -157,13 +158,13 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
         </div>
 
         {/* Add Issue Button */}
-        <button
+        <ActionButton
           onClick={() => setShowAddModal(true)}
-          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all self-start sm:self-auto"
+          icon={<Plus className="w-3.5 h-3.5" />}
+          className="self-start sm:self-auto"
         >
-          <Plus className="w-3.5 h-3.5" />
-          <span>New Direct Action</span>
-        </button>
+          New Direct Action
+        </ActionButton>
       </div>
 
       {/* Issues Grid */}
@@ -253,13 +254,12 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
                 )}
               </div>
 
-              <button
+              <ActionButton
                 onClick={() => onRunIssue(issue.id)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-all group-hover:shadow-emerald-950/20"
+                icon={<Play className="w-3.5 h-3.5 fill-current" />}
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Run Action</span>
-              </button>
+                Run Action
+              </ActionButton>
             </div>
           </div>
         ))}
@@ -353,12 +353,7 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
-                >
-                  Create Issue
-                </button>
+                <ActionButton type="submit">Create Issue</ActionButton>
               </div>
             </form>
           </div>

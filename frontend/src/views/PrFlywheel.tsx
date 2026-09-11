@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { ActionButton } from "../components/ActionButton";
 import {
   GitPullRequest,
   Copy,
@@ -508,23 +509,18 @@ export const PrFlywheel: React.FC = () => {
 
         {/* 1-Click Action Header Pill */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
+          <ActionButton
             onClick={() => copyToClipboard("header_markdown", generatedMarkdown)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-950/20"
-          >
-            {copiedKey === "header_markdown" ? (
-              <>
+            icon={
+              copiedKey === "header_markdown" ? (
                 <Check className="w-3.5 h-3.5 text-slate-950" />
-                <span>Copied Markdown!</span>
-              </>
-            ) : (
-              <>
+              ) : (
                 <Copy className="w-3.5 h-3.5" />
-                <span>Copy PR Markdown</span>
-              </>
-            )}
-          </button>
+              )
+            }
+          >
+            {copiedKey === "header_markdown" ? "Copied Markdown!" : "Copy PR Markdown"}
+          </ActionButton>
           <button
             type="button"
             onClick={() => copyToClipboard("header_workflow", workflowYml)}

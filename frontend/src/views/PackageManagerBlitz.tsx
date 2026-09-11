@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type {
   PackageManagerTarget,
   PackageManifestResponse,
@@ -773,15 +774,16 @@ Installers:
                   <td className="py-3.5 text-right font-sans">
                     <div className="flex items-center justify-end space-x-2">
                       {["winget", "scoop", "homebrew"].includes(pkg.target_key) && (
-                        <button
+                        <ActionButton
+                          variant="gradient"
+                          size="xs"
+                          icon={<Sparkles className="w-3 h-3 text-slate-950" />}
                           onClick={() => handleOpenDispatch(pkg)}
                           data-testid={`dispatch-pr-${pkg.id}`}
-                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-bold text-[11px] flex items-center gap-1.5 shadow-sm transition-all"
                           title="Submit formula update via Antigravity runner"
                         >
-                          <Sparkles className="w-3 h-3 text-slate-950" />
-                          <span>Dispatch Upstream PR</span>
-                        </button>
+                          Dispatch Upstream PR
+                        </ActionButton>
                       )}
                       <button
                         onClick={() => handleOpenEdit(pkg)}
@@ -1115,7 +1117,9 @@ Installers:
               >
                 Cancel
               </button>
-              <button
+              <ActionButton
+                variant="gradient"
+                size="md"
                 data-testid="confirm-dispatch-btn"
                 disabled={
                   isLaunching ||
@@ -1123,6 +1127,9 @@ Installers:
                   (authStatus !== null && !authStatus.authenticated && !skipAuthOverride) ||
                   (forkStatus?.fork_exists && !forkStatus?.is_synchronized && !skipSyncOverride)
                 }
+                loading={isLaunching}
+                loadingText="Launching..."
+                icon={<Sparkles className="w-3.5 h-3.5 text-slate-950" />}
                 onClick={async () => {
                   if (dispatchTarget) {
                     setIsLaunching(true);
@@ -1189,11 +1196,9 @@ Installers:
                     }
                   }
                 }}
-                className="px-4 py-2 text-xs font-bold rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 flex items-center gap-2 shadow-lg shadow-teal-950/20 transition-all disabled:opacity-50"
               >
-                <Sparkles className="w-3.5 h-3.5 text-slate-950" />
-                <span>Launch Antigravity Runner</span>
-              </button>
+                Launch Antigravity Runner
+              </ActionButton>
             </div>
           </div>
         </div>

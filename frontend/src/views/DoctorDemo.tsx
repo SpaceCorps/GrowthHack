@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type {
   DiagnosticCheck,
   DiagnosticReport,
@@ -704,18 +705,15 @@ export const DoctorDemo: React.FC = () => {
               <RotateCcw className="w-4 h-4" />
               Reset
             </button>
-            <button
+            <ActionButton
               onClick={startDemo}
-              disabled={startingDemo || demoState.status === "Running"}
-              className="flex items-center gap-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-sm font-bold transition-all shadow-md hover:shadow-emerald-500/20 disabled:opacity-50"
+              loading={startingDemo || demoState.status === "Running"}
+              loadingText="Simulating..."
+              icon={<Play className="w-4 h-4 fill-current" />}
+              size="md"
             >
-              <Play className="w-4 h-4 fill-current" />
-              {demoState.status === "Running"
-                ? "Simulating..."
-                : demoState.status === "Completed"
-                  ? "Replay Demo"
-                  : "Start Replayable Demo"}
-            </button>
+              {demoState.status === "Completed" ? "Replay Demo" : "Start Replayable Demo"}
+            </ActionButton>
           </div>
         </div>
 

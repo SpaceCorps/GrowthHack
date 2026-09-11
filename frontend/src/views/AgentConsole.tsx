@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { AgentStatus } from "../types";
 import { Terminal, Play, Cpu, Sparkles } from "lucide-react";
+import { ActionButton } from "../components/ActionButton";
 
 interface AgentConsoleProps {
   agentStatus: AgentStatus | null;
@@ -101,13 +102,14 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({ agentStatus, onRunCu
               placeholder="Give Antigravity an instruction (e.g., 'Draft 5 comparison tweets between Cline and Tendril', 'Scan Reddit for worktree complaints')..."
               className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-sans"
             />
-            <button
+            <ActionButton
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-all hover:scale-[1.02] flex items-center justify-center space-x-2 shrink-0 self-end"
+              size="md"
+              icon={<Play className="w-4 h-4 fill-current" />}
+              className="shrink-0 self-end hover:scale-[1.02]"
             >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Launch</span>
-            </button>
+              Launch
+            </ActionButton>
           </div>
         </form>
       </div>

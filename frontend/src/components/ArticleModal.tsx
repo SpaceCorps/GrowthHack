@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { ActionButton } from "./ActionButton";
 import type {
   Article,
   ExportRecord,
@@ -663,13 +664,12 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             </button>
 
             {article.status !== "Published" ? (
-              <button
+              <ActionButton
                 onClick={() => onUpdateStatus(article.id, "Published")}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-colors"
+                icon={<Send className="w-3.5 h-3.5" />}
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>Mark Published</span>
-              </button>
+                Mark Published
+              </ActionButton>
             ) : (
               <span className="px-3 py-1.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs font-semibold">
                 Published ✓
@@ -1325,24 +1325,21 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                       </button>
                     )}
 
-                    <button
-                      type="button"
+                    <ActionButton
                       onClick={handleCopyChannelContent}
                       disabled={isFormatting || !formattedContent}
-                      className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02] disabled:opacity-50"
-                    >
-                      {channelCopied ? (
-                        <>
+                      icon={
+                        channelCopied ? (
                           <Check className="w-4 h-4 text-slate-950" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
+                        ) : (
                           <Copy className="w-4 h-4" />
-                          <span>Copy {selectedChannel} Format</span>
-                        </>
-                      )}
-                    </button>
+                        )
+                      }
+                      size="md"
+                      className="hover:scale-[1.02]"
+                    >
+                      {channelCopied ? "Copied!" : `Copy ${selectedChannel} Format`}
+                    </ActionButton>
                   </div>
                 </div>
 

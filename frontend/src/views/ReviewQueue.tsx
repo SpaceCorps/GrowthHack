@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type { ReviewItem } from "../types";
 import {
   Check,
@@ -673,14 +674,13 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             )}
           </button>
 
-          <button
+          <ActionButton
             onClick={() => setShowExportModal(true)}
             disabled={exportableItems.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-950/20 transition-colors"
+            icon={<Download className="w-3.5 h-3.5" />}
           >
-            <Download className="w-3.5 h-3.5" />
             Export Approved ({exportableItems.length})
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -1001,15 +1001,16 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                   </button>
 
                   {/* Approve Button (Swipe Right) */}
-                  <button
+                  <ActionButton
+                    size="lg"
+                    icon={<Check className="w-4 h-4" />}
                     onClick={handleApprove}
                     data-testid="approve-btn"
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950/20 transition-all transform active:scale-95"
                     title="Approve (ArrowRight or A)"
+                    className="transform active:scale-95"
                   >
-                    <Check className="w-4 h-4" />
-                    Approve (→)
-                  </button>
+                    Approve
+                  </ActionButton>
                 </div>
               </div>
             </div>
@@ -1042,13 +1043,13 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               )}
 
               {exportableItems.length > 0 && (
-                <button
+                <ActionButton
+                  icon={<Download className="w-3.5 h-3.5" />}
                   onClick={() => setShowExportModal(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-colors"
+                  size="md"
                 >
-                  <Download className="w-3.5 h-3.5" />
                   Export {exportableItems.length} Approved Items
-                </button>
+                </ActionButton>
               )}
             </div>
           </div>
@@ -1223,23 +1224,14 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                   </>
                 )}
               </button>
-              <button
+              <ActionButton
+                loading={isBatchPublishing}
+                loadingText="Publishing..."
+                icon={<Send className="w-3.5 h-3.5" />}
                 onClick={handleBatchPublish}
-                disabled={isBatchPublishing}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-colors disabled:opacity-50"
               >
-                {isBatchPublishing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Publishing...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    Publish All
-                  </>
-                )}
-              </button>
+                Publish All
+              </ActionButton>
             </div>
           </div>
         </div>
