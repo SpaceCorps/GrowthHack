@@ -1,10 +1,19 @@
 use crate::api::AppContext;
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{
+    extract::{Path, State},
+    response::sse::{Event, KeepAlive, Sse},
+    response::IntoResponse,
+    Json,
+};
+use futures_util::stream::Stream;
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt as _;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -150,6 +159,21 @@ pub async fn get_status() -> impl IntoResponse {
     Json(state)
 }
 
+pub async fn stream_demo_logs(
+    Path(task_id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+    let rx = tx.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
+        Ok(text) => Some(Ok(Event::default().data(text))),
+        Err(_) => None,
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
 pub async fn start_demo(
     State(ctx): State<Arc<AppContext>>,
     payload: Option<Json<StartDemoRequest>>,
@@ -167,6 +191,13 @@ pub async fn start_demo(
         .unwrap_or_else(|| "scenario-health-check".to_string());
 
     let run_id = Uuid::new_v4().to_string();
+    let tx = ctx.task_manager.get_or_create_channel(&run_id).await;
+
+    let initial_logs = vec![
+        format!("[00:01] Starting Tendril autonomous execution pipeline for '{}'...", scenario_id),
+        "[00:03] Step 1/4 (Intake): Reading issue specification and dependencies...".to_string(),
+        "[00:06] Step 1/4 (Intake): Analyzed repository structure (Axum backend, Vite+ frontend).".to_string(),
+    ];
 
     {
         let mut state = demo_state_arc.write().await;
@@ -174,11 +205,7 @@ pub async fn start_demo(
         state.status = "Running".to_string();
         state.current_step = 1;
         state.step_progress_pct = 25;
-        state.logs = vec![
-            format!("[00:01] Starting Tendril autonomous execution pipeline for '{}'...", scenario_id),
-            "[00:03] Step 1/4 (Intake): Reading issue specification and dependencies...".to_string(),
-            "[00:06] Step 1/4 (Intake): Analyzed repository structure (Axum backend, Vite+ frontend).".to_string(),
-        ];
+        state.logs = initial_logs.clone();
         state.diff_preview = None;
         state.pr_summary = None;
         state.elapsed_seconds = 6.0;
@@ -189,8 +216,14 @@ pub async fn start_demo(
     // Spawn background task to step through the workflow
     let ctx_clone = ctx.clone();
     let state_for_bg = demo_state_arc.clone();
+    let tx_clone = tx.clone();
     tokio::spawn(async move {
         let step_ms = (500.0 / speed).clamp(5.0, 1000.0) as u64;
+
+        // Step 1: Broadcast initial intake logs
+        for log in &initial_logs {
+            let _ = tx_clone.send(log.clone());
+        }
 
         // Step 2: Isolated Worktree
         tokio::time::sleep(Duration::from_millis(step_ms)).await;
@@ -200,9 +233,15 @@ pub async fn start_demo(
             s.current_step = 2;
             s.step_progress_pct = 50;
             s.elapsed_seconds = 18.0;
-            s.logs.push("[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...".to_string());
-            s.logs.push("[00:15] Step 2/4 (Worktree): Checked out branch 'tendril/demo-00319' from origin/master.".to_string());
-            s.logs.push("[00:18] Step 2/4 (Worktree): Verified working tree isolation: 0 uncommitted changes.".to_string());
+            let logs = [
+                "[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...",
+                "[00:15] Step 2/4 (Worktree): Checked out branch 'tendril/demo-00319' from origin/master.",
+                "[00:18] Step 2/4 (Worktree): Verified working tree isolation: 0 uncommitted changes.",
+            ];
+            for log in logs {
+                s.logs.push(log.to_string());
+                let _ = tx_clone.send(log.to_string());
+            }
         }
 
         // Step 3: Verification Gates
@@ -213,10 +252,16 @@ pub async fn start_demo(
             s.current_step = 3;
             s.step_progress_pct = 75;
             s.elapsed_seconds = 38.0;
-            s.logs.push("[00:24] Step 3/4 (Verification): Implementing solution in worktree...".to_string());
-            s.logs.push("[00:30] Step 3/4 (Verification): RustClippy check: cargo clippy -- -D warnings -> PASS".to_string());
-            s.logs.push("[00:34] Step 3/4 (Verification): RustTest suite: cargo test -> 34 passed, 0 failed.".to_string());
-            s.logs.push("[00:38] Step 3/4 (Verification): NpmLint & NpmBuild: vp check -> PASS.".to_string());
+            let logs = [
+                "[00:24] Step 3/4 (Verification): Implementing solution in worktree...",
+                "[00:30] Step 3/4 (Verification): RustClippy check: cargo clippy -- -D warnings -> PASS",
+                "[00:34] Step 3/4 (Verification): RustTest suite: cargo test -> 34 passed, 0 failed.",
+                "[00:38] Step 3/4 (Verification): NpmLint & NpmBuild: vp check -> PASS.",
+            ];
+            for log in logs {
+                s.logs.push(log.to_string());
+                let _ = tx_clone.send(log.to_string());
+            }
         }
 
         // Step 4: PR & Diff Preview
@@ -228,9 +273,16 @@ pub async fn start_demo(
             s.step_progress_pct = 100;
             s.status = "Completed".to_string();
             s.elapsed_seconds = 54.2;
-            s.logs.push("[00:46] Step 4/4 (PR Diff): Creating commit 'feat: implement health check and uptime metrics'.".to_string());
-            s.logs.push("[00:50] Step 4/4 (PR Diff): Diff synthesized: 2 files changed, +43 lines.".to_string());
-            s.logs.push("[00:54] Step 4/4 (PR Diff): Verified pull request generated with clean mergeability.".to_string());
+            let logs = [
+                "[00:46] Step 4/4 (PR Diff): Creating commit 'feat: implement health check and uptime metrics'.",
+                "[00:50] Step 4/4 (PR Diff): Diff synthesized: 2 files changed, +43 lines.",
+                "[00:54] Step 4/4 (PR Diff): Verified pull request generated with clean mergeability.",
+                "[DONE] Autonomous pipeline completed successfully.",
+            ];
+            for log in logs {
+                s.logs.push(log.to_string());
+                let _ = tx_clone.send(log.to_string());
+            }
             s.diff_preview = Some(SAMPLE_DIFF.to_string());
             s.pr_summary = Some(SAMPLE_PR_SUMMARY.to_string());
         }
