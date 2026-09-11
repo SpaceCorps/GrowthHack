@@ -25,11 +25,60 @@ const setInputValue = (input: HTMLInputElement, value: string) => {
 describe("ArticleEngine Component", () => {
   let container: HTMLDivElement | null = null;
   let root: ReturnType<typeof createRoot> | null = null;
+  let originalFetch: typeof global.fetch;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+
+    originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation((url: string, _options?: RequestInit) => {
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ snapshots: [], velocity: null }),
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/alerts/acknowledge-all")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true }),
+        });
+      }
+      if (
+        typeof url === "string" &&
+        url.includes("/api/articles/alerts/") &&
+        url.includes("/acknowledge")
+      ) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true }),
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/alerts")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [],
+        });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/sync-metrics")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, updated_count: 0 }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      });
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -41,6 +90,8 @@ describe("ArticleEngine Component", () => {
       container = null;
       root = null;
     }
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   it('renders both mode tabs ("10x Feature Articles" and "Cool Project Spotlight")', async () => {
@@ -420,6 +471,9 @@ describe("ArticleEngine Component", () => {
       if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
         return Promise.resolve(new Response(JSON.stringify(mockHistory), { status: 200 }));
       }
+      if (typeof url === "string" && url.includes("/api/articles/alerts")) {
+        return Promise.resolve(new Response("[]", { status: 200 }));
+      }
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
 
@@ -483,6 +537,9 @@ describe("ArticleEngine Component", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
         return Promise.resolve(new Response(JSON.stringify(mockHistory), { status: 200 }));
+      }
+      if (typeof url === "string" && url.includes("/api/articles/alerts")) {
+        return Promise.resolve(new Response("[]", { status: 200 }));
       }
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
@@ -662,5 +719,68 @@ describe("ArticleEngine Component", () => {
     expect(container!.textContent).toContain("25+ Reactions");
     expect(container!.textContent).toContain("Milestone Achievement History");
     expect(container!.textContent).toContain("100");
+  });
+
+  it("fetches engagement history and active alerts on mount and updates state cleanly", async () => {
+    const alerts = [
+      {
+        id: "alert-mount-1",
+        article_id: "art-1",
+        article_title: "Automated Growth Hack",
+        milestone_type: "views",
+        threshold: 50,
+        message: "'Automated Growth Hack' reached 50+ Views!",
+        badge_awarded: "50+ Views",
+        triggered_at: new Date().toISOString(),
+        acknowledged: false,
+      },
+    ];
+
+    const history = {
+      snapshots: [],
+      velocity: {
+        views_24h: 42,
+        reactions_24h: 5,
+        comments_24h: 1,
+        views_per_day: 42.0,
+        reactions_per_day: 5.0,
+        comments_per_day: 1.0,
+        trend: "Stable",
+      },
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (typeof url === "string" && url.includes("/api/articles/alerts?unacknowledged=true")) {
+        return new Response(JSON.stringify(alerts), { status: 200 });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return new Response(JSON.stringify(history), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    // Wait for fetch effects to resolve
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/articles/engagement-history");
+    expect(fetchSpy).toHaveBeenCalledWith("/api/articles/alerts?unacknowledged=true");
+    expect(container!.textContent).toContain("Milestone Achievement Alerts");
+    expect(container!.textContent).toContain("Automated Growth Hack");
+    expect(container!.textContent).toContain("+42.0/day");
+
+    fetchSpy.mockRestore();
   });
 });
