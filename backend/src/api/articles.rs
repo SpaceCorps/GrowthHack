@@ -972,6 +972,131 @@ pub async fn export_ivy_web(
     }
 }
 
+#[derive(Deserialize, Default)]
+pub struct AutoPostRequest {
+    pub target_dir: Option<String>,
+    pub target_images_dir: Option<String>,
+    pub sync_hero_image: Option<bool>,
+    pub hero_format: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutoPostResponse {
+    pub success: bool,
+    pub article: Article,
+    pub file_path: String,
+    pub slug: String,
+    pub image_path: Option<String>,
+    pub record: ExportRecord,
+}
+
+pub async fn auto_post_article(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    payload: Option<Json<AutoPostRequest>>,
+) -> impl IntoResponse {
+    let payload = payload.map(|Json(p)| p).unwrap_or_default();
+    let mut state = ctx.state.write().await;
+
+    let Some(article) = state.articles.iter().find(|a| a.id == id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Article not found" })),
+        );
+    };
+
+    let slug = article
+        .slug
+        .clone()
+        .unwrap_or_else(|| slugify(&article.title));
+    let post_content =
+        generate_ivy_web_post_with_options(article, &slug, payload.hero_format.as_deref());
+
+    let target_dir = payload
+        .target_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| ctx.ivy_web_content_path.clone());
+
+    if let Err(e) = std::fs::create_dir_all(&target_dir) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to create directory: {}", e) })),
+        );
+    }
+
+    let file_path = target_dir.join(format!("{}.mdoc", slug));
+    if let Err(e) = std::fs::write(&file_path, &post_content) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to write file: {}", e) })),
+        );
+    }
+
+    let sync_hero = payload.sync_hero_image.unwrap_or(true);
+    let mut image_path_str = None;
+
+    if sync_hero {
+        let images_dir = payload
+            .target_images_dir
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+
+        match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
+            Ok(img_path) => {
+                image_path_str = Some(img_path.to_string_lossy().to_string());
+            }
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(
+                        serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) }),
+                    ),
+                );
+            }
+        }
+    }
+
+    let article = state
+        .articles
+        .iter_mut()
+        .find(|a| a.id == id)
+        .expect("article existed above and state lock has been held continuously");
+
+    article.slug = Some(slug.clone());
+    article.status = "Published".to_string();
+    if article.published_at.is_none() {
+        article.published_at = Some(Utc::now());
+    }
+
+    let record = ExportRecord {
+        channel: "ivy-web".to_string(),
+        exported_at: Utc::now(),
+        target_path: Some(file_path.to_string_lossy().to_string()),
+        status: "Success".to_string(),
+        external_id: None,
+        engagement: None,
+    };
+    article.exports.push(record.clone());
+
+    let cloned = article.clone();
+    let _ = state.save(&ctx.data_file);
+
+    (
+        StatusCode::OK,
+        Json(
+            serde_json::to_value(AutoPostResponse {
+                success: true,
+                article: cloned,
+                file_path: file_path.to_string_lossy().to_string(),
+                slug,
+                image_path: image_path_str,
+                record,
+            })
+            .unwrap(),
+        ),
+    )
+}
+
 pub async fn sync_assets(
     Path(id): Path<String>,
     State(ctx): State<Arc<AppContext>>,
