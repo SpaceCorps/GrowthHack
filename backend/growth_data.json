@@ -340,7 +340,8 @@
       "created_at": "2026-09-10T12:11:54.850877100Z",
       "published_at": "2026-09-10T12:11:54.850877100Z",
       "slug": null,
-      "exports": []
+      "exports": [],
+      "engagement": null
     },
     {
       "id": "art-2",
@@ -361,7 +362,8 @@
       "created_at": "2026-09-10T12:11:54.850877100Z",
       "published_at": "2026-09-10T12:11:54.850877100Z",
       "slug": null,
-      "exports": []
+      "exports": [],
+      "engagement": null
     }
   ],
   "trends": [
@@ -1095,6 +1097,7 @@
     "devto_api_key": null,
     "hashnode_api_key": null,
     "hashnode_publication_id": null,
+    "github_token": null,
     "publish_as_draft": true
   },
   "packages": [
@@ -1155,6 +1158,244 @@
       "updated_at": "2026-09-10T18:01:26.892304Z"
     }
   ],
+  "latest_release": null,
+  "recipes": [
+    {
+      "id": "recipe-bugfixer",
+      "slug": "bugfixer",
+      "name": "Bugfixer",
+      "description": "Autonomous issue reproduction script generation, isolated worktree test creation, and targeted bug repair.",
+      "category": "Maintenance",
+      "author": "Tendril Core Team",
+      "author_avatar": null,
+      "version": "1.0.0",
+      "tags": [
+        "bugfix",
+        "git-worktrees",
+        "reproduction",
+        "automated-repair"
+      ],
+      "promptware_template": "name: Bugfixer\nversion: 1.0.0\ndescription: Autonomous issue reproduction and targeted bug repair\nsteps:\n  - id: reproduce\n    action: Generate isolated reproduction script or test case\n    gate: Verification/ReproductionTest\n  - id: fix\n    action: Implement targeted bug fix in isolated worktree\n    gate: Verification/PreExecution\n  - id: verify\n    action: Execute project test suite and formatting gates\n    gate: Verification/AllTests\n",
+      "parameters": [
+        {
+          "name": "issue_id",
+          "description": "Target GitHub issue ID or bug description",
+          "default_value": "42",
+          "required": true,
+          "param_type": "string",
+          "options": null
+        },
+        {
+          "name": "test_first",
+          "description": "Generate failing reproduction test before implementing fix",
+          "default_value": "true",
+          "required": false,
+          "param_type": "boolean",
+          "options": null
+        }
+      ],
+      "cli_snippet": "tendril run recipe/bugfixer --issue=<issue_id>",
+      "forks_count": 142,
+      "stars_count": 580,
+      "is_official": true,
+      "badge": "Core Team",
+      "created_at": "2026-09-11T05:52:21.941899Z",
+      "updated_at": "2026-09-11T05:52:21.941899Z"
+    },
+    {
+      "id": "recipe-security-patcher",
+      "slug": "security-patcher",
+      "name": "Security Patcher",
+      "description": "Automated CVE dependency auditing, breaking-change risk analysis, and automated version bump PRs.",
+      "category": "Security",
+      "author": "Tendril Core Team",
+      "author_avatar": null,
+      "version": "1.0.0",
+      "tags": [
+        "security",
+        "cve",
+        "audit",
+        "dependencies"
+      ],
+      "promptware_template": "name: Security Patcher\nversion: 1.0.0\ndescription: Automated CVE dependency auditing and security upgrade PRs\nsteps:\n  - id: audit\n    action: Scan dependencies for CVE vulnerabilities\n    gate: Verification/SecurityAudit\n  - id: patch\n    action: Upgrade vulnerable package versions and resolve breaking changes\n    gate: Verification/CargoClippy\n  - id: test\n    action: Run regression test suite\n    gate: Verification/RegressionTests\n",
+      "parameters": [
+        {
+          "name": "cve_id",
+          "description": "Target CVE identifier or dependency advisory",
+          "default_value": "CVE-2026-1042",
+          "required": true,
+          "param_type": "string",
+          "options": null
+        },
+        {
+          "name": "severity_threshold",
+          "description": "Minimum vulnerability severity level to trigger auto-patching",
+          "default_value": "High",
+          "required": false,
+          "param_type": "select",
+          "options": [
+            "Critical",
+            "High",
+            "Medium",
+            "Low"
+          ]
+        }
+      ],
+      "cli_snippet": "tendril run recipe/security-patcher --cve=<cve_id>",
+      "forks_count": 89,
+      "stars_count": 412,
+      "is_official": true,
+      "badge": "Core Team",
+      "created_at": "2026-09-11T05:52:21.941899Z",
+      "updated_at": "2026-09-11T05:52:21.941899Z"
+    },
+    {
+      "id": "recipe-test-generator",
+      "slug": "test-generator",
+      "name": "Test Generator",
+      "description": "Differential coverage analysis and edge-case unit and integration test synthesis with mock verification.",
+      "category": "Testing",
+      "author": "Tendril Core Team",
+      "author_avatar": null,
+      "version": "1.0.0",
+      "tags": [
+        "testing",
+        "coverage",
+        "unit-tests",
+        "edge-cases"
+      ],
+      "promptware_template": "name: Test Generator\nversion: 1.0.0\ndescription: Differential coverage analysis and edge-case unit and integration test synthesis\nsteps:\n  - id: analyze_coverage\n    action: Calculate uncovered branches and public interface edges\n    gate: Verification/CoverageMap\n  - id: synthesize_tests\n    action: Write comprehensive unit and mock integration tests\n    gate: Verification/TestExecution\n",
+      "parameters": [
+        {
+          "name": "test_scope",
+          "description": "Target file, module, or test scope path",
+          "default_value": "src/api/recipes.rs",
+          "required": true,
+          "param_type": "string",
+          "options": null
+        },
+        {
+          "name": "framework",
+          "description": "Testing framework adapter",
+          "default_value": "auto",
+          "required": false,
+          "param_type": "select",
+          "options": [
+            "auto",
+            "cargo-test",
+            "vitest",
+            "pytest"
+          ]
+        }
+      ],
+      "cli_snippet": "tendril run recipe/test-generator --scope=<test_scope>",
+      "forks_count": 215,
+      "stars_count": 890,
+      "is_official": true,
+      "badge": "Core Team",
+      "created_at": "2026-09-11T05:52:21.941899Z",
+      "updated_at": "2026-09-11T05:52:21.941899Z"
+    },
+    {
+      "id": "recipe-pr-reviewer",
+      "slug": "pr-reviewer",
+      "name": "PR Reviewer",
+      "description": "Deep architectural analysis, code smell detection, and constructive review comment synthesis on open PRs.",
+      "category": "Code Quality",
+      "author": "Tendril Core Team",
+      "author_avatar": null,
+      "version": "1.0.0",
+      "tags": [
+        "code-quality",
+        "pr-review",
+        "architecture",
+        "diff-analysis"
+      ],
+      "promptware_template": "name: PR Reviewer\nversion: 1.0.0\ndescription: Deep architectural analysis and constructive review comment synthesis\nsteps:\n  - id: diff_analysis\n    action: Inspect PR changes against default branch\n    gate: Verification/DiffAudit\n  - id: review_comments\n    action: Synthesize architectural and code quality feedback\n    gate: Verification/ReviewOutput\n",
+      "parameters": [
+        {
+          "name": "pr_number",
+          "description": "Pull request number or GitHub URL",
+          "default_value": "105",
+          "required": true,
+          "param_type": "string",
+          "options": null
+        },
+        {
+          "name": "strictness",
+          "description": "Review strictness and feedback depth",
+          "default_value": "Standard",
+          "required": false,
+          "param_type": "select",
+          "options": [
+            "Standard",
+            "Strict",
+            "Lenient"
+          ]
+        }
+      ],
+      "cli_snippet": "tendril run recipe/pr-reviewer --pr=<pr_number>",
+      "forks_count": 178,
+      "stars_count": 670,
+      "is_official": true,
+      "badge": "Core Team",
+      "created_at": "2026-09-11T05:52:21.941899Z",
+      "updated_at": "2026-09-11T05:52:21.941899Z"
+    },
+    {
+      "id": "recipe-db-migrator",
+      "slug": "db-migrator",
+      "name": "DB Migrator",
+      "description": "Schema diff detection, safe migration script generation (up and down), and backward compatibility verification.",
+      "category": "Database",
+      "author": "Tendril Core Team",
+      "author_avatar": null,
+      "version": "1.0.0",
+      "tags": [
+        "database",
+        "migration",
+        "schema",
+        "sql"
+      ],
+      "promptware_template": "name: DB Migrator\nversion: 1.0.0\ndescription: Schema diff detection, migration script synthesis, and rollback verification\nsteps:\n  - id: diff_schema\n    action: Detect changes between models and current database schema\n    gate: Verification/SchemaDiff\n  - id: generate_migrations\n    action: Generate reversible up and down migration scripts\n    gate: Verification/MigrationDryRun\n",
+      "parameters": [
+        {
+          "name": "schema_target",
+          "description": "Target table, model, or migration name",
+          "default_value": "add_recipes_table",
+          "required": true,
+          "param_type": "string",
+          "options": null
+        },
+        {
+          "name": "engine",
+          "description": "Database dialect or ORM",
+          "default_value": "postgres",
+          "required": false,
+          "param_type": "select",
+          "options": [
+            "postgres",
+            "mysql",
+            "sqlite"
+          ]
+        }
+      ],
+      "cli_snippet": "tendril run recipe/db-migrator --name=<schema_target>",
+      "forks_count": 64,
+      "stars_count": 320,
+      "is_official": true,
+      "badge": "Core Team",
+      "created_at": "2026-09-11T05:52:21.941899Z",
+      "updated_at": "2026-09-11T05:52:21.941899Z"
+    }
+  ],
+  "onboarding_metrics": {
+    "first_run_completed": false,
+    "demo_completed_count": 0,
+    "diagnostic_runs_count": 0,
+    "time_to_first_pr_seconds": null,
+    "github_starred": false
+  },
   "contributor_issues": [
     {
       "id": "cf-issue-1",
@@ -1480,53 +1721,73 @@
   "contributors": [
     {
       "name": "Rory Chatt",
+      "login": "rorychatt",
       "avatar_url": "https://github.com/rorychatt.png",
       "profile_url": "https://github.com/rorychatt",
       "contributions": [
         "code",
         "architecture",
         "review"
-      ]
+      ],
+      "verified": true,
+      "verified_at": "2026-09-11T05:52:21.944708Z",
+      "pr_url": null
     },
     {
       "name": "Alex Vance",
+      "login": "alex-spacecorps",
       "avatar_url": "https://avatars.githubusercontent.com/u/10001?v=4",
       "profile_url": "https://github.com/alex-spacecorps",
       "contributions": [
         "code",
         "backend",
         "test"
-      ]
+      ],
+      "verified": true,
+      "verified_at": "2026-09-11T05:52:21.944710Z",
+      "pr_url": null
     },
     {
       "name": "Sarah Jenkins",
+      "login": "sarah-ui",
       "avatar_url": "https://avatars.githubusercontent.com/u/10002?v=4",
       "profile_url": "https://github.com/sarah-ui",
       "contributions": [
         "design",
         "frontend",
         "a11y"
-      ]
+      ],
+      "verified": true,
+      "verified_at": "2026-09-11T05:52:21.944710Z",
+      "pr_url": null
     },
     {
       "name": "Elena Rostova",
+      "login": "dev-elena",
       "avatar_url": "https://avatars.githubusercontent.com/u/10003?v=4",
       "profile_url": "https://github.com/dev-elena",
       "contributions": [
         "code",
         "doc",
         "maintenance"
-      ]
+      ],
+      "verified": true,
+      "verified_at": "2026-09-11T05:52:21.944710Z",
+      "pr_url": null
     },
     {
       "name": "Marcus Chen",
+      "login": "marcus-cli",
       "avatar_url": "https://avatars.githubusercontent.com/u/10004?v=4",
       "profile_url": "https://github.com/marcus-cli",
       "contributions": [
         "cli",
         "package",
         "test"
-      ]
+      ],
+      "verified": true,
+      "verified_at": "2026-09-11T05:52:21.944711Z",
+      "pr_url": null
     }
   ]
 }
