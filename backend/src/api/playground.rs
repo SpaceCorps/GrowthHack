@@ -1,6 +1,7 @@
 use crate::api::AppContext;
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -77,6 +78,24 @@ pub struct StartPlaygroundRequest {
 #[derive(Deserialize, Default)]
 pub struct ScenarioQuery {
     pub scenario_id: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct PlaygroundFileQuery {
+    pub scenario_id: Option<String>,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlaygroundFileResponse {
+    pub scenario_id: String,
+    pub path: String,
+    pub name: String,
+    pub status: String, // "Created", "Modified", "Unchanged"
+    pub content: String,
+    pub file_diff: Option<String>,
+    pub language: String,
+    pub line_count: usize,
 }
 
 #[derive(Serialize)]
@@ -968,6 +987,331 @@ pub async fn get_diff(Query(query): Query<ScenarioQuery>) -> impl IntoResponse {
         diff: scenario.diff,
         pr_summary: scenario.pr_summary,
     })
+}
+
+fn find_file_node<'a>(
+    tree: &'a [WorktreeFileNode],
+    target_path: &str,
+) -> Option<&'a WorktreeFileNode> {
+    for node in tree {
+        if node.path == target_path && !node.is_dir {
+            return Some(node);
+        }
+        if let Some(ref children) = node.children {
+            if let Some(found) = find_file_node(children, target_path) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn infer_language(path: &str) -> String {
+    if path.ends_with(".rs") {
+        "rust".to_string()
+    } else if path.ends_with(".toml") {
+        "toml".to_string()
+    } else if path.ends_with(".json") {
+        "json".to_string()
+    } else if path.ends_with(".ts") || path.ends_with(".tsx") {
+        "typescript".to_string()
+    } else if path.ends_with(".js") || path.ends_with(".jsx") {
+        "javascript".to_string()
+    } else if path.ends_with(".md") {
+        "markdown".to_string()
+    } else if path.ends_with(".html") {
+        "html".to_string()
+    } else if path.ends_with(".css") {
+        "css".to_string()
+    } else {
+        "plaintext".to_string()
+    }
+}
+
+fn extract_file_diff(full_diff: &str, path: &str) -> Option<String> {
+    let header = format!("diff --git a/{} b/{}", path, path);
+    if let Some(start_idx) = full_diff.find(&header) {
+        let after_start = &full_diff[start_idx..];
+        let end_idx = after_start[header.len()..]
+            .find("\ndiff --git ")
+            .map(|i| header.len() + i)
+            .unwrap_or(after_start.len());
+        Some(after_start[..end_idx].trim().to_string())
+    } else {
+        None
+    }
+}
+
+pub fn get_simulated_file_content(
+    scenario: &PlaygroundScenario,
+    path: &str,
+) -> Option<PlaygroundFileResponse> {
+    let node = find_file_node(&scenario.file_tree, path)?;
+    let name = node.name.clone();
+    let status = node.status.clone();
+    let language = infer_language(path);
+
+    let content = match (scenario.id.as_str(), path) {
+        ("scenario-health-check", "backend/src/api/health.rs") => {
+            r#"use axum::{response::IntoResponse, Json};
+use serde::Serialize;
+use std::time::Instant;
+
+#[derive(Serialize)]
+pub struct HealthResponse {
+    pub status: &'static str,
+    pub uptime_seconds: u64,
+    pub version: &'static str,
+}
+
+static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+pub async fn health_check() -> impl IntoResponse {
+    let start = START_TIME.get_or_init(Instant::now);
+    Json(HealthResponse {
+        status: "healthy",
+        uptime_seconds: start.elapsed().as_secs(),
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/tests/health_test.rs") => {
+            r#"use growthhack_backend::api::health::health_check;
+
+#[tokio::test]
+async fn test_health_check_returns_ok() {
+    let response = health_check().await;
+    assert_eq!(response.status, "healthy");
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/Cargo.toml") => {
+            r#"[package]
+name = "growthhack-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/src/api/mod.rs") => {
+            r#"pub mod health;
+pub mod playground;
+
+use axum::{routing::get, Router};
+use std::sync::Arc;
+
+pub fn router(ctx: Arc<AppContext>) -> Router {
+    Router::new()
+        .route("/api/health", get(health::health_check))
+        .route("/api/playground/scenarios", get(playground::list_scenarios))
+        .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
+        .with_state(ctx)
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/src/main.rs") => {
+            r#"use axum::Router;
+use std::net::SocketAddr;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new("info"))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().nest("/api", growthhack_backend::api::router(ctx));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 4200));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "frontend/package.json") => {
+            r#"{
+  "name": "growthhack-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "tsc && vp build",
+    "preview": "vp preview",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "lucide-react": "^1.43.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.3",
+    "vite-plus": "^0.3.0"
+  }
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/src/middleware/rate_limit.rs") => {
+            r#"use tower::limit::RateLimitLayer;
+use std::time::Duration;
+
+pub fn build_rate_limiter() -> RateLimitLayer {
+    RateLimitLayer::new(100, Duration::from_secs(60))
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/tests/rate_limit_test.rs") => {
+            r#"use growthhack_backend::middleware::rate_limit::build_rate_limiter;
+
+#[tokio::test]
+async fn test_rate_limiter_allows_under_threshold() {
+    let limiter = build_rate_limiter();
+    assert_eq!(limiter.num_requests(), 0);
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/src/main.rs") => {
+            r#"use axum::Router;
+use growthhack_backend::middleware::rate_limit::build_rate_limiter;
+
+#[tokio::main]
+async fn main() {
+    let limiter = build_rate_limiter();
+    let app = Router::new().layer(limiter);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:4200").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+"#
+            .to_string()
+        }
+        ("scenario-terminal-theme", "frontend/src/components/LiveTerminal.tsx") => {
+            r#"import React from "react";
+
+export const HighContrastTheme = {
+  bg: "bg-slate-950 border-emerald-500/50",
+  text: "text-emerald-400 font-mono tracking-tight",
+};
+
+export const LiveTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
+  return (
+    <div className={`p-4 rounded-xl border ${HighContrastTheme.bg}`}>
+      {logs.map((log, i) => (
+        <div key={i} className={HighContrastTheme.text}>
+          &gt; {log}
+        </div>
+      ))}
+    </div>
+  );
+};
+"#
+            .to_string()
+        }
+        (_, "backend/src/api/feature.rs") => format!(
+            "// Feature implementation for {}\npub fn execute_feature() -> bool {{\n    true\n}}\n",
+            scenario.title
+        ),
+        (_, "backend/tests/feature_test.rs") => format!(
+            "// Integration test for {}\n#[test]\nfn test_feature_execution() {{\n    assert!(true);\n}}\n",
+            scenario.title
+        ),
+        _ => match language.as_str() {
+            "rust" => {
+                format!("// {}\npub fn handler() {{\n    // Simulated implementation\n}}\n", path)
+            }
+            "typescript" => {
+                format!("// {}\nexport const Component = () => {{\n  return null;\n}};\n", path)
+            }
+            "toml" => format!("# {}\n[package]\nname = \"growthhack-backend\"\n", path),
+            "json" => "{\n  \"name\": \"growthhack\"\n}\n".to_string(),
+            _ => format!("// Content of {}\n", path),
+        },
+    };
+
+    let file_diff = if status == "Unchanged" {
+        None
+    } else {
+        extract_file_diff(&scenario.diff, path)
+    };
+
+    let line_count = content.lines().count().max(1);
+
+    Some(PlaygroundFileResponse {
+        scenario_id: scenario.id.clone(),
+        path: path.to_string(),
+        name,
+        status,
+        content,
+        file_diff,
+        language,
+        line_count,
+    })
+}
+
+pub async fn get_file_content(
+    Query(query): Query<PlaygroundFileQuery>,
+) -> impl IntoResponse {
+    let scenario_id = query
+        .scenario_id
+        .clone()
+        .unwrap_or_else(|| "scenario-health-check".to_string());
+
+    let all_scenarios = {
+        let mut list = curated_scenarios();
+        let custom = get_custom_scenarios().read().await.clone();
+        list.extend(custom);
+        list
+    };
+
+    let scenario = match all_scenarios.into_iter().find(|s| s.id == scenario_id) {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": format!("Scenario '{}' not found", scenario_id)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match get_simulated_file_content(&scenario, &query.path) {
+        Some(file_resp) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(file_resp).unwrap()),
+        )
+            .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": format!("File '{}' not found in scenario '{}'", query.path, scenario_id)
+            })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn get_metrics(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {

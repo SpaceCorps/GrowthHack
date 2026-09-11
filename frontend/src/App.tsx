@@ -511,6 +511,30 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSyncAllPrs = async () => {
+    try {
+      const res = await fetch("/api/listings/sync-prs", { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync all PRs error:", err);
+      throw err;
+    }
+  };
+
+  const handleSyncSinglePr = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/sync-pr`, { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync single PR error:", err);
+      throw err;
+    }
+  };
+
   const handleUpdatePackageStatus = async (
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
@@ -527,12 +551,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDispatchPackagePr = async (id: string, version?: string, skipAuthCheck?: boolean) => {
+  const handleDispatchPackagePr = async (
+    id: string,
+    version?: string,
+    tagOrSkipAuth?: string | boolean,
+    skipAuthCheck?: boolean,
+  ) => {
+    const tag = typeof tagOrSkipAuth === "string" ? tagOrSkipAuth : undefined;
+    const skipAuth = typeof tagOrSkipAuth === "boolean" ? tagOrSkipAuth : skipAuthCheck;
     try {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, skip_auth_check: skipAuthCheck }),
+        body: JSON.stringify({ version, tag, skip_auth_check: skipAuth }),
       });
       const data = await res.json();
       if (data && data.task_id) {
@@ -866,7 +897,11 @@ export const App: React.FC = () => {
             (updated.summary !== undefined && updated.summary !== item.summary))) ||
         (item.type === "video_demo" &&
           ((updated.content !== undefined && updated.content !== item.content) ||
-            (updated.title !== undefined && updated.title !== item.title)));
+            (updated.title !== undefined && updated.title !== item.title))) ||
+        (item.type === "trend_synthesis" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title) ||
+            (updated.summary !== undefined && updated.summary !== item.summary)));
 
       if (isModified) {
         nextUpdated.status = "Pending";
@@ -916,7 +951,7 @@ export const App: React.FC = () => {
           body: JSON.stringify({
             topic: updated.title,
             summary: updated.summary,
-            status: updated.status,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
@@ -1058,6 +1093,8 @@ export const App: React.FC = () => {
             onSubmitUpstream={handleSubmitUpstream}
             onBatchSubmitUpstream={handleBatchSubmitUpstream}
             githubStatus={githubStatus}
+            onSyncAllPrs={handleSyncAllPrs}
+            onSyncSinglePr={handleSyncSinglePr}
           />
         )}
 

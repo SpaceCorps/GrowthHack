@@ -242,6 +242,11 @@ export interface PackageManifestResponse {
   fetched_at?: string;
 }
 
+export interface ManifestQueryParams {
+  refresh?: boolean;
+  tag?: string;
+}
+
 export interface DispatchPackagePrResponse {
   task_id: string;
   message: string;
@@ -308,6 +313,9 @@ export interface DemoScenario {
   description: string;
   target_branch: string;
   estimated_duration_sec: number;
+  diff_preview?: string;
+  pr_summary?: string;
+  custom_logs?: string[];
 }
 
 export interface DemoRunState {
@@ -398,6 +406,8 @@ export interface ContributorIssue {
   github_repo?: string;
   github_sync_status?: string;
   github_sync_message?: string;
+  closed?: boolean;
+  closed_at?: string;
 }
 
 export interface ContributorRecord {
@@ -660,4 +670,15 @@ export interface ImportIssueRequest {
   issue_url?: string;
   title?: string;
   description?: string;
+}
+
+export interface PlaygroundFileInspection {
+  scenario_id: string;
+  path: string;
+  name: string;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  content: string;
+  file_diff?: string;
+  language: string;
+  line_count: number;
 }

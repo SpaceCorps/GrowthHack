@@ -173,6 +173,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/batch-submit-pr",
             post(listings::batch_submit_listing_prs),
         )
+        .route("/api/listings/sync-prs", post(listings::sync_all_listing_prs))
+        .route(
+            "/api/listings/{id}/sync-pr",
+            post(listings::check_single_listing_pr),
+        )
+        .route(
+            "/api/webhooks/github/pr",
+            post(listings::handle_github_pr_webhook),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route(
@@ -244,6 +253,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/contributors/generate-pr",
             post(contributors::generate_all_contributors_pr),
         )
+        .route(
+            "/api/webhooks/github",
+            post(contributors::handle_github_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
+        )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
@@ -255,7 +276,20 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         )
         .route("/api/doctor/fix", post(doctor::fix_diagnostics))
         // Zero-Config Demo Simulator
-        .route("/api/demo/scenarios", get(demo::list_scenarios))
+        .route(
+            "/api/demo/scenarios",
+            get(demo::list_scenarios).post(demo::create_scenario),
+        )
+        .route(
+            "/api/demo/scenarios/reset",
+            post(demo::reset_scenarios),
+        )
+        .route(
+            "/api/demo/scenarios/{id}",
+            get(demo::get_scenario)
+                .put(demo::update_scenario)
+                .delete(demo::delete_scenario),
+        )
         .route("/api/demo/status", get(demo::get_status))
         .route("/api/demo/start", post(demo::start_demo))
         .route("/api/demo/stream/{task_id}", get(demo::stream_demo_logs))
@@ -277,6 +311,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/playground/scenarios", get(playground::list_scenarios))
         .route("/api/playground/import-issue", post(playground::import_issue))
         .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
         .route("/api/playground/status", get(playground::get_status))
         .route("/api/playground/start", post(playground::start_simulation))
         .route("/api/playground/reset", post(playground::reset_simulation))

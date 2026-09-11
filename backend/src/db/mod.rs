@@ -1,3 +1,4 @@
+use crate::api::demo::{get_sample_scenarios, DemoScenario};
 use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -81,6 +82,46 @@ pub struct Article {
     #[serde(default)]
     pub engagement_snapshots: Vec<EngagementSnapshot>,
 }
+
+impl Default for Article {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: String::new(),
+            content: String::new(),
+            backlinks: Vec::new(),
+            outbound_citations: Vec::new(),
+            status: "Draft".to_string(),
+            created_at: Utc::now(),
+            published_at: None,
+            slug: None,
+            exports: Vec::new(),
+            engagement: None,
+            engagement_snapshots: Vec::new(),
+        }
+    }
+}
+
+impl Article {
+    pub fn default_for_test() -> Self {
+        let now = Utc::now();
+        Self {
+            id: "art-test".to_string(),
+            title: "Test Article".to_string(),
+            summary: "Test summary of the article.".to_string(),
+            content: "# Test\n\nSome body.".to_string(),
+            published_at: Some(now),
+            slug: Some("test-article".to_string()),
+            created_at: now,
+            ..Self::default()
+        }
+    }
+}
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TrendTopic {
@@ -288,6 +329,10 @@ pub struct ContributorIssue {
     pub github_sync_status: Option<String>,
     #[serde(default)]
     pub github_sync_message: Option<String>,
+    #[serde(default)]
+    pub closed: bool,
+    #[serde(default)]
+    pub closed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -446,6 +491,8 @@ pub struct GrowthState {
     #[serde(default)]
     pub latest_release: Option<ReleaseInfo>,
     #[serde(default)]
+    pub release_cache: Vec<ReleaseInfo>,
+    #[serde(default)]
     pub recipes: Vec<Recipe>,
     #[serde(default)]
     pub onboarding_metrics: OnboardingMetrics,
@@ -456,6 +503,7 @@ pub struct GrowthState {
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
     #[serde(default)]
+    pub demo_scenarios: Vec<DemoScenario>,
     pub launch_campaign: Option<LaunchCampaignState>,
     #[serde(default)]
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
@@ -527,6 +575,22 @@ impl GrowthState {
                             let _ = state.save(path);
                         }
                     }
+                    if state.demo_scenarios.is_empty() {
+                        state.demo_scenarios = get_sample_scenarios();
+                        let _ = state.save(path);
+                    }
+                    let external_scenarios_path = Path::new("demo_scenarios.json");
+                    if external_scenarios_path.exists() {
+                        if let Ok(content) = fs::read_to_string(external_scenarios_path) {
+                            if let Ok(custom) = serde_json::from_str::<Vec<DemoScenario>>(&content)
+                            {
+                                if !custom.is_empty() {
+                                    state.demo_scenarios = custom;
+                                    let _ = state.save(path);
+                                }
+                            }
+                        }
+                    }
                     return state;
                 }
             }
@@ -542,6 +606,35 @@ impl GrowthState {
         let content = serde_json::to_string_pretty(self)?;
         fs::write(path, content)?;
         Ok(())
+    }
+
+    pub fn find_cached_release(&self, tag: Option<&str>) -> Option<&ReleaseInfo> {
+        match tag {
+            None | Some("latest") => {
+                self.latest_release.as_ref().filter(|r| !r.is_expired(15 * 60))
+            }
+            Some(t) => {
+                let clean = t.trim_start_matches('v');
+                self.release_cache
+                    .iter()
+                    .chain(self.latest_release.iter())
+                    .find(|r| {
+                        !r.is_expired(15 * 60)
+                            && (r.tag_name == t
+                                || r.version == clean
+                                || r.tag_name == format!("v{}", clean)
+                                || r.tag_name.trim_start_matches('v') == clean)
+                    })
+            }
+        }
+    }
+
+    pub fn update_release_cache(&mut self, release: ReleaseInfo) {
+        if let Some(pos) = self.release_cache.iter().position(|r| r.tag_name == release.tag_name || r.version == release.version) {
+            self.release_cache[pos] = release;
+        } else {
+            self.release_cache.push(release);
+        }
     }
 
     pub fn seed_default() -> Self {
@@ -930,11 +1023,13 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             syndication_settings: SyndicationSettings::default(),
             packages,
             latest_release: None,
+            release_cache: Vec::new(),
             recipes,
             onboarding_metrics: OnboardingMetrics::default(),
             playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
+            demo_scenarios: get_sample_scenarios(),
             launch_campaign: Some(Self::seed_launch_campaign(now)),
             global_engagement_snapshots: Vec::new(),
         }
@@ -3249,3 +3344,47 @@ steps:
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_article_default() {
+        let article = Article::default();
+        assert_eq!(article.id, "");
+        assert_eq!(article.title, "");
+        assert_eq!(article.feature, "Worktrees");
+        assert_eq!(article.channel, "Website");
+        assert_eq!(article.angle, "Architecture");
+        assert_eq!(article.summary, "");
+        assert_eq!(article.content, "");
+        assert!(article.backlinks.is_empty());
+        assert!(article.outbound_citations.is_empty());
+        assert_eq!(article.status, "Draft");
+        assert!(article.published_at.is_none());
+        assert!(article.slug.is_none());
+        assert!(article.exports.is_empty());
+        assert!(article.engagement.is_none());
+    }
+
+    #[test]
+    fn test_article_default_for_test() {
+        let article = Article::default_for_test();
+        assert_eq!(article.id, "art-test");
+        assert_eq!(article.title, "Test Article");
+        assert_eq!(article.feature, "Worktrees");
+        assert_eq!(article.channel, "Website");
+        assert_eq!(article.angle, "Architecture");
+        assert_eq!(article.summary, "Test summary of the article.");
+        assert_eq!(article.content, "# Test\n\nSome body.");
+        assert!(article.backlinks.is_empty());
+        assert!(article.outbound_citations.is_empty());
+        assert_eq!(article.status, "Draft");
+        assert!(article.published_at.is_some());
+        assert_eq!(article.slug.as_deref(), Some("test-article"));
+        assert!(article.exports.is_empty());
+        assert!(article.engagement.is_none());
+    }
+}
+
