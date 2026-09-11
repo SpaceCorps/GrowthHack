@@ -34,6 +34,7 @@ import {
   Minus,
   Activity,
   Award,
+  RotateCcw,
 } from "lucide-react";
 import { EngagementVelocityChart } from "./EngagementVelocityChart";
 import {
@@ -65,6 +66,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const [articleHistory, setArticleHistory] = useState<EngagementHistoryResponse | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [isSeedingEngagement, setIsSeedingEngagement] = useState<boolean>(false);
+  const [isResettingEngagement, setIsResettingEngagement] = useState<boolean>(false);
   const [seedSuccessBanner, setSeedSuccessBanner] = useState<string | null>(null);
 
   // Export tab state
@@ -586,6 +588,47 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       setSeedSuccessBanner(err.message || "Network error seeding demo engagement.");
     } finally {
       setIsSeedingEngagement(false);
+    }
+  };
+
+  const handleResetEngagement = async () => {
+    setIsResettingEngagement(true);
+    setSeedSuccessBanner(null);
+    try {
+      const res = await fetch(`/api/articles/${article.id}/seed-engagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          views: 0,
+          reactions: 0,
+          comments: 0,
+          channels: {},
+          generate_history_days: 0,
+          reset_badges: true,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.article) {
+          onArticleUpdated?.(data.article);
+        }
+        setArticleHistory({
+          snapshots: data.article?.engagement_snapshots || [],
+          velocity: data.velocity,
+        });
+        setSeedSuccessBanner(
+          "Reset article engagement metrics, snapshots, and badges to initial zero state.",
+        );
+        setTimeout(() => {
+          setSeedSuccessBanner(null);
+        }, 5000);
+      } else {
+        setSeedSuccessBanner(data.error || "Failed to reset article engagement.");
+      }
+    } catch (err: any) {
+      setSeedSuccessBanner(err.message || "Network error resetting article engagement.");
+    } finally {
+      setIsResettingEngagement(false);
     }
   };
 
@@ -1744,19 +1787,34 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                       Engagement Milestones ({article.engagement_badges?.length || 0})
                     </span>
                   </div>
-                  <button
-                    onClick={handleSeedEngagement}
-                    disabled={isSeedingEngagement}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-50"
-                    title="Seed simulated engagement metrics and milestone alerts for testing"
-                  >
-                    {isSeedingEngagement ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    )}
-                    <span>{isSeedingEngagement ? "Seeding..." : "Seed Demo Engagement"}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleResetEngagement}
+                      disabled={isResettingEngagement || isSeedingEngagement}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
+                      title="Reset engagement metrics, snapshots, and badges to initial zero state"
+                    >
+                      {isResettingEngagement ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                      <span>{isResettingEngagement ? "Resetting..." : "Reset Engagement"}</span>
+                    </button>
+                    <button
+                      onClick={handleSeedEngagement}
+                      disabled={isSeedingEngagement || isResettingEngagement}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-50"
+                      title="Seed simulated engagement metrics and milestone alerts for testing"
+                    >
+                      {isSeedingEngagement ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      )}
+                      <span>{isSeedingEngagement ? "Seeding..." : "Seed Demo Engagement"}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Unlocked milestone badges */}

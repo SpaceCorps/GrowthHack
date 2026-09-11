@@ -220,4 +220,193 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     expect(container!.textContent).toContain("Seeded demo engagement metrics!");
     expect(container!.textContent).toContain("Awarded 6 milestone badges");
   });
+
+  it("renders the 'Reset Engagement' button in the engagement tab", async () => {
+    const article: Article = {
+      id: "art-reset-test-1",
+      title: "Dev Reset Test Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/engagement-history")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              snapshots: [],
+              velocity: {
+                views_per_day: 0,
+                reactions_per_day: 0,
+                comments_per_day: 0,
+                views_24h: 0,
+                reactions_24h: 0,
+                comments_24h: 0,
+                trend: "Flat",
+                channels: {},
+              },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("Reset Engagement");
+  });
+
+  it("calls seed-engagement API with zero payload on 'Reset Engagement' click, updates article, and shows success banner", async () => {
+    const article: Article = {
+      id: "art-reset-test-2",
+      title: "Dev Reset Click Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 1250,
+        reactions: 65,
+        comments: 18,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views", "25+ Reactions"],
+      milestone_alerts: [],
+      engagement_snapshots: [
+        {
+          timestamp: new Date().toISOString(),
+          views: 1250,
+          reactions: 65,
+          comments: 18,
+        },
+      ],
+    };
+
+    const resetArticle: Article = {
+      ...article,
+      engagement: {
+        views: 0,
+        reactions: 0,
+        comments: 0,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: [],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    const onArticleUpdatedMock = vi.fn();
+    let sentPayload: any = null;
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/seed-engagement")) {
+        expect(init?.method).toBe("POST");
+        sentPayload = JSON.parse(init?.body as string);
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              article: resetArticle,
+              new_alerts: [],
+              new_alerts_count: 0,
+              velocity: {
+                views_per_day: 0.0,
+                reactions_per_day: 0.0,
+                comments_per_day: 0.0,
+                views_24h: 0,
+                reactions_24h: 0,
+                comments_24h: 0,
+                trend: "Flat",
+                channels: {},
+              },
+            }),
+        });
+      }
+      if (url.includes("/engagement-history")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              snapshots: [],
+              velocity: {
+                views_per_day: 0,
+                reactions_per_day: 0,
+                comments_per_day: 0,
+                views_24h: 0,
+                reactions_24h: 0,
+                comments_24h: 0,
+                trend: "Flat",
+                channels: {},
+              },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          onArticleUpdated={onArticleUpdatedMock}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(sentPayload).toEqual({
+      views: 0,
+      reactions: 0,
+      comments: 0,
+      channels: {},
+      generate_history_days: 0,
+      reset_badges: true,
+    });
+    expect(onArticleUpdatedMock).toHaveBeenCalledWith(resetArticle);
+    expect(container!.textContent).toContain(
+      "Reset article engagement metrics, snapshots, and badges to initial zero state.",
+    );
+  });
 });
