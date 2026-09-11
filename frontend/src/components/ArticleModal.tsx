@@ -64,6 +64,8 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   >(initialTab);
   const [articleHistory, setArticleHistory] = useState<EngagementHistoryResponse | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+  const [isSeedingEngagement, setIsSeedingEngagement] = useState<boolean>(false);
+  const [seedSuccessBanner, setSeedSuccessBanner] = useState<string | null>(null);
 
   // Export tab state
   const [selectedChannel, setSelectedChannel] = useState<string>("Dev.to");
@@ -544,6 +546,46 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       });
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleSeedEngagement = async () => {
+    setIsSeedingEngagement(true);
+    setSeedSuccessBanner(null);
+    try {
+      const res = await fetch(`/api/articles/${article.id}/seed-engagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.article) {
+          onArticleUpdated?.(data.article);
+        }
+        if (data.article?.engagement_snapshots && data.velocity) {
+          setArticleHistory({
+            snapshots: data.article.engagement_snapshots,
+            velocity: data.velocity,
+          });
+        }
+        const badgesCount = data.article?.engagement_badges?.length || 0;
+        const alertsCount = data.new_alerts_count ?? (data.new_alerts?.length || 0);
+        setSeedSuccessBanner(
+          `Seeded demo engagement metrics! Awarded ${badgesCount} milestone badge${
+            badgesCount === 1 ? "" : "s"
+          } and triggered ${alertsCount} alert${alertsCount === 1 ? "" : "s"}.`,
+        );
+        setTimeout(() => {
+          setSeedSuccessBanner(null);
+        }, 5000);
+      } else {
+        setSeedSuccessBanner(data.error || "Failed to seed demo engagement.");
+      }
+    } catch (err: any) {
+      setSeedSuccessBanner(err.message || "Network error seeding demo engagement.");
+    } finally {
+      setIsSeedingEngagement(false);
     }
   };
 
@@ -1593,6 +1635,21 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
 
           {activeTab === "engagement" && (
             <div className="space-y-6">
+              {seedSuccessBanner && (
+                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs flex items-center justify-between animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{seedSuccessBanner}</span>
+                  </div>
+                  <button
+                    onClick={() => setSeedSuccessBanner(null)}
+                    className="text-emerald-400 hover:text-emerald-200 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Velocity and 24h Delta Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
@@ -1680,12 +1737,27 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
 
               {/* Engagement Milestones Card */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center justify-between">
+                <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Award className="w-4 h-4 text-amber-400" />
-                    <span>Engagement Milestones ({article.engagement_badges?.length || 0})</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Engagement Milestones ({article.engagement_badges?.length || 0})
+                    </span>
                   </div>
-                </h4>
+                  <button
+                    onClick={handleSeedEngagement}
+                    disabled={isSeedingEngagement}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-50"
+                    title="Seed simulated engagement metrics and milestone alerts for testing"
+                  >
+                    {isSeedingEngagement ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    )}
+                    <span>{isSeedingEngagement ? "Seeding..." : "Seed Demo Engagement"}</span>
+                  </button>
+                </div>
 
                 {/* Unlocked milestone badges */}
                 <div className="mb-4">
