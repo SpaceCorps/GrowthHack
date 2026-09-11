@@ -27,6 +27,7 @@ import {
   Terminal as TerminalIcon,
   X,
   Layers,
+  Plus,
   Search,
 } from "lucide-react";
 
@@ -56,6 +57,18 @@ export const DoctorDemo: React.FC = () => {
   const [startingDemo, setStartingDemo] = useState<boolean>(false);
   const [showDiffModal, setShowDiffModal] = useState<boolean>(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState<boolean>(false);
+  const [showAddScenarioModal, setShowAddScenarioModal] = useState<boolean>(false);
+  const [newScenario, setNewScenario] = useState({
+    id: "",
+    title: "",
+    description: "",
+    target_branch: "master",
+    estimated_duration_sec: 15,
+    diff_preview: "",
+    pr_summary: "",
+  });
+  const [submittingScenario, setSubmittingScenario] = useState<boolean>(false);
+  const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<OnboardingMetrics | null>(null);
 
   // Terminal Drawer Filter State
@@ -305,6 +318,69 @@ export const DoctorDemo: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to reset demo simulator:", err);
+    }
+  };
+
+  const handleCreateScenario = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newScenario.id.trim() || !newScenario.title.trim() || !newScenario.description.trim()) {
+      setScenarioError("ID, title, and description are required.");
+      return;
+    }
+    setSubmittingScenario(true);
+    setScenarioError(null);
+    try {
+      const res = await fetch("/api/demo/scenarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: newScenario.id.trim(),
+          title: newScenario.title.trim(),
+          description: newScenario.description.trim(),
+          target_branch: newScenario.target_branch.trim() || "master",
+          estimated_duration_sec: Number(newScenario.estimated_duration_sec) || 15,
+          diff_preview: newScenario.diff_preview.trim() || undefined,
+          pr_summary: newScenario.pr_summary.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        const created: DemoScenario = await res.json();
+        await fetchScenarios();
+        setSelectedScenarioId(created.id);
+        setShowAddScenarioModal(false);
+        setNewScenario({
+          id: "",
+          title: "",
+          description: "",
+          target_branch: "master",
+          estimated_duration_sec: 15,
+          diff_preview: "",
+          pr_summary: "",
+        });
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setScenarioError(errData.error || "Failed to create scenario.");
+      }
+    } catch (err) {
+      console.error("Failed to create demo scenario:", err);
+      setScenarioError("Network error while creating scenario.");
+    } finally {
+      setSubmittingScenario(false);
+    }
+  };
+
+  const handleResetScenarios = async () => {
+    try {
+      const res = await fetch("/api/demo/scenarios/reset", { method: "POST" });
+      if (res.ok) {
+        const defaultScenarios: DemoScenario[] = await res.json();
+        setScenarios(defaultScenarios);
+        if (!defaultScenarios.some((s) => s.id === selectedScenarioId)) {
+          setSelectedScenarioId("scenario-health-check");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to reset demo scenarios:", err);
     }
   };
 
@@ -644,10 +720,29 @@ export const DoctorDemo: React.FC = () => {
         </div>
 
         {/* Scenario Selection */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Select Demo Scenario:
-          </label>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Select Demo Scenario:
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetScenarios}
+                disabled={demoState.status === "Running"}
+                className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                Reset Defaults
+              </button>
+              <button
+                onClick={() => setShowAddScenarioModal(true)}
+                disabled={demoState.status === "Running"}
+                className="flex items-center gap-1 px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 rounded text-xs font-semibold transition-all disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Scenario
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {scenarios.map((sc) => (
               <button
@@ -860,7 +955,176 @@ export const DoctorDemo: React.FC = () => {
             <div ref={logsEndRef} />
           </div>
         </div>
+
+        {/* Completed Simulation Diff & PR Summary Banner */}
+        {demoState.status === "Completed" && demoState.diff_preview && (
+          <div className="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>
+                Simulation complete for{" "}
+                <span className="text-white font-mono">
+                  {scenarios.find((s) => s.id === selectedScenarioId)?.title || selectedScenarioId}
+                </span>
+                . PR diff and verification summary are ready.
+              </span>
+            </div>
+            <button
+              onClick={() => setShowDiffModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold transition-all shrink-0"
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              Inspect PR Diff
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Add Custom Scenario Modal */}
+      {showAddScenarioModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-base font-bold text-white">Create Custom Demo Scenario</h3>
+              </div>
+              <button
+                onClick={() => setShowAddScenarioModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateScenario} className="p-4 overflow-y-auto space-y-4 text-xs">
+              {scenarioError && (
+                <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                  {scenarioError}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold block">
+                  Scenario ID (unique slug)*
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="scenario-my-workflow"
+                  value={newScenario.id}
+                  onChange={(e) => setNewScenario({ ...newScenario, id: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold block">Title*</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Add JWT authentication and refresh token rotation"
+                  value={newScenario.title}
+                  onChange={(e) => setNewScenario({ ...newScenario, title: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold block">Description*</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Simulates an autonomous agent creating auth middleware with token validation tests in an isolated worktree."
+                  value={newScenario.description}
+                  onChange={(e) => setNewScenario({ ...newScenario, description: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold block">Target Branch</label>
+                  <input
+                    type="text"
+                    placeholder="master"
+                    value={newScenario.target_branch}
+                    onChange={(e) =>
+                      setNewScenario({ ...newScenario, target_branch: e.target.value })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold block">
+                    Estimated Duration (sec)
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={300}
+                    value={newScenario.estimated_duration_sec}
+                    onChange={(e) =>
+                      setNewScenario({
+                        ...newScenario,
+                        estimated_duration_sec: Number(e.target.value),
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold block">
+                  Custom Diff Preview (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={
+                    "diff --git a/src/auth.rs b/src/auth.rs\n+pub fn verify_token() -> bool { true }"
+                  }
+                  value={newScenario.diff_preview}
+                  onChange={(e) => setNewScenario({ ...newScenario, diff_preview: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 font-mono text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 resize-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-300 font-semibold block">
+                  Custom PR Verification Summary (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={
+                    "# Pull Request Summary\n\n## Verifications Passed\n- RustTest: 1 passed"
+                  }
+                  value={newScenario.pr_summary}
+                  onChange={(e) => setNewScenario({ ...newScenario, pr_summary: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 font-mono text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500 resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddScenarioModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingScenario}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold disabled:opacity-50"
+                >
+                  {submittingScenario ? "Creating..." : "Create Scenario"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* PR Diff Modal */}
       {showDiffModal && demoState.diff_preview && (

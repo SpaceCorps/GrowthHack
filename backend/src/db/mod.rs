@@ -1,3 +1,4 @@
+use crate::api::demo::{get_sample_scenarios, DemoScenario};
 use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -498,6 +499,7 @@ pub struct GrowthState {
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
     #[serde(default)]
+    pub demo_scenarios: Vec<DemoScenario>,
     pub launch_campaign: Option<LaunchCampaignState>,
     #[serde(default)]
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
@@ -567,6 +569,22 @@ impl GrowthState {
                         }
                         if modified {
                             let _ = state.save(path);
+                        }
+                    }
+                    if state.demo_scenarios.is_empty() {
+                        state.demo_scenarios = get_sample_scenarios();
+                        let _ = state.save(path);
+                    }
+                    let external_scenarios_path = Path::new("demo_scenarios.json");
+                    if external_scenarios_path.exists() {
+                        if let Ok(content) = fs::read_to_string(external_scenarios_path) {
+                            if let Ok(custom) = serde_json::from_str::<Vec<DemoScenario>>(&content)
+                            {
+                                if !custom.is_empty() {
+                                    state.demo_scenarios = custom;
+                                    let _ = state.save(path);
+                                }
+                            }
                         }
                     }
                     return state;
@@ -1007,6 +1025,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
+            demo_scenarios: get_sample_scenarios(),
             launch_campaign: Some(Self::seed_launch_campaign(now)),
             global_engagement_snapshots: Vec::new(),
         }
