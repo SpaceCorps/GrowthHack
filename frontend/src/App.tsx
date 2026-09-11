@@ -644,25 +644,56 @@ export const App: React.FC = () => {
       rawId: art.id,
     }));
 
-    const demoItems: ReviewItem[] = demos.map((demo) => ({
-      id: `demo-${demo.id}`,
-      type: "video_demo" as const,
-      title: demo.headline,
-      subtitle: `${demo.feature} • Platform: ${demo.target_platform} (${demo.duration_seconds}s)`,
-      channel: demo.target_platform,
-      summary: `Video script & storyboard for ${demo.feature} on ${demo.target_platform}`,
-      content: `${demo.headline}\n\n${demo.body}\n\n### Storyboard\n${demo.storyboard}`,
-      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
-      citations: [],
-      status:
-        demo.status === "Approved"
-          ? "Approved"
-          : demo.status === "Rejected"
-            ? "Rejected"
-            : "Pending",
-      createdAt: demo.created_at,
-      rawId: demo.id,
-    }));
+    const demoItems: ReviewItem[] = demos.map((demo) => {
+      let content = `${demo.headline}\n\n${demo.body}`;
+
+      if (demo.scenes && demo.scenes.length > 0) {
+        content += "\n\n### 4-Stage Storyboard Breakdown:\n";
+        demo.scenes.forEach((s) => {
+          const startM = Math.floor(s.start_second / 60);
+          const startS = (s.start_second % 60).toString().padStart(2, "0");
+          const endM = Math.floor(s.end_second / 60);
+          const endS = (s.end_second % 60).toString().padStart(2, "0");
+          content += `- [${s.stage}] (${startM}:${startS} - ${endM}:${endS}) ${s.title}: ${s.visual_action}\n`;
+          if (s.playwright_action) {
+            content += `  Action: \`${s.playwright_action}\`\n`;
+          }
+        });
+      } else if (demo.storyboard) {
+        content += `\n\n### Storyboard\n${demo.storyboard}`;
+      }
+
+      if (demo.platform_copy) {
+        content += "\n\n### Multi-Platform Copy Package:\n";
+        content += `**LinkedIn:**\n${demo.platform_copy.linkedin_post}\n\n`;
+        content += `**X/Twitter Thread:**\n${demo.platform_copy.twitter_thread.join("\n---\n")}\n\n`;
+        content += `**YouTube Shorts:**\n${demo.platform_copy.youtube_shorts_caption}\n`;
+      }
+
+      if (demo.automation_config) {
+        content += `\n\n### Playwright Automation Config:\nGenerator Path: ${demo.automation_config.generator_path}\nFormat: ${demo.automation_config.transcode_format}\nScript:\n\`\`\`javascript\n${demo.automation_config.playwright_script}\n\`\`\``;
+      }
+
+      return {
+        id: `demo-${demo.id}`,
+        type: "video_demo" as const,
+        title: demo.headline,
+        subtitle: `${demo.feature} • Platform: ${demo.target_platform} (${demo.duration_seconds}s)`,
+        channel: demo.target_platform,
+        summary: `Video script & storyboard for ${demo.feature} on ${demo.target_platform}`,
+        content,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [],
+        status:
+          demo.status === "Approved"
+            ? "Approved"
+            : demo.status === "Rejected"
+              ? "Rejected"
+              : "Pending",
+        createdAt: demo.created_at,
+        rawId: demo.id,
+      };
+    });
 
     const trendItems: ReviewItem[] = trends.map((trend) => ({
       id: `trend-${trend.id}`,

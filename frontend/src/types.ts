@@ -134,6 +134,28 @@ export interface ReviewItem {
   rawId: string;
 }
 
+export interface StoryboardScene {
+  stage: "Hook" | "WorktreeIsolation" | "TestVerification" | "PrBadgeOutro" | string;
+  start_second: number;
+  end_second: number;
+  title: string;
+  visual_action: string;
+  playwright_action?: string;
+}
+
+export interface PlatformCopy {
+  linkedin_post: string;
+  twitter_thread: string[];
+  youtube_shorts_caption: string;
+}
+
+export interface AutomationConfig {
+  generator_path: string;
+  playwright_script: string;
+  transcode_format: "mp4" | "webm" | string;
+  output_video_path?: string;
+}
+
 export interface VideoDemo {
   id: string;
   feature: string;
@@ -145,6 +167,9 @@ export interface VideoDemo {
   status: "Pending" | "Approved" | "Rejected" | "Published" | string;
   created_at: string;
   updated_at: string;
+  scenes?: StoryboardScene[];
+  platform_copy?: PlatformCopy;
+  automation_config?: AutomationConfig;
 }
 
 export interface TrendTopic {
