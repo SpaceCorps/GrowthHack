@@ -5,16 +5,17 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::api::packages::{
-    build_upstream_pr_commands, dispatch_package_pr, extract_pr_url, generate_manifest_content,
-    get_manifest, list_packages, update_package_status, DispatchPackagePrRequest,
-    ManifestQuery, ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
+    build_upstream_pr_commands, dispatch_package_pr, extract_gh_account, extract_pr_url,
+    generate_manifest_content, get_gh_auth_status, get_manifest, list_packages,
+    parse_gh_auth_output, update_package_status, DispatchPackagePrRequest, ManifestQuery,
+    ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
 
 #[tokio::test]
 async fn test_list_packages_returns_seeded_targets() {
     let ctx = common::create_test_context();
-    let Json(packages) = list_packages(State(ctx)).await;
+    let Json(packages) = list_packages(State(ctx.ctx())).await;
 
     assert_eq!(packages.len(), 4);
 
@@ -24,9 +25,15 @@ async fn test_list_packages_returns_seeded_targets() {
     assert!(keys.contains(&"scoop".to_string()));
     assert!(keys.contains(&"npx".to_string()));
 
-    let homebrew = packages.iter().find(|p| p.target_key == "homebrew").unwrap();
+    let homebrew = packages
+        .iter()
+        .find(|p| p.target_key == "homebrew")
+        .unwrap();
     assert_eq!(homebrew.manifest_filename, "tendril.rb");
-    assert_eq!(homebrew.install_command, "brew install ivy-interactive/tap/tendril");
+    assert_eq!(
+        homebrew.install_command,
+        "brew install ivy-interactive/tap/tendril"
+    );
 
     let winget = packages.iter().find(|p| p.target_key == "winget").unwrap();
     assert_eq!(winget.package_id, "Ivy.Tendril");
@@ -52,7 +59,9 @@ async fn test_manifest_generators_syntax_markers() {
         brew.content.contains("class Tendril < Formula"),
         "Homebrew formula missing 'class Tendril < Formula'"
     );
-    assert!(brew.content.contains("generate_completions_from_executable"));
+    assert!(brew
+        .content
+        .contains("generate_completions_from_executable"));
     assert!(brew.content.contains("on_macos"));
     assert!(brew.content.contains("on_linux"));
 
@@ -83,7 +92,8 @@ async fn test_manifest_generators_syntax_markers() {
     assert_eq!(npx.filename, "package.json");
     assert_eq!(npx.language, "json");
     assert!(
-        npx.content.to_lowercase().contains("npx") && npx.content.to_lowercase().contains("launcher"),
+        npx.content.to_lowercase().contains("npx")
+            && npx.content.to_lowercase().contains("launcher"),
         "npx manifest missing 'npx' and 'launcher' markers"
     );
     assert!(npx.content.contains("@ivy-interactive/tendril"));
@@ -98,7 +108,7 @@ async fn test_get_manifest_endpoint() {
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
         Query(ManifestQuery { refresh: None }),
-        State(ctx.clone()),
+        State(ctx.ctx()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -109,7 +119,7 @@ async fn test_get_manifest_endpoint() {
     let (status_invalid, Json(manifest_invalid)) = get_manifest(
         Path("invalid_key".to_string()),
         Query(ManifestQuery { refresh: None }),
-        State(ctx),
+        State(ctx.ctx()),
     )
     .await;
     assert_eq!(status_invalid, StatusCode::NOT_FOUND);
@@ -128,7 +138,7 @@ async fn test_update_package_status_and_persistence() {
 
     let (status, Json(updated)) = update_package_status(
         Path("pkg-winget".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload),
     )
     .await;
@@ -144,14 +154,24 @@ async fn test_update_package_status_and_persistence() {
 
     // Verify in-memory state reflection
     let state = ctx.state.read().await;
-    let winget_in_state = state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    let winget_in_state = state
+        .packages
+        .iter()
+        .find(|p| p.id == "pkg-winget")
+        .unwrap();
     assert_eq!(winget_in_state.status, "Merged");
     assert_eq!(winget_in_state.notes, "PR merged into winget-pkgs master!");
 
     // Verify persistence to data_file
-    let saved_content = std::fs::read_to_string(&ctx.data_file).expect("Expected data file to be written");
-    let persisted_state: GrowthState = serde_json::from_str(&saved_content).expect("Valid JSON state");
-    let persisted_winget = persisted_state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    let saved_content =
+        std::fs::read_to_string(&ctx.data_file).expect("Expected data file to be written");
+    let persisted_state: GrowthState =
+        serde_json::from_str(&saved_content).expect("Valid JSON state");
+    let persisted_winget = persisted_state
+        .packages
+        .iter()
+        .find(|p| p.id == "pkg-winget")
+        .unwrap();
     assert_eq!(persisted_winget.status, "Merged");
 }
 
@@ -175,18 +195,27 @@ async fn test_release_info_parser_and_checksum_extraction() {
         ]
     }"####;
 
-    let release = ReleaseInfo::from_github_json(mock_json).expect("Failed to parse GitHub release JSON");
+    let release =
+        ReleaseInfo::from_github_json(mock_json).expect("Failed to parse GitHub release JSON");
     assert_eq!(release.tag_name, "v1.2.3");
     assert_eq!(release.version, "1.2.3");
     assert_eq!(release.assets.len(), 2);
 
-    let darwin_asset = release.assets.iter().find(|a| a.name.contains("darwin-arm64")).unwrap();
+    let darwin_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name.contains("darwin-arm64"))
+        .unwrap();
     assert_eq!(
         darwin_asset.sha256.as_deref(),
         Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
     );
 
-    let win_asset = release.assets.iter().find(|a| a.name.contains("windows-x64")).unwrap();
+    let win_asset = release
+        .assets
+        .iter()
+        .find(|a| a.name.contains("windows-x64"))
+        .unwrap();
     assert_eq!(
         win_asset.sha256.as_deref(),
         Some("2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae")
@@ -218,8 +247,12 @@ async fn test_dynamic_manifest_generation_homebrew() {
 
     let brew = generate_manifest_content("homebrew", &release).expect("Manifest missing");
     assert!(brew.content.contains("version \"1.4.2\""));
-    assert!(brew.content.contains("1111111111111111111111111111111111111111111111111111111111111111"));
-    assert!(brew.content.contains("2222222222222222222222222222222222222222222222222222222222222222"));
+    assert!(brew
+        .content
+        .contains("1111111111111111111111111111111111111111111111111111111111111111"));
+    assert!(brew
+        .content
+        .contains("2222222222222222222222222222222222222222222222222222222222222222"));
     assert!(brew.content.contains("v1.4.2"));
     assert_eq!(brew.release_tag, Some("v1.4.2".to_string()));
 }
@@ -249,8 +282,12 @@ async fn test_dynamic_manifest_generation_winget() {
 
     let winget = generate_manifest_content("winget", &release).expect("Manifest missing");
     assert!(winget.content.contains("PackageVersion: 1.5.0"));
-    assert!(winget.content.contains("InstallerSha256: 3333333333333333333333333333333333333333333333333333333333333333"));
-    assert!(winget.content.contains("InstallerSha256: 4444444444444444444444444444444444444444444444444444444444444444"));
+    assert!(winget.content.contains(
+        "InstallerSha256: 3333333333333333333333333333333333333333333333333333333333333333"
+    ));
+    assert!(winget.content.contains(
+        "InstallerSha256: 4444444444444444444444444444444444444444444444444444444444444444"
+    ));
     assert!(winget.instructions.contains("1.5.0"));
 }
 
@@ -279,8 +316,12 @@ async fn test_dynamic_manifest_generation_scoop() {
 
     let scoop = generate_manifest_content("scoop", &release).expect("Manifest missing");
     assert!(scoop.content.contains("\"version\": \"1.5.0\""));
-    assert!(scoop.content.contains("\"hash\": \"5555555555555555555555555555555555555555555555555555555555555555\""));
-    assert!(scoop.content.contains("\"hash\": \"6666666666666666666666666666666666666666666666666666666666666666\""));
+    assert!(scoop.content.contains(
+        "\"hash\": \"5555555555555555555555555555555555555555555555555555555555555555\""
+    ));
+    assert!(scoop.content.contains(
+        "\"hash\": \"6666666666666666666666666666666666666666666666666666666666666666\""
+    ));
 }
 
 #[tokio::test]
@@ -303,8 +344,10 @@ async fn test_manifest_endpoint_with_refresh_query() {
 
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
-        Query(ManifestQuery { refresh: Some(true) }),
-        State(ctx.clone()),
+        Query(ManifestQuery {
+            refresh: Some(true),
+        }),
+        State(ctx.ctx()),
     )
     .await;
 
@@ -322,8 +365,10 @@ async fn test_release_cache_fallback_on_network_error() {
     // Even if external network fails or repo is invalid, fallback to cached or default
     let (status, Json(manifest)) = get_manifest(
         Path("winget".to_string()),
-        Query(ManifestQuery { refresh: Some(true) }),
-        State(ctx.clone()),
+        Query(ManifestQuery {
+            refresh: Some(true),
+        }),
+        State(ctx.ctx()),
     )
     .await;
 
@@ -338,9 +383,21 @@ async fn test_release_cache_fallback_on_network_error() {
 async fn test_build_upstream_pr_commands_syntax() {
     let ctx = common::create_test_context();
     let state = ctx.state.read().await;
-    let winget = state.packages.iter().find(|p| p.target_key == "winget").unwrap();
-    let scoop = state.packages.iter().find(|p| p.target_key == "scoop").unwrap();
-    let homebrew = state.packages.iter().find(|p| p.target_key == "homebrew").unwrap();
+    let winget = state
+        .packages
+        .iter()
+        .find(|p| p.target_key == "winget")
+        .unwrap();
+    let scoop = state
+        .packages
+        .iter()
+        .find(|p| p.target_key == "scoop")
+        .unwrap();
+    let homebrew = state
+        .packages
+        .iter()
+        .find(|p| p.target_key == "homebrew")
+        .unwrap();
 
     let default_release = ReleaseInfo::default_fallback();
     let winget_manifest = generate_manifest_content("winget", &default_release).unwrap();
@@ -349,27 +406,53 @@ async fn test_build_upstream_pr_commands_syntax() {
 
     // 1. Winget
     let winget_cmds = build_upstream_pr_commands(winget, &winget_manifest, "0.8.4");
-    assert!(winget_cmds.iter().any(|c| c.contains("gh repo fork microsoft/winget-pkgs --clone=false")));
-    assert!(winget_cmds.iter().any(|c| c.contains("git checkout -b ivy-tendril-v0.8.4")));
-    assert!(winget_cmds.iter().any(|c| c.contains("manifests/i/Ivy/Tendril/0.8.4/Ivy.Tendril.yaml")));
-    assert!(winget_cmds.iter().any(|c| c.contains("New version: Ivy.Tendril version 0.8.4")));
-    assert!(winget_cmds.iter().any(|c| c.contains("gh pr create --repo microsoft/winget-pkgs")));
+    assert!(winget_cmds
+        .iter()
+        .any(|c| c.contains("gh repo fork microsoft/winget-pkgs --clone=false")));
+    assert!(winget_cmds
+        .iter()
+        .any(|c| c.contains("git checkout -b ivy-tendril-v0.8.4")));
+    assert!(winget_cmds
+        .iter()
+        .any(|c| c.contains("manifests/i/Ivy/Tendril/0.8.4/Ivy.Tendril.yaml")));
+    assert!(winget_cmds
+        .iter()
+        .any(|c| c.contains("New version: Ivy.Tendril version 0.8.4")));
+    assert!(winget_cmds
+        .iter()
+        .any(|c| c.contains("gh pr create --repo microsoft/winget-pkgs")));
 
     // 2. Scoop
     let scoop_cmds = build_upstream_pr_commands(scoop, &scoop_manifest, "0.8.4");
-    assert!(scoop_cmds.iter().any(|c| c.contains("gh repo fork ScoopInstaller/Extras --clone=false")));
-    assert!(scoop_cmds.iter().any(|c| c.contains("git checkout -b tendril-v0.8.4")));
+    assert!(scoop_cmds
+        .iter()
+        .any(|c| c.contains("gh repo fork ScoopInstaller/Extras --clone=false")));
+    assert!(scoop_cmds
+        .iter()
+        .any(|c| c.contains("git checkout -b tendril-v0.8.4")));
     assert!(scoop_cmds.iter().any(|c| c.contains("bucket/tendril.json")));
-    assert!(scoop_cmds.iter().any(|c| c.contains("tendril: Update to version 0.8.4")));
-    assert!(scoop_cmds.iter().any(|c| c.contains("gh pr create --repo ScoopInstaller/Extras")));
+    assert!(scoop_cmds
+        .iter()
+        .any(|c| c.contains("tendril: Update to version 0.8.4")));
+    assert!(scoop_cmds
+        .iter()
+        .any(|c| c.contains("gh pr create --repo ScoopInstaller/Extras")));
 
     // 3. Homebrew
     let homebrew_cmds = build_upstream_pr_commands(homebrew, &homebrew_manifest, "0.8.4");
-    assert!(homebrew_cmds.iter().any(|c| c.contains("gh repo fork ivy-interactive/homebrew-tap --clone=false")));
-    assert!(homebrew_cmds.iter().any(|c| c.contains("git checkout -b tendril-v0.8.4")));
-    assert!(homebrew_cmds.iter().any(|c| c.contains("Formula/tendril.rb")));
+    assert!(homebrew_cmds
+        .iter()
+        .any(|c| c.contains("gh repo fork ivy-interactive/homebrew-tap --clone=false")));
+    assert!(homebrew_cmds
+        .iter()
+        .any(|c| c.contains("git checkout -b tendril-v0.8.4")));
+    assert!(homebrew_cmds
+        .iter()
+        .any(|c| c.contains("Formula/tendril.rb")));
     assert!(homebrew_cmds.iter().any(|c| c.contains("tendril 0.8.4")));
-    assert!(homebrew_cmds.iter().any(|c| c.contains("gh pr create --repo ivy-interactive/homebrew-tap")));
+    assert!(homebrew_cmds
+        .iter()
+        .any(|c| c.contains("gh pr create --repo ivy-interactive/homebrew-tap")));
 }
 
 #[tokio::test]
@@ -379,11 +462,12 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
     let payload = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
         notes: Some("Dispatching test PR for scoop".to_string()),
+        skip_auth_check: Some(true),
     };
 
     let (status, Json(response)) = dispatch_package_pr(
         Path("pkg-scoop".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload),
     )
     .await;
@@ -394,7 +478,10 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
     assert_eq!(resp.target_key, "scoop");
     assert_eq!(resp.upstream_repo, "ScoopInstaller/Extras");
     assert!(!resp.commands.is_empty());
-    assert!(resp.commands.iter().any(|c| c.contains("gh repo fork ScoopInstaller/Extras")));
+    assert!(resp
+        .commands
+        .iter()
+        .any(|c| c.contains("gh repo fork ScoopInstaller/Extras")));
     assert!(resp.commands.iter().any(|c| c.contains("0.8.5")));
 }
 
@@ -422,7 +509,11 @@ async fn test_pr_url_extraction_updates_state() {
     let found_url = extracted.unwrap();
     {
         let mut state = ctx.state.write().await;
-        let pkg = state.packages.iter_mut().find(|p| p.id == "pkg-winget").unwrap();
+        let pkg = state
+            .packages
+            .iter_mut()
+            .find(|p| p.id == "pkg-winget")
+            .unwrap();
         pkg.status = "PR Submitted".to_string();
         pkg.pr_url = Some(found_url.clone());
         pkg.updated_at = chrono::Utc::now();
@@ -431,14 +522,131 @@ async fn test_pr_url_extraction_updates_state() {
 
     // Verify in-memory state
     let state = ctx.state.read().await;
-    let winget = state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    let winget = state
+        .packages
+        .iter()
+        .find(|p| p.id == "pkg-winget")
+        .unwrap();
     assert_eq!(winget.status, "PR Submitted");
-    assert_eq!(winget.pr_url.as_deref(), Some("https://github.com/microsoft/winget-pkgs/pull/189204"));
+    assert_eq!(
+        winget.pr_url.as_deref(),
+        Some("https://github.com/microsoft/winget-pkgs/pull/189204")
+    );
 
     // Verify persisted file
     let saved_content = std::fs::read_to_string(&ctx.data_file).expect("File exists");
     let persisted_state: GrowthState = serde_json::from_str(&saved_content).expect("Valid JSON");
-    let persisted_pkg = persisted_state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    let persisted_pkg = persisted_state
+        .packages
+        .iter()
+        .find(|p| p.id == "pkg-winget")
+        .unwrap();
     assert_eq!(persisted_pkg.status, "PR Submitted");
-    assert_eq!(persisted_pkg.pr_url.as_deref(), Some("https://github.com/microsoft/winget-pkgs/pull/189204"));
+    assert_eq!(
+        persisted_pkg.pr_url.as_deref(),
+        Some("https://github.com/microsoft/winget-pkgs/pull/189204")
+    );
+}
+
+#[tokio::test]
+async fn test_parse_gh_auth_status_success_and_account_extraction() {
+    let mock_stdout = r#"github.com
+  ✓ Logged in to github.com account spacecorps-dev (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'project', 'read:org', 'repo', 'workflow'
+"#;
+    let status = parse_gh_auth_output(true, mock_stdout, "");
+    assert!(status.authenticated);
+    assert_eq!(status.account.as_deref(), Some("spacecorps-dev"));
+    assert!(status.message.contains("@spacecorps-dev"));
+
+    // Also test alternate account line format
+    let account_found =
+        extract_gh_account("Logged in to github.com as account test-user-99 (keyring)");
+    assert_eq!(account_found.as_deref(), Some("test-user-99"));
+}
+
+#[tokio::test]
+async fn test_parse_gh_auth_status_failure_with_remediation_hint() {
+    let mock_stderr =
+        "You are not logged into any GitHub hosts. Run gh auth login to authenticate.";
+    let status = parse_gh_auth_output(false, "", mock_stderr);
+    assert!(!status.authenticated);
+    assert!(status.account.is_none());
+    assert!(status.message.contains("gh auth login"));
+
+    // Test failure without existing remediation command appends guidance
+    let status_raw_err = parse_gh_auth_output(false, "", "error: connection reset by peer");
+    assert!(!status_raw_err.authenticated);
+    assert!(status_raw_err
+        .message
+        .contains("Run 'gh auth login' to authenticate GitHub CLI."));
+}
+
+#[tokio::test]
+async fn test_get_gh_auth_status_endpoint() {
+    // 1. Test override to authenticated
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "authenticated:octocat");
+    let (status_ok, Json(auth_ok)) = get_gh_auth_status().await;
+    assert_eq!(status_ok, StatusCode::OK);
+    assert!(auth_ok.authenticated);
+    assert_eq!(auth_ok.account.as_deref(), Some("octocat"));
+    assert!(auth_ok.message.contains("@octocat"));
+
+    // 2. Test override to unauthenticated
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "unauthenticated");
+    let (status_unauth, Json(auth_unauth)) = get_gh_auth_status().await;
+    assert_eq!(status_unauth, StatusCode::OK);
+    assert!(!auth_unauth.authenticated);
+    assert!(auth_unauth.account.is_none());
+    assert!(auth_unauth.message.contains("gh auth login"));
+
+    std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_dispatch_package_pr_auth_check_and_skip() {
+    let ctx = common::create_test_context();
+
+    // 1. Simulate unauthenticated GitHub CLI environment
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "unauthenticated");
+
+    let payload_no_skip = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        notes: Some("Dispatching test PR".to_string()),
+        skip_auth_check: None,
+    };
+
+    let (status_failed, Json(response_failed)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload_no_skip),
+    )
+    .await;
+
+    assert_eq!(status_failed, StatusCode::PRECONDITION_FAILED);
+    let resp = response_failed.expect("Expected DispatchPackagePrResponse with error");
+    assert!(resp.message.contains("gh auth login"));
+
+    // 2. Dispatch with skip_auth_check: Some(true) succeeds despite unauthenticated state
+    let payload_skip = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        notes: Some("Dispatching test PR with override".to_string()),
+        skip_auth_check: Some(true),
+    };
+
+    let (status_accepted, Json(response_accepted)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload_skip),
+    )
+    .await;
+
+    assert_eq!(status_accepted, StatusCode::ACCEPTED);
+    let resp_ok = response_accepted.expect("Expected accepted response");
+    assert!(resp_ok.task_id.starts_with("task-pkg-pr-"));
+
+    std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
 }

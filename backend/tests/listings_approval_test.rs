@@ -8,8 +8,8 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_get_listings_returns_blurb_status() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -28,19 +28,23 @@ async fn test_get_listings_returns_blurb_status() {
     let listings: Vec<Listing> = serde_json::from_slice(&body).unwrap();
     assert!(!listings.is_empty());
 
-    let list_5 = listings.iter().find(|l| l.id == "list-5").expect("list-5 should exist");
+    let list_5 = listings
+        .iter()
+        .find(|l| l.id == "list-5")
+        .expect("list-5 should exist");
     assert_eq!(list_5.blurb_status, Some("Approved".to_string()));
 
-    let list_1 = listings.iter().find(|l| l.id == "list-1").expect("list-1 should exist");
+    let list_1 = listings
+        .iter()
+        .find(|l| l.id == "list-1")
+        .expect("list-1 should exist");
     assert_eq!(list_1.blurb_status, Some("Pending".to_string()));
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_put_listing_updates_blurb_status_and_persists() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx.clone());
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     // Update list-1 blurb_status to "Approved"
     let payload = serde_json::json!({
@@ -67,13 +71,13 @@ async fn test_put_listing_updates_blurb_status_and_persists() {
     assert_eq!(updated.blurb_status, Some("Approved".to_string()));
 
     // Verify on-disk persistence
-    let content = std::fs::read_to_string(&data_file).unwrap();
+    let content = std::fs::read_to_string(guard.data_file()).unwrap();
     let state: GrowthState = serde_json::from_str(&content).unwrap();
     let persisted_1 = state.listings.iter().find(|l| l.id == "list-1").unwrap();
     assert_eq!(persisted_1.blurb_status, Some("Approved".to_string()));
 
     // Now update list-1 blurb_status to "Rejected"
-    let app2 = api::router(ctx.clone());
+    let app2 = api::router(guard.ctx());
     let payload2 = serde_json::json!({
         "blurb_status": "Rejected"
     });
@@ -92,18 +96,19 @@ async fn test_put_listing_updates_blurb_status_and_persists() {
 
     assert_eq!(response2.status(), StatusCode::OK);
 
-    let content2 = std::fs::read_to_string(&data_file).unwrap();
+    let content2 = std::fs::read_to_string(guard.data_file()).unwrap();
     let state2: GrowthState = serde_json::from_str(&content2).unwrap();
     let persisted_rejected = state2.listings.iter().find(|l| l.id == "list-1").unwrap();
-    assert_eq!(persisted_rejected.blurb_status, Some("Rejected".to_string()));
-
-    let _ = std::fs::remove_file(data_file);
+    assert_eq!(
+        persisted_rejected.blurb_status,
+        Some("Rejected".to_string())
+    );
 }
 
 #[tokio::test]
 async fn test_post_listing_initializes_blurb_status_pending_when_blurb_present() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx.clone());
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let new_listing = serde_json::json!({
         "name": "awesome-testing-tools",
@@ -132,13 +137,13 @@ async fn test_post_listing_initializes_blurb_status_pending_when_blurb_present()
     assert_eq!(created.blurb_status, Some("Pending".to_string()));
 
     // Verify on-disk persistence
-    let content = std::fs::read_to_string(&data_file).unwrap();
+    let content = std::fs::read_to_string(guard.data_file()).unwrap();
     let state: GrowthState = serde_json::from_str(&content).unwrap();
     let persisted = state.listings.iter().find(|l| l.id == created.id).unwrap();
     assert_eq!(persisted.blurb_status, Some("Pending".to_string()));
 
     // Also test POST with empty blurb results in None
-    let app2 = api::router(ctx.clone());
+    let app2 = api::router(guard.ctx());
     let empty_blurb_listing = serde_json::json!({
         "name": "directory-without-blurb",
         "category": "Dev Directory",
@@ -153,7 +158,9 @@ async fn test_post_listing_initializes_blurb_status_pending_when_blurb_present()
                 .uri("/api/listings")
                 .method("POST")
                 .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_vec(&empty_blurb_listing).unwrap()))
+                .body(Body::from(
+                    serde_json::to_vec(&empty_blurb_listing).unwrap(),
+                ))
                 .unwrap(),
         )
         .await
@@ -163,6 +170,4 @@ async fn test_post_listing_initializes_blurb_status_pending_when_blurb_present()
     let body2 = to_bytes(response2.into_body(), usize::MAX).await.unwrap();
     let created2: Listing = serde_json::from_slice(&body2).unwrap();
     assert_eq!(created2.blurb_status, None);
-
-    let _ = std::fs::remove_file(data_file);
 }

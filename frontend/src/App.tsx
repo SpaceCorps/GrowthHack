@@ -28,6 +28,7 @@ import { PrFlywheel } from "./views/PrFlywheel";
 import { RecipeHub } from "./views/RecipeHub";
 import { ContributorFlywheel } from "./views/ContributorFlywheel";
 import { DoctorDemo } from "./views/DoctorDemo";
+import { Playground } from "./views/Playground";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
       "review",
       "flywheel",
       "doctor",
+      "playground",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -84,8 +86,11 @@ export const App: React.FC = () => {
   const [terminalTitle, setTerminalTitle] = useState<string>("Antigravity Agent");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalTab, setArticleModalTab] = useState<
-    "content" | "raw" | "backlinks" | "export"
-  >((searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export") || "content");
+    "content" | "raw" | "backlinks" | "export" | "engagement"
+  >(
+    (searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export" | "engagement") ||
+      "content",
+  );
 
   // Initial Data Fetching
   const fetchAll = async () => {
@@ -156,6 +161,8 @@ export const App: React.FC = () => {
         "agent",
         "review",
         "flywheel",
+        "doctor",
+        "playground",
       ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
@@ -508,12 +515,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDispatchPackagePr = async (id: string, version?: string) => {
+  const handleDispatchPackagePr = async (id: string, version?: string, skipAuthCheck?: boolean) => {
     try {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version }),
+        body: JSON.stringify({ version, skip_auth_check: skipAuthCheck }),
       });
       const data = await res.json();
       if (data && data.task_id) {
@@ -637,25 +644,56 @@ export const App: React.FC = () => {
       rawId: art.id,
     }));
 
-    const demoItems: ReviewItem[] = demos.map((demo) => ({
-      id: `demo-${demo.id}`,
-      type: "video_demo" as const,
-      title: demo.headline,
-      subtitle: `${demo.feature} • Platform: ${demo.target_platform} (${demo.duration_seconds}s)`,
-      channel: demo.target_platform,
-      summary: `Video script & storyboard for ${demo.feature} on ${demo.target_platform}`,
-      content: `${demo.headline}\n\n${demo.body}\n\n### Storyboard\n${demo.storyboard}`,
-      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
-      citations: [],
-      status:
-        demo.status === "Approved"
-          ? "Approved"
-          : demo.status === "Rejected"
-            ? "Rejected"
-            : "Pending",
-      createdAt: demo.created_at,
-      rawId: demo.id,
-    }));
+    const demoItems: ReviewItem[] = demos.map((demo) => {
+      let content = `${demo.headline}\n\n${demo.body}`;
+
+      if (demo.scenes && demo.scenes.length > 0) {
+        content += "\n\n### 4-Stage Storyboard Breakdown:\n";
+        demo.scenes.forEach((s) => {
+          const startM = Math.floor(s.start_second / 60);
+          const startS = (s.start_second % 60).toString().padStart(2, "0");
+          const endM = Math.floor(s.end_second / 60);
+          const endS = (s.end_second % 60).toString().padStart(2, "0");
+          content += `- [${s.stage}] (${startM}:${startS} - ${endM}:${endS}) ${s.title}: ${s.visual_action}\n`;
+          if (s.playwright_action) {
+            content += `  Action: \`${s.playwright_action}\`\n`;
+          }
+        });
+      } else if (demo.storyboard) {
+        content += `\n\n### Storyboard\n${demo.storyboard}`;
+      }
+
+      if (demo.platform_copy) {
+        content += "\n\n### Multi-Platform Copy Package:\n";
+        content += `**LinkedIn:**\n${demo.platform_copy.linkedin_post}\n\n`;
+        content += `**X/Twitter Thread:**\n${demo.platform_copy.twitter_thread.join("\n---\n")}\n\n`;
+        content += `**YouTube Shorts:**\n${demo.platform_copy.youtube_shorts_caption}\n`;
+      }
+
+      if (demo.automation_config) {
+        content += `\n\n### Playwright Automation Config:\nGenerator Path: ${demo.automation_config.generator_path}\nFormat: ${demo.automation_config.transcode_format}\nScript:\n\`\`\`javascript\n${demo.automation_config.playwright_script}\n\`\`\``;
+      }
+
+      return {
+        id: `demo-${demo.id}`,
+        type: "video_demo" as const,
+        title: demo.headline,
+        subtitle: `${demo.feature} • Platform: ${demo.target_platform} (${demo.duration_seconds}s)`,
+        channel: demo.target_platform,
+        summary: `Video script & storyboard for ${demo.feature} on ${demo.target_platform}`,
+        content,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [],
+        status:
+          demo.status === "Approved"
+            ? "Approved"
+            : demo.status === "Rejected"
+              ? "Rejected"
+              : "Pending",
+        createdAt: demo.created_at,
+        rawId: demo.id,
+      };
+    });
 
     const trendItems: ReviewItem[] = trends.map((trend) => ({
       id: `trend-${trend.id}`,
@@ -805,13 +843,22 @@ export const App: React.FC = () => {
 
   const handleRefineReviewItem = async (item: ReviewItem, updated: Partial<ReviewItem>) => {
     let nextUpdated = { ...updated };
-    if (
-      item.type === "listing_blurb" &&
-      updated.content !== undefined &&
-      updated.content !== item.content &&
-      !updated.status
-    ) {
-      nextUpdated.status = "Pending";
+    if (!updated.status) {
+      const isModified =
+        (item.type === "listing_blurb" &&
+          updated.content !== undefined &&
+          updated.content !== item.content) ||
+        (item.type === "article" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title) ||
+            (updated.summary !== undefined && updated.summary !== item.summary))) ||
+        (item.type === "video_demo" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title)));
+
+      if (isModified) {
+        nextUpdated.status = "Pending";
+      }
     }
     setReviewItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, ...nextUpdated } : it)),
@@ -827,6 +874,7 @@ export const App: React.FC = () => {
             summary: updated.summary,
             content: updated.content,
             backlinks: updated.backlinks,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
@@ -841,7 +889,7 @@ export const App: React.FC = () => {
           body: JSON.stringify({
             headline: updated.title,
             body: updated.content,
-            status: updated.status,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
@@ -1014,6 +1062,7 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === "doctor" && <DoctorDemo />}
+        {activeTab === "playground" && <Playground />}
       </main>
 
       {/* Footer */}

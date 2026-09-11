@@ -217,7 +217,9 @@ pub struct GitHubClient {
 
 impl GitHubClient {
     pub fn new(token: &str) -> Result<Self, String> {
-        Self::with_base_url(token, "https://api.github.com")
+        let base_url = std::env::var("GITHUB_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.github.com".to_string());
+        Self::with_base_url(token, &base_url)
     }
 
     pub fn with_base_url(token: &str, base_url: &str) -> Result<Self, String> {
@@ -417,6 +419,136 @@ impl GitHubClient {
             return Err(format!("POST /pulls failed ({}): {}", status, text));
         }
         resp.json::<PullRequestResponse>().await.map_err(|e| e.to_string())
+    }
+
+    pub async fn add_issue_assignees(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        assignees: &[&str],
+    ) -> Result<Vec<String>, String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/assignees",
+            self.base_url, owner, repo, issue_number
+        );
+        let payload = serde_json::json!({
+            "assignees": assignees
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "POST /issues/{}/assignees failed ({}): {}",
+                issue_number, status, text
+            ));
+        }
+        let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        if let Some(arr) = val.get("assignees").and_then(|a| a.as_array()) {
+            let logins = arr
+                .iter()
+                .filter_map(|u| {
+                    u.get("login")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(logins);
+        }
+        Ok(assignees.iter().map(|s| s.to_string()).collect())
+    }
+
+    pub async fn add_issue_labels(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        labels: &[&str],
+    ) -> Result<Vec<String>, String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/labels",
+            self.base_url, owner, repo, issue_number
+        );
+        let payload = serde_json::json!({
+            "labels": labels
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "POST /issues/{}/labels failed ({}): {}",
+                issue_number, status, text
+            ));
+        }
+        let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        if let Some(arr) = val.as_array() {
+            let names = arr
+                .iter()
+                .filter_map(|l| {
+                    l.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(names);
+        } else if let Some(arr) = val.get("labels").and_then(|l| l.as_array()) {
+            let names = arr
+                .iter()
+                .filter_map(|l| {
+                    l.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(names);
+        }
+        Ok(labels.iter().map(|s| s.to_string()).collect())
+    }
+
+    pub async fn create_issue_comment(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        body: &str,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/comments",
+            self.base_url, owner, repo, issue_number
+        );
+        let payload = serde_json::json!({
+            "body": body
+        });
+        let resp = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "POST /issues/{}/comments failed ({}): {}",
+                issue_number, status, text
+            ));
+        }
+        Ok(())
     }
 }
 

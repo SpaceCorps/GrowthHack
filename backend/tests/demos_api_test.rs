@@ -7,8 +7,8 @@ use growthhack_backend::db::{GrowthState, VideoDemo};
 use tower::ServiceExt;
 #[tokio::test]
 async fn test_get_demos_returns_seeded() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -28,14 +28,12 @@ async fn test_get_demos_returns_seeded() {
     assert_eq!(demos.len(), 5);
     assert_eq!(demos[0].feature, "Git Worktrees");
     assert_eq!(demos[0].status, "Pending");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_post_demo_creates_and_persists() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let new_demo_payload = serde_json::json!({
         "feature": "Automated Verification Gates",
@@ -67,18 +65,16 @@ async fn test_post_demo_creates_and_persists() {
     assert_eq!(created.status, "Pending");
 
     // Check on-disk persistence
-    let content = std::fs::read_to_string(&data_file).unwrap();
+    let content = std::fs::read_to_string(guard.data_file()).unwrap();
     let persisted: GrowthState = serde_json::from_str(&content).unwrap();
     assert_eq!(persisted.video_demos.len(), 6);
     assert!(persisted.video_demos.iter().any(|d| d.id == created.id));
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_put_demo_updates_status_and_persists() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let update_payload = serde_json::json!({
         "status": "Approved",
@@ -106,18 +102,20 @@ async fn test_put_demo_updates_status_and_persists() {
     assert_eq!(updated.headline, "Updated Headline For Approved Demo");
 
     // Verify on disk
-    let content = std::fs::read_to_string(&data_file).unwrap();
+    let content = std::fs::read_to_string(guard.data_file()).unwrap();
     let persisted: GrowthState = serde_json::from_str(&content).unwrap();
-    let demo_in_db = persisted.video_demos.iter().find(|d| d.id == "demo-1").unwrap();
+    let demo_in_db = persisted
+        .video_demos
+        .iter()
+        .find(|d| d.id == "demo-1")
+        .unwrap();
     assert_eq!(demo_in_db.status, "Approved");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_delete_demo_removes_and_persists() {
-    let (ctx, data_file) = common::create_test_context_with_file();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -133,10 +131,80 @@ async fn test_delete_demo_removes_and_persists() {
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
     // Verify on disk
-    let content = std::fs::read_to_string(&data_file).unwrap();
+    let content = std::fs::read_to_string(guard.data_file()).unwrap();
     let persisted: GrowthState = serde_json::from_str(&content).unwrap();
     assert_eq!(persisted.video_demos.len(), 4);
     assert!(!persisted.video_demos.iter().any(|d| d.id == "demo-1"));
+}
 
-    let _ = std::fs::remove_file(data_file);
+#[tokio::test]
+async fn test_update_demo_resets_status_to_pending_on_text_change() {
+    let guard = common::create_test_context();
+
+    // Set demo-1 to Approved
+    {
+        let mut state = guard.state.write().await;
+        if let Some(demo) = state.video_demos.iter_mut().find(|d| d.id == "demo-1") {
+            demo.status = "Approved".to_string();
+        }
+    }
+
+    let app = api::router(guard.ctx());
+
+    // 1. Update headline without explicit status -> resets to Pending
+    let update_headline_payload = serde_json::json!({
+        "headline": "New Headline Requiring Re-Review"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/demos/demo-1")
+                .method("PUT")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&update_headline_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let updated: VideoDemo = serde_json::from_slice(&body).unwrap();
+    assert_eq!(updated.status, "Pending");
+    assert_eq!(updated.headline, "New Headline Requiring Re-Review");
+
+    // Re-approve demo
+    {
+        let mut state = guard.state.write().await;
+        if let Some(demo) = state.video_demos.iter_mut().find(|d| d.id == "demo-1") {
+            demo.status = "Approved".to_string();
+        }
+    }
+
+    let app2 = api::router(guard.ctx());
+
+    // 2. Update with explicit status -> preserves provided status
+    let update_explicit_payload = serde_json::json!({
+        "body": "Updated demo script body",
+        "status": "Approved"
+    });
+
+    let response2 = app2
+        .oneshot(
+            Request::builder()
+                .uri("/api/demos/demo-1")
+                .method("PUT")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&update_explicit_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response2.status(), StatusCode::OK);
+    let body2 = to_bytes(response2.into_body(), usize::MAX).await.unwrap();
+    let updated2: VideoDemo = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(updated2.status, "Approved");
+    assert_eq!(updated2.body, "Updated demo script body");
 }

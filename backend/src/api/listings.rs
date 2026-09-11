@@ -1,4 +1,5 @@
 use crate::api::issues::AppContext;
+pub use crate::api::packages::extract_pr_url;
 use crate::api::submission::{
     extract_github_repo, insert_listing_entry, GitHubClient, SubmitBatchRequest,
 };
@@ -188,6 +189,8 @@ Execute automated PR generation and submission for this target:
 2. Determine target file path (e.g. README.md) and exact insertion position (alphabetical ordering).
 3. Format the complete GitHub Pull Request title and body with checklist.
 4. Generate and output the GitHub CLI submission command: `gh pr create --repo <owner/repo> --title "<title>" --body "<body>"`.
+5. IMPORTANT: Once the Pull Request is created or output, output the final PR URL on a single line starting with:
+[PR_URL] <pr_url>
 "#,
         listing.name,
         listing.url,
@@ -318,7 +321,8 @@ pub async fn generate_listing_blurb(
                     l.updated_at = Utc::now();
                 }
                 let _ = state.save(&data_file);
-                let _ = tx.send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+                let _ =
+                    tx.send("[SYSTEM] Custom submission entry generated and saved!".to_string());
             }
             Err(e) => {
                 let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
@@ -388,7 +392,8 @@ pub async fn generate_batch_listings(
                         l.updated_at = Utc::now();
                     }
                     let _ = state.save(&data_file);
-                    let _ = tx.send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+                    let _ = tx
+                        .send("[SYSTEM] Custom submission entry generated and saved!".to_string());
                 }
                 Err(e) => {
                     let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
@@ -411,7 +416,6 @@ pub async fn verify_backlink(
     Path(id): Path<String>,
     State(ctx): State<Arc<AppContext>>,
 ) -> (StatusCode, Json<VerifyBacklinkResponse>) {
-
     let state = ctx.state.read().await;
     let listing = match state.listings.iter().find(|l| l.id == id) {
         Some(l) => l.clone(),
@@ -440,7 +444,10 @@ pub async fn verify_backlink(
         Ok(resp) => match resp.text().await {
             Ok(body) => {
                 if check_backlink_content(&body) {
-                    (true, "Backlink verified! Status updated to Live.".to_string())
+                    (
+                        true,
+                        "Backlink verified! Status updated to Live.".to_string(),
+                    )
                 } else {
                     (
                         false,
@@ -527,7 +534,10 @@ pub async fn submit_upstream(
     let listing_name = listing.name.clone();
 
     tokio::spawn(async move {
-        let _ = tx.send(format!("[START] Automated upstream submission worker initialized for listing '{}'", listing.name));
+        let _ = tx.send(format!(
+            "[START] Automated upstream submission worker initialized for listing '{}'",
+            listing.name
+        ));
 
         // 1. Authenticating GitHub user token
         let _ = tx.send("[STEP 1/6] Authenticating GitHub user token...".to_string());
@@ -551,7 +561,9 @@ pub async fn submit_upstream(
         };
 
         // 2. Verifying upstream repository and retrieving default branch
-        let _ = tx.send("[STEP 2/6] Verifying upstream repository and retrieving default branch...".to_string());
+        let _ = tx.send(
+            "[STEP 2/6] Verifying upstream repository and retrieving default branch...".to_string(),
+        );
         let (owner, repo) = match extract_github_repo(&listing.url) {
             Some(pair) => pair,
             None => {
@@ -562,11 +574,17 @@ pub async fn submit_upstream(
 
         let repo_info = match client.get_repo_info(&owner, &repo).await {
             Ok(info) => {
-                let _ = tx.send(format!("[INFO] Target repository {}/{} verified. Default branch: '{}'", owner, repo, info.default_branch));
+                let _ = tx.send(format!(
+                    "[INFO] Target repository {}/{} verified. Default branch: '{}'",
+                    owner, repo, info.default_branch
+                ));
                 info
             }
             Err(e) => {
-                let _ = tx.send(format!("[ERROR] Failed to fetch upstream repository info: {}", e));
+                let _ = tx.send(format!(
+                    "[ERROR] Failed to fetch upstream repository info: {}",
+                    e
+                ));
                 return;
             }
         };
@@ -586,27 +604,49 @@ pub async fn submit_upstream(
 
         // 4. Creating dedicated feature branch
         let branch_name = format!("add-ivy-tendril-{}", list_id);
-        let _ = tx.send(format!("[STEP 4/6] Creating dedicated feature branch '{}'...", branch_name));
-        let base_sha = match client.get_branch_sha(&owner, &repo, &repo_info.default_branch).await {
+        let _ = tx.send(format!(
+            "[STEP 4/6] Creating dedicated feature branch '{}'...",
+            branch_name
+        ));
+        let base_sha = match client
+            .get_branch_sha(&owner, &repo, &repo_info.default_branch)
+            .await
+        {
             Ok(sha) => sha,
             Err(e) => {
-                let _ = tx.send(format!("[ERROR] Failed to fetch base branch commit SHA: {}", e));
+                let _ = tx.send(format!(
+                    "[ERROR] Failed to fetch base branch commit SHA: {}",
+                    e
+                ));
                 return;
             }
         };
 
-        if let Err(e) = client.create_branch(&fork_user, &repo, &branch_name, &base_sha).await {
+        if let Err(e) = client
+            .create_branch(&fork_user, &repo, &branch_name, &base_sha)
+            .await
+        {
             let _ = tx.send(format!("[ERROR] Failed to create branch: {}", e));
             return;
         }
-        let _ = tx.send(format!("[INFO] Branch '{}' created from SHA {}", branch_name, &base_sha[..7.min(base_sha.len())]));
+        let _ = tx.send(format!(
+            "[INFO] Branch '{}' created from SHA {}",
+            branch_name,
+            &base_sha[..7.min(base_sha.len())]
+        ));
 
         // 5. Fetching target README.md, inserting entry, and committing change
         let _ = tx.send("[STEP 5/6] Fetching target README.md and inserting entry...".to_string());
-        let (readme_content, blob_sha) = match client.get_file_content(&owner, &repo, "README.md", &repo_info.default_branch).await {
+        let (readme_content, blob_sha) = match client
+            .get_file_content(&owner, &repo, "README.md", &repo_info.default_branch)
+            .await
+        {
             Ok(res) => res,
             Err(e) => {
-                let _ = tx.send(format!("[ERROR] Failed to fetch README.md from upstream: {}", e));
+                let _ = tx.send(format!(
+                    "[ERROR] Failed to fetch README.md from upstream: {}",
+                    e
+                ));
                 return;
             }
         };
@@ -625,7 +665,18 @@ pub async fn submit_upstream(
         let updated_readme = insert_listing_entry(&readme_content, &entry, &listing.category);
         let commit_message = format!("Add Ivy-Tendril to {}", listing.name);
 
-        if let Err(e) = client.update_file(&fork_user, &repo, "README.md", &branch_name, &commit_message, &updated_readme, &blob_sha).await {
+        if let Err(e) = client
+            .update_file(
+                &fork_user,
+                &repo,
+                "README.md",
+                &branch_name,
+                &commit_message,
+                &updated_readme,
+                &blob_sha,
+            )
+            .await
+        {
             let _ = tx.send(format!("[ERROR] Failed to commit README.md changes: {}", e));
             return;
         }
@@ -645,9 +696,23 @@ pub async fn submit_upstream(
             listing.name, entry
         );
 
-        match client.create_pull_request(&owner, &repo, &head_ref, &repo_info.default_branch, &pr_title, &pr_body, false).await {
+        match client
+            .create_pull_request(
+                &owner,
+                &repo,
+                &head_ref,
+                &repo_info.default_branch,
+                &pr_title,
+                &pr_body,
+                false,
+            )
+            .await
+        {
             Ok(pr) => {
-                let _ = tx.send(format!("[SUCCESS] Upstream Pull Request opened successfully: {}", pr.html_url));
+                let _ = tx.send(format!(
+                    "[SUCCESS] Upstream Pull Request opened successfully: {}",
+                    pr.html_url
+                ));
                 let mut state = state_arc.write().await;
                 if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id) {
                     l.status = "PR Submitted".to_string();
@@ -657,7 +722,10 @@ pub async fn submit_upstream(
                 let _ = state.save(&data_file);
             }
             Err(e) => {
-                let _ = tx.send(format!("[ERROR] Failed to create upstream pull request: {}", e));
+                let _ = tx.send(format!(
+                    "[ERROR] Failed to create upstream pull request: {}",
+                    e
+                ));
             }
         }
     });
@@ -666,7 +734,10 @@ pub async fn submit_upstream(
         StatusCode::ACCEPTED,
         Json(ListingActionResponse {
             task_id,
-            message: format!("Automated upstream PR submission worker started for '{}'", listing_name),
+            message: format!(
+                "Automated upstream PR submission worker started for '{}'",
+                listing_name
+            ),
         }),
     )
 }
@@ -702,14 +773,28 @@ pub async fn submit_listing_pr(
 
     let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
     let runner = ctx.task_manager.runner().clone();
+    let list_id_clone = listing.id.clone();
+    let state_arc = ctx.state.clone();
+    let data_file = ctx.data_file.clone();
+    let tx_clone = tx.clone();
 
     tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(_content) => {
-                let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+        match runner.execute(&prompt, tx_clone.clone()).await {
+            Ok(content) => {
+                if let Some(pr_url) = extract_pr_url(&content) {
+                    let mut state = state_arc.write().await;
+                    if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
+                        l.pr_url = Some(pr_url.clone());
+                        l.status = "PR Submitted".to_string();
+                        l.updated_at = Utc::now();
+                    }
+                    let _ = state.save(&data_file);
+                    let _ = tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
+                }
+                let _ = tx_clone.send("[SYSTEM] Automated PR generation completed!".to_string());
             }
             Err(e) => {
-                let _ = tx.send(format!("[ERROR] PR generation failed: {}", e));
+                let _ = tx_clone.send(format!("[ERROR] PR generation failed: {}", e));
             }
         }
     });
@@ -785,7 +870,9 @@ pub async fn submit_batch(
             let token = match token_opt {
                 Some(t) if !t.trim().is_empty() => t,
                 _ => {
-                    let _ = tx.send("[ERROR] GitHub token not configured. Aborting submission.".to_string());
+                    let _ = tx.send(
+                        "[ERROR] GitHub token not configured. Aborting submission.".to_string(),
+                    );
                     return;
                 }
             };
@@ -831,7 +918,10 @@ pub async fn submit_batch(
             };
 
             let branch_name = format!("add-ivy-tendril-{}", list_id);
-            let base_sha = match client.get_branch_sha(&owner, &repo, &repo_info.default_branch).await {
+            let base_sha = match client
+                .get_branch_sha(&owner, &repo, &repo_info.default_branch)
+                .await
+            {
                 Ok(sha) => sha,
                 Err(e) => {
                     let _ = tx.send(format!("[ERROR] Base SHA lookup failed: {}", e));
@@ -839,12 +929,18 @@ pub async fn submit_batch(
                 }
             };
 
-            if let Err(e) = client.create_branch(&fork_user, &repo, &branch_name, &base_sha).await {
+            if let Err(e) = client
+                .create_branch(&fork_user, &repo, &branch_name, &base_sha)
+                .await
+            {
                 let _ = tx.send(format!("[ERROR] Branch creation failed: {}", e));
                 return;
             }
 
-            let (readme_content, blob_sha) = match client.get_file_content(&owner, &repo, "README.md", &repo_info.default_branch).await {
+            let (readme_content, blob_sha) = match client
+                .get_file_content(&owner, &repo, "README.md", &repo_info.default_branch)
+                .await
+            {
                 Ok(c) => c,
                 Err(e) => {
                     let _ = tx.send(format!("[ERROR] README fetch failed: {}", e));
@@ -866,7 +962,18 @@ pub async fn submit_batch(
             let updated_readme = insert_listing_entry(&readme_content, &entry, &listing.category);
             let commit_message = format!("Add Ivy-Tendril to {}", listing.name);
 
-            if let Err(e) = client.update_file(&fork_user, &repo, "README.md", &branch_name, &commit_message, &updated_readme, &blob_sha).await {
+            if let Err(e) = client
+                .update_file(
+                    &fork_user,
+                    &repo,
+                    "README.md",
+                    &branch_name,
+                    &commit_message,
+                    &updated_readme,
+                    &blob_sha,
+                )
+                .await
+            {
                 let _ = tx.send(format!("[ERROR] File update failed: {}", e));
                 return;
             }
@@ -883,7 +990,18 @@ pub async fn submit_batch(
                 listing.name, entry
             );
 
-            match client.create_pull_request(&owner, &repo, &head_ref, &repo_info.default_branch, &pr_title, &pr_body, false).await {
+            match client
+                .create_pull_request(
+                    &owner,
+                    &repo,
+                    &head_ref,
+                    &repo_info.default_branch,
+                    &pr_title,
+                    &pr_body,
+                    false,
+                )
+                .await
+            {
                 Ok(pr) => {
                     let _ = tx.send(format!("[SUCCESS] Upstream PR opened: {}", pr.html_url));
                     let mut state = state_arc.write().await;
@@ -906,7 +1024,10 @@ pub async fn submit_batch(
         Json(GenerateBatchResponse {
             task_ids,
             targeted_count,
-            message: format!("Started batch upstream submission for {} listings", targeted_count),
+            message: format!(
+                "Started batch upstream submission for {} listings",
+                targeted_count
+            ),
         }),
     )
 }
@@ -942,14 +1063,30 @@ pub async fn batch_submit_listing_prs(
         let prompt = build_pr_submission_prompt(&listing);
         let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
         let runner = ctx.task_manager.runner().clone();
+        let list_id_clone = listing.id.clone();
+        let state_arc = ctx.state.clone();
+        let data_file = ctx.data_file.clone();
+        let tx_clone = tx.clone();
 
         tokio::spawn(async move {
-            match runner.execute(&prompt, tx.clone()).await {
-                Ok(_content) => {
-                    let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+            match runner.execute(&prompt, tx_clone.clone()).await {
+                Ok(content) => {
+                    if let Some(pr_url) = extract_pr_url(&content) {
+                        let mut state = state_arc.write().await;
+                        if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
+                            l.pr_url = Some(pr_url.clone());
+                            l.status = "PR Submitted".to_string();
+                            l.updated_at = Utc::now();
+                        }
+                        let _ = state.save(&data_file);
+                        let _ =
+                            tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
+                    }
+                    let _ =
+                        tx_clone.send("[SYSTEM] Automated PR generation completed!".to_string());
                 }
                 Err(e) => {
-                    let _ = tx.send(format!("[ERROR] PR generation failed: {}", e));
+                    let _ = tx_clone.send(format!("[ERROR] PR generation failed: {}", e));
                 }
             }
         });
@@ -964,4 +1101,3 @@ pub async fn batch_submit_listing_prs(
         }),
     )
 }
-
