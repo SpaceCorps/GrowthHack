@@ -1,12 +1,14 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::routing::post;
+use axum::Json;
 use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::listings::submit_upstream;
 use growthhack_backend::api::submission::{
     extract_github_repo, get_github_status, insert_listing_entry, parse_github_pr_url,
-    PullRequestDetails,
+    GitHubClient, PullRequestDetails,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::path::PathBuf;
@@ -239,9 +241,18 @@ fn test_parse_github_pr_url() {
         parse_github_pr_url("https://github.com/owner/repo.git/pull/412"),
         Some(("owner".to_string(), "repo".to_string(), 412))
     );
-    assert_eq!(parse_github_pr_url("https://gitlab.com/owner/repo/pull/412"), None);
-    assert_eq!(parse_github_pr_url("https://github.com/owner/repo/issues/412"), None);
-    assert_eq!(parse_github_pr_url("https://github.com/owner/repo/pull/notanumber"), None);
+    assert_eq!(
+        parse_github_pr_url("https://gitlab.com/owner/repo/pull/412"),
+        None
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/issues/412"),
+        None
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/notanumber"),
+        None
+    );
     assert_eq!(parse_github_pr_url("https://example.com"), None);
     assert_eq!(parse_github_pr_url(""), None);
 }
@@ -283,4 +294,69 @@ fn test_get_pull_request_details() {
     assert_eq!(merged_pr.state, "closed");
     assert!(merged_pr.merged);
     assert_eq!(merged_pr.merged_at.as_deref(), Some("2026-09-11T05:00:00Z"));
+}
+
+#[tokio::test]
+async fn test_sync_fork_merge_upstream_success() {
+    let mock_app = axum::Router::new().route(
+        "/repos/{user}/{repo}/merge-upstream",
+        post(
+            |Path((_user, repo)): Path<(String, String)>, Json(body): Json<serde_json::Value>| async move {
+                let branch = body
+                    .get("branch")
+                    .and_then(|b| b.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "message": format!("Successfully fetched and fast-forwarded from upstream {}", repo),
+                        "merge_type": "fast-forward",
+                        "base_branch": branch
+                    })),
+                )
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let client =
+        GitHubClient::new_unauthenticated_with_base_url(&format!("http://{}", addr)).unwrap();
+    let result = client.sync_fork("octocat", "growthhack", "main").await;
+
+    assert!(result.is_ok());
+    assert!(result.unwrap().contains("fast-forward"));
+}
+
+#[tokio::test]
+async fn test_sync_fork_merge_upstream_reports_conflict() {
+    let mock_app = axum::Router::new().route(
+        "/repos/{user}/{repo}/merge-upstream",
+        post(|| async {
+            (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "message": "Merge conflict" })),
+            )
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let client =
+        GitHubClient::new_unauthenticated_with_base_url(&format!("http://{}", addr)).unwrap();
+    let result = client.sync_fork("octocat", "growthhack", "main").await;
+
+    assert!(result.is_err());
+    let message = result.unwrap_err();
+    assert!(message.contains("merge-upstream failed"));
+    assert!(message.contains("Merge conflict"));
 }

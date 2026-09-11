@@ -5,13 +5,17 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::api::packages::{
-    build_upstream_pr_commands, compute_sha256_bytes, dispatch_package_pr, extract_gh_account,
-    extract_pr_url, format_release_url, generate_manifest_content, get_gh_auth_status,
-    get_manifest, list_packages, parse_checksums_content, parse_gh_auth_output,
-    update_package_status, DispatchPackagePrRequest, ManifestQuery,
-    ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
+    build_upstream_pr_commands, check_fork_sync_status, compute_sha256_bytes, dispatch_package_pr,
+    extract_gh_account, extract_pr_url, format_release_url, generate_manifest_content,
+    get_gh_auth_status, get_manifest, get_package_fork_status, list_packages,
+    parse_checksums_content, parse_gh_auth_output, sync_package_fork, update_package_status,
+    DispatchPackagePrRequest, ManifestQuery, ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
+
+// GH_AUTH_STATUS_OVERRIDE / GH_FORK_SYNC_OVERRIDE / GH_FORK_SYNC_ACTION_OVERRIDE are process-global
+// env vars; serialize the tests that mutate them so they don't race under parallel test threads.
+static GH_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test]
 async fn test_list_packages_returns_seeded_targets() {
@@ -108,7 +112,10 @@ async fn test_get_manifest_endpoint() {
     // Valid target
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
-        Query(ManifestQuery { refresh: None, tag: None }),
+        Query(ManifestQuery {
+            refresh: None,
+            tag: None,
+        }),
         State(ctx.ctx()),
     )
     .await;
@@ -119,7 +126,10 @@ async fn test_get_manifest_endpoint() {
     // Invalid target
     let (status_invalid, Json(manifest_invalid)) = get_manifest(
         Path("invalid_key".to_string()),
-        Query(ManifestQuery { refresh: None, tag: None }),
+        Query(ManifestQuery {
+            refresh: None,
+            tag: None,
+        }),
         State(ctx.ctx()),
     )
     .await;
@@ -414,6 +424,9 @@ async fn test_build_upstream_pr_commands_syntax() {
         .any(|c| c.contains("gh repo fork microsoft/winget-pkgs --clone=false")));
     assert!(winget_cmds
         .iter()
+        .any(|c| c.contains("gh repo sync microsoft/winget-pkgs")));
+    assert!(winget_cmds
+        .iter()
         .any(|c| c.contains("git checkout -b ivy-tendril-v0.8.4")));
     assert!(winget_cmds
         .iter()
@@ -432,6 +445,9 @@ async fn test_build_upstream_pr_commands_syntax() {
         .any(|c| c.contains("gh repo fork ScoopInstaller/Extras --clone=false")));
     assert!(scoop_cmds
         .iter()
+        .any(|c| c.contains("gh repo sync ScoopInstaller/Extras")));
+    assert!(scoop_cmds
+        .iter()
         .any(|c| c.contains("git checkout -b tendril-v0.8.4")));
     assert!(scoop_cmds.iter().any(|c| c.contains("bucket/tendril.json")));
     assert!(scoop_cmds
@@ -446,6 +462,9 @@ async fn test_build_upstream_pr_commands_syntax() {
     assert!(homebrew_cmds
         .iter()
         .any(|c| c.contains("gh repo fork ivy-interactive/homebrew-tap --clone=false")));
+    assert!(homebrew_cmds
+        .iter()
+        .any(|c| c.contains("gh repo sync ivy-interactive/homebrew-tap")));
     assert!(homebrew_cmds
         .iter()
         .any(|c| c.contains("git checkout -b tendril-v0.8.4")));
@@ -467,6 +486,7 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
         tag: None,
         notes: Some("Dispatching test PR for scoop".to_string()),
         skip_auth_check: Some(true),
+        skip_sync_check: Some(true),
     };
 
     let (status, Json(response)) = dispatch_package_pr(
@@ -591,6 +611,7 @@ async fn test_parse_gh_auth_status_failure_with_remediation_hint() {
 
 #[tokio::test]
 async fn test_get_gh_auth_status_endpoint() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
     // 1. Test override to authenticated
     std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "authenticated:octocat");
     let (status_ok, Json(auth_ok)) = get_gh_auth_status().await;
@@ -612,6 +633,7 @@ async fn test_get_gh_auth_status_endpoint() {
 
 #[tokio::test]
 async fn test_dispatch_package_pr_auth_check_and_skip() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
     let ctx = common::create_test_context();
 
     // 1. Simulate unauthenticated GitHub CLI environment
@@ -622,6 +644,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
         tag: None,
         notes: Some("Dispatching test PR".to_string()),
         skip_auth_check: None,
+        skip_sync_check: Some(true),
     };
 
     let (status_failed, Json(response_failed)) = dispatch_package_pr(
@@ -641,6 +664,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
         tag: None,
         notes: Some("Dispatching test PR with override".to_string()),
         skip_auth_check: Some(true),
+        skip_sync_check: Some(true),
     };
 
     let (status_accepted, Json(response_accepted)) = dispatch_package_pr(
@@ -655,6 +679,151 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
     assert!(resp_ok.task_id.starts_with("task-pkg-pr-"));
 
     std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_check_fork_sync_status_via_override() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
+    let ctx = common::create_test_context();
+    let state = ctx.state.read().await;
+    let winget = state
+        .packages
+        .iter()
+        .find(|p| p.target_key == "winget")
+        .unwrap()
+        .clone();
+    drop(state);
+
+    // 1. Synchronized
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "synchronized");
+    let synced = check_fork_sync_status(&winget, Some("octocat")).await;
+    assert!(synced.fork_exists);
+    assert!(synced.is_synchronized);
+    assert_eq!(synced.status, "synchronized");
+    assert_eq!(synced.behind_by, 0);
+
+    // 2. Behind
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "behind:15");
+    let behind = check_fork_sync_status(&winget, Some("octocat")).await;
+    assert!(behind.fork_exists);
+    assert!(!behind.is_synchronized);
+    assert_eq!(behind.status, "behind");
+    assert_eq!(behind.behind_by, 15);
+    assert!(behind.message.contains("15 commits behind"));
+
+    // 3. No fork
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "no_fork");
+    let no_fork = check_fork_sync_status(&winget, Some("octocat")).await;
+    assert!(!no_fork.fork_exists);
+    assert!(no_fork.is_synchronized);
+    assert_eq!(no_fork.status, "no_fork");
+
+    std::env::remove_var("GH_FORK_SYNC_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_get_package_fork_status_endpoint() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
+    let ctx = common::create_test_context();
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "authenticated:octocat");
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "behind:8");
+
+    let (status, Json(response)) =
+        get_package_fork_status(Path("pkg-scoop".to_string()), State(ctx.ctx())).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let fork_status = response.expect("Expected ForkSyncStatus");
+    assert_eq!(fork_status.target_key, "scoop");
+    assert_eq!(fork_status.upstream_repo, "ScoopInstaller/Extras");
+    assert!(!fork_status.is_synchronized);
+    assert_eq!(fork_status.behind_by, 8);
+
+    std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
+    std::env::remove_var("GH_FORK_SYNC_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_sync_package_fork_endpoint() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
+    let ctx = common::create_test_context();
+
+    // 1. Success via action override
+    std::env::set_var("GH_FORK_SYNC_ACTION_OVERRIDE", "success");
+    let (status_ok, Json(response_ok)) =
+        sync_package_fork(Path("pkg-scoop".to_string()), State(ctx.ctx())).await;
+    assert_eq!(status_ok, StatusCode::OK);
+    assert!(response_ok.success);
+
+    // 2. Failure via action override
+    std::env::set_var("GH_FORK_SYNC_ACTION_OVERRIDE", "fail");
+    let (status_fail, Json(response_fail)) =
+        sync_package_fork(Path("pkg-scoop".to_string()), State(ctx.ctx())).await;
+    assert_eq!(status_fail, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(!response_fail.success);
+
+    // 3. Unknown target -> 404
+    let (status_missing, Json(response_missing)) =
+        sync_package_fork(Path("pkg-does-not-exist".to_string()), State(ctx.ctx())).await;
+    assert_eq!(status_missing, StatusCode::NOT_FOUND);
+    assert!(!response_missing.success);
+
+    std::env::remove_var("GH_FORK_SYNC_ACTION_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_dispatch_package_pr_rejects_when_fork_behind() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
+    let ctx = common::create_test_context();
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "behind:15");
+
+    let payload = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        tag: None,
+        notes: None,
+        skip_auth_check: Some(true),
+        skip_sync_check: Some(false),
+    };
+
+    let (status, Json(response)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::PRECONDITION_FAILED);
+    let resp = response.expect("Expected DispatchPackagePrResponse with sync guidance");
+    assert!(resp.message.contains("15 commits behind"));
+
+    std::env::remove_var("GH_FORK_SYNC_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_dispatch_package_pr_accepts_when_sync_check_skipped() {
+    let _env_lock = GH_ENV_MUTEX.lock().await;
+    let ctx = common::create_test_context();
+    std::env::set_var("GH_FORK_SYNC_OVERRIDE", "behind:15");
+
+    let payload = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        tag: None,
+        notes: None,
+        skip_auth_check: Some(true),
+        skip_sync_check: Some(true),
+    };
+
+    let (status, Json(response)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let resp = response.expect("Expected accepted response despite stale fork");
+    assert!(resp.task_id.starts_with("task-pkg-pr-"));
+
+    std::env::remove_var("GH_FORK_SYNC_OVERRIDE");
 }
 
 #[tokio::test]
@@ -751,14 +920,12 @@ async fn test_no_hardcoded_checksum_fallback_when_binary_downloaded() {
     let mut release = ReleaseInfo {
         tag_name: "v2.0.0".to_string(),
         version: "2.0.0".to_string(),
-        assets: vec![
-            ReleaseAsset {
-                name: "tendril-v2.0.0-darwin-arm64.tar.gz".to_string(),
-                browser_download_url: "https://example.com/binary".to_string(),
-                digest: None,
-                sha256: None,
-            },
-        ],
+        assets: vec![ReleaseAsset {
+            name: "tendril-v2.0.0-darwin-arm64.tar.gz".to_string(),
+            browser_download_url: "https://example.com/binary".to_string(),
+            digest: None,
+            sha256: None,
+        }],
         published_at: None,
         fetched_at: chrono::Utc::now(),
     };
@@ -772,5 +939,7 @@ async fn test_no_hardcoded_checksum_fallback_when_binary_downloaded() {
 
     let manifest = generate_manifest_content("homebrew", &release).expect("Manifest generated");
     assert!(manifest.content.contains(&computed_hash));
-    assert!(!manifest.content.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    assert!(!manifest
+        .content
+        .contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
 }
