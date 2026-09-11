@@ -252,6 +252,13 @@ pub async fn update_listing(
             listing.pr_url = Some(pr_url);
         }
         if let Some(blurb) = payload.submission_blurb {
+            if blurb != listing.submission_blurb && payload.blurb_status.is_none() {
+                listing.blurb_status = if !blurb.trim().is_empty() {
+                    Some("Pending".to_string())
+                } else {
+                    None
+                };
+            }
             listing.submission_blurb = blurb;
         }
         if let Some(notes) = payload.notes {

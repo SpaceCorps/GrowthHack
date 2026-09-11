@@ -104,12 +104,16 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const isBlurbContentModified =
+      currentItem.type === "listing_blurb" && editContent !== currentItem.content;
+
     const updated: Partial<ReviewItem> = {
       title: editTitle,
       channel: editChannel,
       summary: editSummary,
       content: editContent,
       backlinks: updatedBacklinks,
+      ...(isBlurbContentModified ? { status: "Pending" } : {}),
     };
 
     setItems((prev) => prev.map((it) => (it.id === currentItem.id ? { ...it, ...updated } : it)));

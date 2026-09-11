@@ -1,7 +1,7 @@
+mod common;
+
 use axum::extract::{Path, State};
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::listings::{
     build_pr_submission_prompt, build_tailored_prompt, check_backlink_content, create_listing,
     generate_batch_listings, list_listings, submit_listing_pr, update_listing, verify_backlink,
@@ -9,28 +9,6 @@ use growthhack_backend::api::listings::{
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config: growthhack_backend::config::Config::load(),
-    })
-}
 
 #[tokio::test]
 async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
@@ -69,7 +47,7 @@ async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
 
 #[tokio::test]
 async fn test_list_and_create_and_update_listing() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // 1. List listings
     let Json(initial_listings) = list_listings(State(ctx.clone())).await;
@@ -207,7 +185,7 @@ fn test_prompt_tailoring_across_categories() {
 
 #[tokio::test]
 async fn test_generate_batch_listings_endpoint() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // Filter by category
     let batch_req = GenerateBatchRequest {
@@ -245,7 +223,7 @@ async fn test_backlink_verification_logic_and_endpoint() {
         axum::serve(listener, mock_app).await.unwrap();
     });
 
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let test_listing = Listing {
         id: "list-verify-test".to_string(),
         name: "Mock Awesome List".to_string(),
@@ -277,7 +255,7 @@ async fn test_backlink_verification_logic_and_endpoint() {
 
 #[tokio::test]
 async fn test_submit_listing_pr_promotes_status_and_spawns_task() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     let listing_id = "list-test-pr-submit".to_string();
     let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
@@ -352,3 +330,118 @@ async fn test_pr_submission_prompt_tailoring() {
     assert!(empty_prompt.contains("No custom blurb provided. Use standard Ivy-Tendril submission entry."));
 }
 
+#[tokio::test]
+async fn test_update_listing_resets_blurb_status_on_text_change() {
+    let ctx = common::create_test_context();
+    let test_listing = Listing {
+        id: "list-reset-test".to_string(),
+        name: "Test Reset List".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/reset-test".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb: "Initial blurb".to_string(),
+        notes: "Initial notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+    }
+
+    // Case 1: Updating submission_blurb on an Approved listing without blurb_status automatically resets blurb_status to Pending
+    let update_req = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Modified blurb text".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.submission_blurb, "Modified blurb text");
+    assert_eq!(updated.blurb_status, Some("Pending".to_string()));
+
+    // Case 2: Updating submission_blurb with explicit blurb_status (e.g. "Approved") preserves the explicit status
+    let update_req_explicit = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Another modification".to_string()),
+        notes: None,
+        blurb_status: Some("Approved".to_string()),
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_explicit),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.submission_blurb, "Another modification");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 3: Updating non-blurb fields without touching submission_blurb preserves existing blurb_status
+    let update_req_non_blurb = UpdateListingRequest {
+        status: Some("PR Submitted".to_string()),
+        pr_url: None,
+        submission_blurb: None,
+        notes: Some("Updated notes only".to_string()),
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_non_blurb),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.status, "PR Submitted");
+    assert_eq!(updated.notes, "Updated notes only");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 4: Submitting identical submission_blurb without blurb_status preserves existing blurb_status
+    let update_req_same_blurb = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("Another modification".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_same_blurb),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.blurb_status, Some("Approved".to_string()));
+
+    // Case 5: Empty/whitespace blurb resets blurb_status to None
+    let update_req_empty = UpdateListingRequest {
+        status: None,
+        pr_url: None,
+        submission_blurb: Some("   ".to_string()),
+        notes: None,
+        blurb_status: None,
+    };
+    let (status, Json(updated_opt)) = update_listing(
+        Path("list-reset-test".to_string()),
+        State(ctx.clone()),
+        Json(update_req_empty),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let updated = updated_opt.expect("Listing should exist");
+    assert_eq!(updated.blurb_status, None);
+}

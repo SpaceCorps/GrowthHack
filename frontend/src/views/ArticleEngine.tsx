@@ -12,6 +12,7 @@ import {
   Globe,
   Flame,
   ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 
 export interface ArticleEngineProps {
@@ -30,6 +31,7 @@ export interface ArticleEngineProps {
     initialTab?: "content" | "raw" | "backlinks" | "export",
   ) => void;
   onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
+  onSyncMetrics?: () => Promise<void> | void;
 }
 
 export const ArticleEngine: React.FC<ArticleEngineProps> = ({
@@ -38,8 +40,64 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   onGenerateSpotlight,
   onSelectArticle,
   onUpdateStatus,
+  onSyncMetrics,
 }) => {
   const [mode, setMode] = useState<"feature" | "spotlight">("feature");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      if (onSyncMetrics) {
+        await onSyncMetrics();
+      } else {
+        const res = await fetch("/api/articles/sync-metrics", { method: "POST" });
+        if (!res.ok) {
+          throw new Error(`Sync failed with status ${res.status}`);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sync failed";
+      setSyncError(msg);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Reader Engagement aggregates across all syndicated articles
+  const totalViews = articles.reduce((acc, a) => {
+    if (a.engagement) return acc + (a.engagement.views || 0);
+    const expViews = a.exports?.reduce((sum, e) => sum + (e.engagement?.views || 0), 0) || 0;
+    return acc + expViews;
+  }, 0);
+
+  const totalReactions = articles.reduce((acc, a) => {
+    if (a.engagement) return acc + (a.engagement.reactions || 0);
+    const expReactions =
+      a.exports?.reduce((sum, e) => sum + (e.engagement?.reactions || 0), 0) || 0;
+    return acc + expReactions;
+  }, 0);
+
+  const totalComments = articles.reduce((acc, a) => {
+    if (a.engagement) return acc + (a.engagement.comments || 0);
+    const expComments = a.exports?.reduce((sum, e) => sum + (e.engagement?.comments || 0), 0) || 0;
+    return acc + expComments;
+  }, 0);
+
+  const latestSyncAt = articles.reduce<string | undefined>((latest, a) => {
+    const candidates = [
+      a.engagement?.last_synced_at,
+      ...(a.exports?.map((e) => e.engagement?.last_synced_at) || []),
+    ].filter(Boolean) as string[];
+    for (const ts of candidates) {
+      if (!latest || ts > latest) {
+        latest = ts;
+      }
+    }
+    return latest;
+  }, undefined);
 
   // Feature Article Form State
   const [selectedFeature, setSelectedFeature] = useState("Worktrees");
@@ -462,6 +520,56 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* Reader Engagement Section */}
+            <div className="mt-6 pt-5 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2 text-cyan-400 text-xs font-bold uppercase tracking-wider">
+                  <Flame className="w-4 h-4 text-amber-400" />
+                  <span>Reader Engagement</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSync}
+                  disabled={isSyncing}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  title="Sync reader engagement metrics from Dev.to and Hashnode"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span>{isSyncing ? "Syncing..." : "Sync Metrics"}</span>
+                </button>
+              </div>
+
+              {syncError && (
+                <div className="mb-3 p-2 rounded bg-rose-950/50 border border-rose-800 text-[11px] text-rose-300">
+                  {syncError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 font-mono text-xs mb-3">
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
+                  <span className="text-[10px] text-slate-400 uppercase">Total Views</span>
+                  <span className="text-base font-bold text-cyan-400 mt-0.5">{totalViews}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
+                  <span className="text-[10px] text-slate-400 uppercase">Total Reactions</span>
+                  <span className="text-base font-bold text-pink-400 mt-0.5">{totalReactions}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
+                  <span className="text-[10px] text-slate-400 uppercase">Total Comments</span>
+                  <span className="text-base font-bold text-emerald-400 mt-0.5">
+                    {totalComments}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                <span>Last Synced:</span>
+                <span className="font-mono text-slate-300">
+                  {latestSyncAt ? new Date(latestSyncAt).toLocaleString() : "Never"}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="mt-4 pt-4 border-t border-slate-800 text-[11px] text-slate-500">
@@ -628,32 +736,40 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                           ? latestRecord.target_path
                           : null;
 
-                      if (remoteUrl) {
-                        return (
-                          <a
-                            key={ch}
-                            href={remoteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition-colors shadow-sm"
-                            title={`Open syndicated post on ${ch}: ${remoteUrl}`}
-                          >
-                            <Check className="w-2.5 h-2.5 text-emerald-400" />
-                            <span>{ch}</span>
-                            <ExternalLink className="w-2.5 h-2.5 text-emerald-400" />
-                          </a>
-                        );
-                      }
-
                       return (
-                        <span
-                          key={ch}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80"
-                        >
-                          <Check className="w-2.5 h-2.5 text-cyan-400" />
-                          <span>{ch}</span>
-                        </span>
+                        <div key={ch} className="inline-flex items-center gap-1.5 flex-wrap">
+                          {remoteUrl ? (
+                            <a
+                              href={remoteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition-colors shadow-sm"
+                              title={`Open syndicated post on ${ch}: ${remoteUrl}`}
+                            >
+                              <Check className="w-2.5 h-2.5 text-emerald-400" />
+                              <span>{ch}</span>
+                              <ExternalLink className="w-2.5 h-2.5 text-emerald-400" />
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-950/70 text-cyan-300 border border-cyan-800/80">
+                              <Check className="w-2.5 h-2.5 text-cyan-400" />
+                              <span>{ch}</span>
+                            </span>
+                          )}
+                          {latestRecord?.engagement && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-950/80 text-cyan-300 border border-slate-800 shadow-sm"
+                              title={`${ch} engagement: ${latestRecord.engagement.views} views, ${latestRecord.engagement.reactions} reactions, ${latestRecord.engagement.comments} comments`}
+                            >
+                              <span>
+                                {ch}: {latestRecord.engagement.views} views •{" "}
+                                {latestRecord.engagement.reactions} reactions •{" "}
+                                {latestRecord.engagement.comments} comments
+                              </span>
+                            </span>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

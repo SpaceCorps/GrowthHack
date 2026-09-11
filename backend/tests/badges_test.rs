@@ -1,39 +1,17 @@
+mod common;
+
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::badges::{
     generate_badge, get_workflow_templates, render_svg_badge, GenerateBadgeRequest,
     GenerateBadgeResponse, SvgQuery, WorkflowTemplatesResponse,
 };
-use growthhack_backend::api::issues::AppContext;
-use growthhack_backend::db::GrowthState;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path =
-        std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path: ivy_web_content_path.clone(),
-        ivy_web_images_path: ivy_web_content_path,
-        config: growthhack_backend::config::Config::load(),
-    })
-}
 
 #[tokio::test]
 async fn test_generate_minimal_badge() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let req = GenerateBadgeRequest {
         project_name: "growthhack".to_string(),
         plan_id: Some("00291".to_string()),
@@ -61,7 +39,7 @@ async fn test_generate_minimal_badge() {
 
 #[tokio::test]
 async fn test_generate_shield_svg_badge() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let req = GenerateBadgeRequest {
         project_name: "growthhack".to_string(),
         plan_id: Some("00291".to_string()),
@@ -89,7 +67,7 @@ async fn test_generate_shield_svg_badge() {
 
 #[tokio::test]
 async fn test_generate_summary_card() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let diff_url = "https://github.com/spacecorps/growthhack/pull/5/files".to_string();
     let req = GenerateBadgeRequest {
         project_name: "growthhack".to_string(),
@@ -155,7 +133,13 @@ async fn test_get_workflows_endpoint() {
 
     assert!(res.action_yml.contains("name: \"Tendril Verification & PR Flywheel\""));
     assert!(res.action_yml.contains("inputs:"));
+    assert!(res.action_yml.contains("<!-- tendril-flywheel-badge -->"));
+    assert!(res.action_yml.contains("EXISTING_COMMENT_ID"));
+    assert!(res.action_yml.contains("gh api \"repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}\""));
+    assert!(res.action_yml.contains("gh pr comment \"${PR_NUMBER}\""));
     assert!(res.workflow_yml.contains("name: Tendril Verification & PR Flywheel"));
     assert!(res.workflow_yml.contains("on:"));
     assert!(res.workflow_yml.contains("pull_request:"));
+    assert!(res.workflow_yml.contains("pull-requests: write"));
+    assert!(res.workflow_yml.contains("issues: write"));
 }
