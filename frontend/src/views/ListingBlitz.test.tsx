@@ -67,6 +67,8 @@ const mockListings: Listing[] = [
 ];
 
 describe("ListingBlitz View", () => {
+  let originalFetch: typeof global.fetch;
+
   const defaultProps = {
     listings: mockListings,
     onGenerateBlurb: vi.fn(),
@@ -78,6 +80,7 @@ describe("ListingBlitz View", () => {
   };
 
   beforeEach(() => {
+    originalFetch = global.fetch;
     Object.defineProperty(navigator, "clipboard", {
       value: {
         writeText: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +107,7 @@ describe("ListingBlitz View", () => {
     cleanup();
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    global.fetch = originalFetch;
   });
 
   it("renders metric cards and listing cards correctly", () => {

@@ -64,8 +64,29 @@ const mockListings: Listing[] = [
 ];
 
 describe("ListingBlitz Blurb Approval Badges", () => {
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/submissions/github-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            configured: true,
+            username: "testuser",
+            message: "ok",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    }) as unknown as typeof fetch;
+  });
+
   afterEach(() => {
     cleanup();
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   it("renders appropriate blurb status badges for Approved, Rejected, and Pending states", () => {
@@ -75,6 +96,7 @@ describe("ListingBlitz Blurb Approval Badges", () => {
         onUpdateStatus={vi.fn()}
         onGenerateBlurb={vi.fn()}
         onCreateListing={vi.fn()}
+        githubStatus={{ configured: true, username: "testuser", message: "ok" }}
       />,
     );
 
@@ -92,7 +114,10 @@ describe("ListingBlitz Blurb Approval Badges", () => {
 });
 
 describe("Review Queue Listing Blurb Approval Flow", () => {
+  let originalFetch: typeof global.fetch;
+
   beforeEach(() => {
+    originalFetch = global.fetch;
     vi.useFakeTimers();
   });
 
@@ -100,6 +125,7 @@ describe("Review Queue Listing Blurb Approval Flow", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    global.fetch = originalFetch;
   });
 
   it("approving a listing blurb triggers approval callback and PUT to /api/listings/{id}", async () => {
