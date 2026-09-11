@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AllContributorsRcResponse,
   AllContributorsResponse,
@@ -6,6 +6,7 @@ import type {
   ContributorIssue,
   ContributorRecord,
   GenerateAllContributorsPrResponse,
+  GitHubUserSummary,
 } from "../types";
 import {
   Users,
@@ -112,6 +113,15 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
   const [claimFeedback, setClaimFeedback] = useState<ContributorIssue | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
+
+  // GitHub user autocomplete state
+  const [userSuggestions, setUserSuggestions] = useState<Array<GitHubUserSummary>>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState<boolean>(false);
+  const [showUserDropdown, setShowUserDropdown] = useState<boolean>(false);
+  const [highlightedUserIndex, setHighlightedUserIndex] = useState<number>(-1);
+
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+  const skipNextSearchRef = useRef<boolean>(false);
 
   // Verification modal state
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
@@ -250,6 +260,94 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     setExpandedIssues((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Click outside handling for autocomplete dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+        setHighlightedUserIndex(-1);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Debounced search for GitHub users
+  useEffect(() => {
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return;
+    }
+
+    const clean = githubHandle.trim().replace(/^@+/, "").trim();
+    if (clean.length < 2) {
+      setUserSuggestions([]);
+      setShowUserDropdown(false);
+      setHighlightedUserIndex(-1);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingUsers(true);
+        const res = await fetch(`/api/contributors/github-users?q=${encodeURIComponent(clean)}`);
+        if (res.ok) {
+          const data: GitHubUserSummary[] = await res.json();
+          setUserSuggestions(data);
+          setShowUserDropdown(data.length > 0);
+          setHighlightedUserIndex(-1);
+        } else {
+          setUserSuggestions([]);
+          setShowUserDropdown(false);
+          setHighlightedUserIndex(-1);
+        }
+      } catch {
+        setUserSuggestions([]);
+        setShowUserDropdown(false);
+        setHighlightedUserIndex(-1);
+      } finally {
+        setIsSearchingUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [githubHandle]);
+
+  const handleSelectUser = (user: GitHubUserSummary) => {
+    skipNextSearchRef.current = true;
+    setGithubHandle(`@${user.login}`);
+    if (!contributorName.trim()) {
+      setContributorName(user.login);
+    }
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+  };
+
+  const handleHandleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showUserDropdown || userSuggestions.length === 0) {
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedUserIndex((prev) => (prev < userSuggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedUserIndex((prev) => (prev > 0 ? prev - 1 : userSuggestions.length - 1));
+    } else if (e.key === "Enter") {
+      if (highlightedUserIndex >= 0 && highlightedUserIndex < userSuggestions.length) {
+        e.preventDefault();
+        handleSelectUser(userSuggestions[highlightedUserIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowUserDropdown(false);
+      setHighlightedUserIndex(-1);
+    }
+  };
+
   const handleOpenClaimModal = (issue: ContributorIssue) => {
     setClaimingIssue(issue);
     setContributorName("");
@@ -258,12 +356,22 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     setAutoSyncGithub(true);
     setClaimFeedback(null);
     setClaimError(null);
+    setUserSuggestions([]);
+    setIsSearchingUsers(false);
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+    skipNextSearchRef.current = false;
   };
 
   const handleCloseClaimModal = () => {
     setClaimingIssue(null);
     setClaimFeedback(null);
     setClaimError(null);
+    setUserSuggestions([]);
+    setIsSearchingUsers(false);
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+    skipNextSearchRef.current = false;
   };
 
   const handleConfirmClaim = async (e: React.FormEvent) => {
@@ -1245,18 +1353,77 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                   />
                 </div>
 
-                <div>
+                <div ref={autocompleteRef} className="relative">
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     GitHub Handle (Optional)
                   </label>
-                  <input
-                    type="text"
-                    value={githubHandle}
-                    onChange={(e) => setGithubHandle(e.target.value)}
-                    placeholder="e.g. @janedev"
-                    data-testid="claim-handle-input"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={githubHandle}
+                      onChange={(e) => setGithubHandle(e.target.value)}
+                      onKeyDown={handleHandleKeyDown}
+                      onFocus={() => {
+                        const clean = githubHandle.trim().replace(/^@+/, "").trim();
+                        if (clean.length >= 2 && userSuggestions.length > 0) {
+                          setShowUserDropdown(true);
+                        }
+                      }}
+                      placeholder="e.g. @janedev"
+                      data-testid="claim-handle-input"
+                      autoComplete="off"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                    />
+                    {isSearchingUsers && (
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <Sparkles className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {showUserDropdown && userSuggestions.length > 0 && (
+                    <div
+                      data-testid="claim-handle-autocomplete-dropdown"
+                      className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden max-h-48 overflow-y-auto"
+                    >
+                      {userSuggestions.map((user, idx) => {
+                        const isHighlighted = idx === highlightedUserIndex;
+                        return (
+                          <div
+                            key={user.login}
+                            data-testid={`claim-handle-suggestion-${idx}`}
+                            onClick={() => handleSelectUser(user)}
+                            className={`flex items-center justify-between px-3 py-2 text-xs cursor-pointer transition-colors ${
+                              isHighlighted
+                                ? "bg-cyan-600/30 text-cyan-200"
+                                : "hover:bg-slate-800 text-slate-200"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <img
+                                src={user.avatar_url}
+                                alt={user.login}
+                                className="w-5 h-5 rounded-full object-cover shrink-0 border border-slate-700"
+                              />
+                              <span className="font-mono text-xs font-semibold truncate">
+                                @{user.login}
+                              </span>
+                            </div>
+                            <a
+                              href={user.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-400 hover:text-cyan-400 shrink-0 p-1"
+                              title="View GitHub profile"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>

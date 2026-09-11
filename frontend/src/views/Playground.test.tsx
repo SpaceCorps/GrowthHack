@@ -526,6 +526,83 @@ describe("Playground View Component", () => {
     vi.useRealTimers();
   });
 
+  it("auto-selects scenario-rate-limiter when initialized with #scenario=rate-limiter in URL hash", async () => {
+    window.location.hash = "#scenario=rate-limiter";
+
+    await act(async () => {
+      render(<Playground />);
+    });
+
+    expect(
+      screen.getAllByText("Token bucket rate limiter Tower middleware").length,
+    ).toBeGreaterThan(0);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/playground/tree?scenario_id=scenario-rate-limiter"),
+    );
+
+    window.location.hash = "";
+  });
+
+  it("updates window.location.hash to #scenario=<slug> when clicking a scenario card", async () => {
+    window.location.hash = "";
+
+    await act(async () => {
+      render(<Playground />);
+    });
+
+    const card = screen.getAllByText("Token bucket rate limiter Tower middleware")[0];
+    await act(async () => {
+      fireEvent.click(card);
+    });
+
+    expect(window.location.hash).toBe("#scenario=rate-limiter");
+
+    window.location.hash = "";
+  });
+
+  it("copies the scenario URL with the resolved base origin to the clipboard and shows feedback when clicking Share Scenario", async () => {
+    window.location.hash = "#scenario=rate-limiter";
+
+    await act(async () => {
+      render(<Playground />);
+    });
+
+    const shareBtn = screen.getByText("Share Scenario");
+    await act(async () => {
+      fireEvent.click(shareBtn);
+    });
+
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      "https://tendril.run/#scenario=rate-limiter",
+    );
+    expect(screen.getAllByText("Link Copied!").length).toBeGreaterThan(0);
+
+    window.location.hash = "";
+  });
+
+  it("switches active scenario in response to hashchange events", async () => {
+    window.location.hash = "";
+
+    await act(async () => {
+      render(<Playground />);
+    });
+
+    expect(screen.getAllByText("Health check endpoint with uptime metrics").length).toBeGreaterThan(
+      0,
+    );
+
+    await act(async () => {
+      window.location.hash = "#scenario=rate-limiter";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/playground/tree?scenario_id=scenario-rate-limiter"),
+    );
+
+    window.location.hash = "";
+  });
+
   it("renders imported labels and GitHub issue link when a scenario contains live metadata", async () => {
     await act(async () => {
       render(<Playground />);

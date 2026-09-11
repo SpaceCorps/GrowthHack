@@ -311,14 +311,9 @@ async fn test_banner_embed_generator() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let banner: Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(banner["markdown_snippet"]
-        .as_str()
-        .unwrap()
-        .contains("[![Try Tendril"));
-    assert!(banner["html_snippet"]
-        .as_str()
-        .unwrap()
-        .contains("<a href=\"https://tendril.run/playground\""));
+    assert!(banner["markdown_snippet"].as_str().unwrap().contains("[![Try Tendril"));
+    assert!(banner["target_url"].as_str().unwrap().contains("#scenario=health-check"));
+    assert!(banner["html_snippet"].as_str().unwrap().contains("<a href=\"https://tendril.run/#scenario=health-check\""));
     assert!(banner["raw_svg"].as_str().unwrap().contains("<svg"));
 
     let _ = std::fs::remove_file(data_file);
@@ -489,6 +484,37 @@ async fn test_get_file_content_nonexistent_file() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let _ = std::fs::remove_file(data_file);
+}
+
+#[tokio::test]
+async fn test_banner_embed_generator_with_scenario() {
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/playground/banner?scenario_id=scenario-rate-limiter")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let banner: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(
+        banner["target_url"].as_str().unwrap(),
+        "https://tendril.run/#scenario=rate-limiter"
+    );
+    assert!(banner["markdown_snippet"].as_str().unwrap().contains("#scenario=rate-limiter"));
+    assert!(banner["html_snippet"].as_str().unwrap().contains("<a href=\"https://tendril.run/#scenario=rate-limiter\""));
 
     let _ = std::fs::remove_file(data_file);
 }

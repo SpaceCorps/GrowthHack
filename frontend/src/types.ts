@@ -150,7 +150,7 @@ export interface ReviewItem {
   content: string;
   backlinks: string[];
   citations: string[];
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Approved" | "Rejected" | "Published";
   createdAt: string;
   rawId: string;
 }
@@ -440,6 +440,12 @@ export interface ContributorIssue {
   closed_at?: string;
 }
 
+export interface GitHubUserSummary {
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
 export interface ContributorRecord {
   name: string;
   login?: string;
@@ -553,27 +559,6 @@ export interface ShowHnState {
   score_breakdown?: AuthenticityAnalysis;
 }
 
-export interface ProductHuntAssetSpec {
-  name: string;
-  dimensions: string;
-  requirement: string;
-  status: string;
-}
-
-export interface ProductHuntChecklistItem {
-  id: string;
-  task: string;
-  completed: boolean;
-}
-
-export interface ProductHuntKit {
-  taglines: string[];
-  selected_tagline: string;
-  first_comment: string;
-  asset_specs: ProductHuntAssetSpec[];
-  checklist: ProductHuntChecklistItem[];
-}
-
 export interface BetaTester {
   id: string;
   name: string;
@@ -616,7 +601,6 @@ export interface TimelinePhase {
 
 export interface LaunchCampaignState {
   show_hn: ShowHnState;
-  product_hunt: ProductHuntKit;
   beta_testers: BetaTester[];
   syndication_checklist: SyndicationChecklistItem[];
   timeline: TimelinePhase[];

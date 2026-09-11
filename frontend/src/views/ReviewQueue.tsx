@@ -18,6 +18,9 @@ import {
   Loader2,
   Volume2,
   VolumeX,
+  Zap,
+  ZapOff,
+  AlertTriangle,
 } from "lucide-react";
 
 export interface ReviewQueueProps {
@@ -27,7 +30,11 @@ export interface ReviewQueueProps {
   onRefine?: (item: ReviewItem, updated: Partial<ReviewItem>) => void | Promise<void>;
   onBatchPublish?: (items: ReviewItem[]) => void | Promise<void>;
   onUndo?: (item: ReviewItem) => void | Promise<void>;
+  onAutoPost?: (item: ReviewItem) => void | Promise<void>;
 }
+
+export const getAutoPostDestination = (type: ReviewItem["type"]): string =>
+  type === "article" ? "Ivy Web" : type === "listing_blurb" ? "Upstream PR" : "Platform Assets";
 
 type FilterType = "all" | "article" | "video_demo" | "trend_synthesis" | "listing_blurb";
 
@@ -92,6 +99,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   onRefine,
   onBatchPublish,
   onUndo,
+  onAutoPost,
 }) => {
   const [items, setItems] = useState<ReviewItem[]>(initialItems);
   const [filter, setFilter] = useState<FilterType>("all");
@@ -139,6 +147,45 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     });
   };
 
+  // Instant auto-post toggle (persisted to localStorage, default enabled)
+  const [autoPostEnabled, setAutoPostEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.localStorage) return true;
+    try {
+      const stored = localStorage.getItem("growth_review_auto_post_enabled");
+      return stored === null ? true : stored === "true";
+    } catch {
+      return true;
+    }
+  });
+  const autoPostEnabledRef = React.useRef<boolean>(autoPostEnabled);
+
+  useEffect(() => {
+    autoPostEnabledRef.current = autoPostEnabled;
+  }, [autoPostEnabled]);
+
+  const handleToggleAutoPost = () => {
+    setAutoPostEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          localStorage.setItem("growth_review_auto_post_enabled", String(next));
+        } catch {
+          // Ignore localStorage access errors
+        }
+      }
+      return next;
+    });
+  };
+
+  // Dispatch feedback toast state
+  const [dispatchFeedback, setDispatchFeedback] = useState<{
+    itemId: string;
+    title: string;
+    destination: string;
+    phase: "dispatching" | "dispatched" | "failed";
+  } | null>(null);
+  const [autoPostedCount, setAutoPostedCount] = useState<number>(0);
+
   // Edit/Refine state
   const [editTitle, setEditTitle] = useState<string>("");
   const [editChannel, setEditChannel] = useState<string>("");
@@ -155,6 +202,11 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const pendingItems = useMemo(() => items.filter((it) => it.status === "Pending"), [items]);
   const approvedItems = useMemo(() => items.filter((it) => it.status === "Approved"), [items]);
   const rejectedItems = useMemo(() => items.filter((it) => it.status === "Rejected"), [items]);
+  const publishedItems = useMemo(() => items.filter((it) => it.status === "Published"), [items]);
+  const exportableItems = useMemo(
+    () => [...approvedItems, ...publishedItems],
+    [approvedItems, publishedItems],
+  );
 
   // Filtered pending deck
   const activeDeck = useMemo(() => {
@@ -230,6 +282,37 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       if (onApprove) {
         await onApprove(itemToApprove);
       }
+
+      if (!autoPostEnabledRef.current) return;
+
+      const destination = getAutoPostDestination(itemToApprove.type);
+      setDispatchFeedback({
+        itemId: itemToApprove.id,
+        title: itemToApprove.title,
+        destination,
+        phase: "dispatching",
+      });
+      try {
+        await onAutoPost?.(itemToApprove);
+        setItems((prev) =>
+          prev.map((it) => (it.id === itemToApprove.id ? { ...it, status: "Published" } : it)),
+        );
+        setAutoPostedCount((prev) => prev + 1);
+        setDispatchFeedback({
+          itemId: itemToApprove.id,
+          title: itemToApprove.title,
+          destination,
+          phase: "dispatched",
+        });
+      } catch {
+        setDispatchFeedback({
+          itemId: itemToApprove.id,
+          title: itemToApprove.title,
+          destination,
+          phase: "failed",
+        });
+      }
+      setTimeout(() => setDispatchFeedback(null), 2500);
     }, 200);
   };
 
@@ -417,7 +500,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
 
   // Export handlers
   const handleCopyAll = () => {
-    const markdownBundle = approvedItems
+    const markdownBundle = exportableItems
       .map(
         (it, idx) =>
           `# ${idx + 1}. ${it.title}\n\n**Type:** ${it.type} | **Channel:** ${it.channel}\n\n${it.summary}\n\n---\n\n${it.content}\n\n**Backlinks:** ${it.backlinks.join(", ")}`,
@@ -430,7 +513,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   };
 
   const handleDownloadMarkdown = () => {
-    const markdownBundle = approvedItems
+    const markdownBundle = exportableItems
       .map(
         (it, idx) =>
           `# ${idx + 1}. ${it.title}\n\n**Type:** ${it.type} | **Channel:** ${it.channel}\n\n${it.summary}\n\n---\n\n${it.content}\n\n**Backlinks:** ${it.backlinks.join(", ")}`,
@@ -453,7 +536,8 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const handleBatchPublish = async () => {
     setIsBatchPublishing(true);
     try {
-      for (const item of approvedItems) {
+      const unpublished = exportableItems.filter((item) => item.status !== "Published");
+      for (const item of unpublished) {
         if (item.type === "article") {
           try {
             await fetch(`/api/articles/${item.rawId}/export/ivy-web`, {
@@ -468,7 +552,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       }
 
       if (onBatchPublish) {
-        await onBatchPublish(approvedItems);
+        await onBatchPublish(unpublished);
       }
       setShowExportModal(false);
     } finally {
@@ -506,7 +590,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
     }
   };
 
-  const totalReviewed = approvedItems.length + rejectedItems.length;
+  const totalReviewed = approvedItems.length + rejectedItems.length + publishedItems.length;
   const totalDeckCount = totalReviewed + pendingItems.length;
   const progressPercent =
     totalDeckCount > 0 ? Math.round((totalReviewed / totalDeckCount) * 100) : 100;
@@ -552,14 +636,50 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             <span className="text-slate-400">Rejected:</span>
             <span className="text-rose-400 font-bold">{rejectedItems.length}</span>
           </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium">
+            <span className="text-slate-400">Published:</span>
+            <span className="text-cyan-400 font-bold">{publishedItems.length}</span>
+          </div>
+          <div
+            data-testid="auto-posted-count"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-medium"
+          >
+            <span className="text-slate-400">Auto-Posted:</span>
+            <span className="text-emerald-400 font-bold">{autoPostedCount}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleToggleAutoPost}
+            data-testid="auto-post-toggle-btn"
+            aria-label={autoPostEnabled ? "Disable instant auto-post" : "Enable instant auto-post"}
+            title={autoPostEnabled ? "Disable instant auto-post" : "Enable instant auto-post"}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              autoPostEnabled
+                ? "bg-emerald-950/60 hover:bg-emerald-950 text-emerald-400 border-emerald-800/60 hover:border-emerald-700"
+                : "bg-slate-900/40 hover:bg-slate-900 text-slate-500 border-slate-800/60 hover:text-slate-400"
+            }`}
+          >
+            {autoPostEnabled ? (
+              <>
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Instant Auto-Post</span>
+              </>
+            ) : (
+              <>
+                <ZapOff className="w-3.5 h-3.5 text-slate-500" />
+                <span>Manual Publish</span>
+              </>
+            )}
+          </button>
 
           <button
             onClick={() => setShowExportModal(true)}
-            disabled={approvedItems.length === 0}
+            disabled={exportableItems.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
-            Export Approved ({approvedItems.length})
+            Export Approved ({exportableItems.length})
           </button>
         </div>
       </div>
@@ -770,6 +890,15 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                     <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                       Channel: {currentItem.channel}
                     </span>
+                    {autoPostEnabled && (
+                      <span
+                        data-testid="auto-post-destination-badge"
+                        className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-800/50 flex items-center gap-1"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Auto-Post → {getAutoPostDestination(currentItem.type)}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 font-mono">Draft ID: {currentItem.id}</div>
                 </div>
@@ -912,13 +1041,13 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                 </button>
               )}
 
-              {approvedItems.length > 0 && (
+              {exportableItems.length > 0 && (
                 <button
                   onClick={() => setShowExportModal(true)}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Export {approvedItems.length} Approved Items
+                  Export {exportableItems.length} Approved Items
                 </button>
               )}
             </div>
@@ -1031,7 +1160,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               <div className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-emerald-400" />
                 <h4 className="text-lg font-bold text-white">
-                  Export Approved Growth Assets ({approvedItems.length})
+                  Export Approved Growth Assets ({exportableItems.length})
                 </h4>
               </div>
               <button
@@ -1048,7 +1177,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             </p>
 
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {approvedItems.map((item, idx) => (
+              {exportableItems.map((item, idx) => (
                 <div
                   key={item.id}
                   className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-xs"
@@ -1113,6 +1242,35 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Instant Auto-Post Dispatch Feedback Toast */}
+      {dispatchFeedback && (
+        <div
+          data-testid="auto-post-toast"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl text-sm font-semibold"
+        >
+          {dispatchFeedback.phase === "dispatching" && (
+            <>
+              <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+              <span className="text-slate-200">Dispatching to {dispatchFeedback.destination}…</span>
+            </>
+          )}
+          {dispatchFeedback.phase === "dispatched" && (
+            <>
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span className="text-slate-200">Dispatched to {dispatchFeedback.destination}</span>
+            </>
+          )}
+          {dispatchFeedback.phase === "failed" && (
+            <>
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <span className="text-slate-200">
+                Auto-post failed — {dispatchFeedback.destination}
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>

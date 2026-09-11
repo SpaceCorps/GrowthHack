@@ -32,39 +32,88 @@ import { DoctorDemo } from "./views/DoctorDemo";
 import { LaunchCampaign } from "./views/LaunchCampaign";
 import { Playground } from "./views/Playground";
 
+const VALID_TABS: ActiveTab[] = [
+  "issues",
+  "articles",
+  "trends",
+  "demos",
+  "listings",
+  "packages",
+  "contributors",
+  "recipes",
+  "agent",
+  "review",
+  "flywheel",
+  "doctor",
+  "launch",
+  "playground",
+];
+
+export const resolveActiveTabFromLocation = (
+  rawHash: string,
+  searchStr: string = "",
+): ActiveTab => {
+  const currentSearch = searchStr ? new URLSearchParams(searchStr) : null;
+  if (rawHash.includes("scenario=") || (currentSearch && currentSearch.has("scenario"))) {
+    return "playground";
+  }
+
+  const hashWithoutPound = rawHash.replace(/^#/, "");
+  if (
+    hashWithoutPound.includes("?") ||
+    hashWithoutPound.includes("&") ||
+    hashWithoutPound.includes("=")
+  ) {
+    try {
+      const [possibleTab] = hashWithoutPound.split("?");
+      if (VALID_TABS.includes(possibleTab as ActiveTab)) {
+        return possibleTab as ActiveTab;
+      }
+      const hashParams = new URLSearchParams(hashWithoutPound);
+      const tabParam = hashParams.get("tab") as ActiveTab | null;
+      if (tabParam && VALID_TABS.includes(tabParam)) {
+        return tabParam;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (VALID_TABS.includes(hashWithoutPound as ActiveTab)) {
+    return hashWithoutPound as ActiveTab;
+  }
+
+  const tabParam = currentSearch?.get("tab") as ActiveTab | null;
+  if (tabParam && VALID_TABS.includes(tabParam)) {
+    return tabParam;
+  }
+
+  return "issues";
+};
+
 export const App: React.FC = () => {
   const searchParams =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const initialTabParam = searchParams?.get("tab") as ActiveTab | null;
   const initialArticleId = searchParams?.get("article");
 
   const getInitialTab = (): ActiveTab => {
-    const hash = window.location.hash.replace("#", "") as ActiveTab;
-    const validTabs: ActiveTab[] = [
-      "issues",
-      "articles",
-      "trends",
-      "demos",
-      "listings",
-      "packages",
-      "contributors",
-      "recipes",
-      "agent",
-      "review",
-      "flywheel",
-      "doctor",
-      "launch",
-      "playground",
-    ];
-    if (validTabs.includes(hash)) return hash;
-    return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
+    const rawHash = typeof window !== "undefined" ? window.location.hash : "";
+    const searchStr = typeof window !== "undefined" ? window.location.search : "";
+    return resolveActiveTabFromLocation(rawHash, searchStr);
   };
 
   const [activeTab, setActiveTabState] = useState<ActiveTab>(getInitialTab);
 
   const setActiveTab = (tab: ActiveTab) => {
     setActiveTabState(tab);
-    window.location.hash = tab;
+    if (tab === "playground") {
+      const currentHash = typeof window !== "undefined" ? window.location.hash : "";
+      if (!currentHash.includes("scenario=") && !currentHash.startsWith("#playground")) {
+        window.location.hash = "playground";
+      }
+    } else {
+      window.location.hash = tab;
+    }
   };
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
@@ -159,26 +208,10 @@ export const App: React.FC = () => {
     fetchAll();
 
     const handleHashChange = () => {
-      const hash = window.location.hash.replace("#", "") as ActiveTab;
-      const validTabs: ActiveTab[] = [
-        "issues",
-        "articles",
-        "trends",
-        "demos",
-        "listings",
-        "packages",
-        "contributors",
-        "recipes",
-        "agent",
-        "review",
-        "flywheel",
-        "doctor",
-        "launch",
-        "playground",
-      ];
-      if (validTabs.includes(hash)) {
-        setActiveTabState(hash);
-      }
+      const rawHash = typeof window !== "undefined" ? window.location.hash : "";
+      const searchStr = typeof window !== "undefined" ? window.location.search : "";
+      const resolved = resolveActiveTabFromLocation(rawHash, searchStr);
+      setActiveTabState(resolved);
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
@@ -688,7 +721,13 @@ export const App: React.FC = () => {
       backlinks: art.backlinks || [],
       citations: art.outbound_citations || [],
       status:
-        art.status === "Approved" ? "Approved" : art.status === "Rejected" ? "Rejected" : "Pending",
+        art.status === "Approved"
+          ? "Approved"
+          : art.status === "Rejected"
+            ? "Rejected"
+            : art.status === "Published"
+              ? "Published"
+              : "Pending",
       createdAt: art.created_at,
       rawId: art.id,
     }));
@@ -738,7 +777,9 @@ export const App: React.FC = () => {
             ? "Approved"
             : demo.status === "Rejected"
               ? "Rejected"
-              : "Pending",
+              : demo.status === "Published"
+                ? "Published"
+                : "Pending",
         createdAt: demo.created_at,
         rawId: demo.id,
       };
@@ -760,7 +801,9 @@ export const App: React.FC = () => {
           ? "Approved"
           : trend.status === "Rejected"
             ? "Rejected"
-            : "Pending",
+            : trend.status === "Published"
+              ? "Published"
+              : "Pending",
       createdAt: trend.created_at,
       rawId: trend.id,
     }));
@@ -846,6 +889,63 @@ export const App: React.FC = () => {
         console.error("Approve listing blurb error:", err);
       }
     }
+  };
+
+  const downloadReviewItemMarkdown = (item: ReviewItem) => {
+    const markdown = `# ${item.title}\n\n**Type:** ${item.type} | **Channel:** ${item.channel}\n\n${item.summary}\n\n---\n\n${item.content}\n\n**Backlinks:** ${item.backlinks.join(", ")}`;
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${item.type}_${item.rawId}_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleAutoPostReviewItem = async (item: ReviewItem) => {
+    if (item.type === "article") {
+      const res = await fetch(`/api/articles/${item.rawId}/auto-post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sync_hero_image: true, hero_format: "dual" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Auto-post failed for article ${item.rawId}`);
+      }
+    } else if (item.type === "listing_blurb") {
+      const res = await fetch(`/api/listings/${item.rawId}/submit-pr`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`Upstream PR dispatch failed for listing ${item.rawId}`);
+      }
+      const data = await res.json();
+      if (data.task_id) {
+        setTerminalTitle(`Automated Upstream PR Submission #${item.rawId}`);
+        setActiveTaskId(data.task_id);
+      }
+    } else if (item.type === "video_demo") {
+      const res = await fetch(`/api/demos/${item.rawId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Published" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Publish failed for video demo ${item.rawId}`);
+      }
+      downloadReviewItemMarkdown(item);
+    } else if (item.type === "trend_synthesis") {
+      const res = await fetch(`/api/trends/${item.rawId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Published" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Publish failed for trend synthesis ${item.rawId}`);
+      }
+      downloadReviewItemMarkdown(item);
+    }
+    fetchAll();
   };
 
   const handleRejectReviewItem = async (item: ReviewItem) => {
@@ -1073,6 +1173,7 @@ export const App: React.FC = () => {
             onReject={handleRejectReviewItem}
             onRefine={handleRefineReviewItem}
             onBatchPublish={handleBatchPublish}
+            onAutoPost={handleAutoPostReviewItem}
           />
         )}
         {activeTab === "trends" && (

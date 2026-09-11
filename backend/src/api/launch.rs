@@ -1,8 +1,7 @@
 use crate::api::issues::AppContext;
 use crate::db::{
-    AuthenticityAnalysis, BetaTester, GrowthState, LaunchCampaignState,
-    ProductHuntChecklistItem, ProductHuntKit, ShowHnState, SyndicationChecklistItem,
-    TimelineTask,
+    AuthenticityAnalysis, BetaTester, GrowthState, LaunchCampaignState, ShowHnState,
+    SyndicationChecklistItem, TimelineTask,
 };
 use axum::{
     extract::{Path, State},
@@ -45,12 +44,6 @@ pub struct UpdateShowHnRequest {
     pub title: Option<String>,
     pub maker_comment: Option<String>,
     pub url: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Default)]
-pub struct UpdateProductHuntRequest {
-    pub selected_tagline: Option<String>,
-    pub first_comment: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -402,66 +395,4 @@ pub async fn update_show_hn(
     let _ = state.save(&ctx.data_file);
 
     Ok((StatusCode::OK, Json(updated)))
-}
-
-pub async fn update_product_hunt(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<UpdateProductHuntRequest>,
-) -> Result<(StatusCode, Json<ProductHuntKit>), (StatusCode, Json<ErrorResponse>)> {
-    let mut state = ctx.state.write().await;
-
-    if state.launch_campaign.is_none() {
-        state.launch_campaign = Some(GrowthState::seed_launch_campaign(Utc::now()));
-    }
-
-    let campaign = state.launch_campaign.as_mut().unwrap();
-    if let Some(tagline) = payload.selected_tagline {
-        campaign.product_hunt.selected_tagline = tagline;
-    }
-    if let Some(comment) = payload.first_comment {
-        campaign.product_hunt.first_comment = comment;
-    }
-
-    let updated = campaign.product_hunt.clone();
-    let _ = state.save(&ctx.data_file);
-
-    Ok((StatusCode::OK, Json(updated)))
-}
-
-pub async fn toggle_product_hunt_checklist(
-    State(ctx): State<Arc<AppContext>>,
-    Path(id): Path<String>,
-    payload: Option<Json<ToggleChecklistRequest>>,
-) -> Result<(StatusCode, Json<ProductHuntChecklistItem>), (StatusCode, Json<ErrorResponse>)> {
-    let mut state = ctx.state.write().await;
-
-    if state.launch_campaign.is_none() {
-        state.launch_campaign = Some(GrowthState::seed_launch_campaign(Utc::now()));
-    }
-
-    let campaign = state.launch_campaign.as_mut().unwrap();
-    let item = campaign.product_hunt.checklist.iter_mut().find(|i| i.id == id);
-
-    let item = match item {
-        Some(i) => i,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: format!("Product Hunt checklist item with id '{}' not found", id),
-                }),
-            ));
-        }
-    };
-
-    if let Some(Json(req)) = payload {
-        item.completed = req.completed.unwrap_or(!item.completed);
-    } else {
-        item.completed = !item.completed;
-    }
-
-    let updated_item = item.clone();
-    let _ = state.save(&ctx.data_file);
-
-    Ok((StatusCode::OK, Json(updated_item)))
 }

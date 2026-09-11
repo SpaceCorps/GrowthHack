@@ -18,6 +18,19 @@ pub struct ContributorIssuesQuery {
     pub max_time: Option<u32>,
 }
 
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct GitHubUserSearchQuery {
+    #[serde(default)]
+    pub q: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitHubUserSummary {
+    pub login: String,
+    pub avatar_url: String,
+    pub html_url: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ClaimIssueRequest {
     pub contributor_name: String,
@@ -1058,6 +1071,80 @@ pub async fn verify_contributor(
         pr: pr_response,
         message: "Contributor verified successfully".to_string(),
     }))
+}
+
+pub async fn search_github_users(
+    State(ctx): State<Arc<AppContext>>,
+    Query(params): Query<GitHubUserSearchQuery>,
+) -> Result<Json<Vec<GitHubUserSummary>>, (StatusCode, Json<serde_json::Value>)> {
+    let clean_q = params.q.trim().trim_start_matches('@').trim();
+    if clean_q.chars().count() < 2 {
+        return Ok(Json(Vec::new()));
+    }
+
+    let base_url = std::env::var("GITHUB_API_BASE_URL")
+        .unwrap_or_else(|_| "https://api.github.com".to_string());
+    let url = format!("{}/search/users", base_url.trim_end_matches('/'));
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to build reqwest client for github user search: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Client error: {}", e) })),
+            ));
+        }
+    };
+
+    let mut req = client
+        .get(&url)
+        .query(&[("q", clean_q), ("per_page", "5")])
+        .header(reqwest::header::USER_AGENT, "GrowthHack-UpstreamWorker/0.1.0")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header("x-github-api-version", "2022-11-28");
+
+    if let Some(tok) = ctx.get_github_token() {
+        let tok_clean = tok.trim();
+        if !tok_clean.is_empty() {
+            req = req.header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", tok_clean),
+            );
+        }
+    }
+
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("GitHub user search request error: {}", e);
+            return Ok(Json(Vec::new()));
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let err_body = resp.text().await.unwrap_or_default();
+        tracing::warn!("GitHub user search returned status {}: {}", status, err_body);
+        return Ok(Json(Vec::new()));
+    }
+
+    #[derive(Deserialize)]
+    struct GitHubSearchResponse {
+        #[serde(default)]
+        items: Vec<GitHubUserSummary>,
+    }
+
+    match resp.json::<GitHubSearchResponse>().await {
+        Ok(search_res) => Ok(Json(search_res.items)),
+        Err(e) => {
+            tracing::warn!("Failed to parse GitHub user search response: {}", e);
+            Ok(Json(Vec::new()))
+        }
+    }
 }
 
 pub async fn handle_github_webhook(

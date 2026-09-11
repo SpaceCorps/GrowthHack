@@ -1327,9 +1327,16 @@ pub async fn record_star_click(State(ctx): State<Arc<AppContext>>) -> impl IntoR
     Json(state.playground_metrics.clone())
 }
 
-pub async fn get_banner_info() -> impl IntoResponse {
+pub async fn get_banner_info(Query(query): Query<ScenarioQuery>) -> impl IntoResponse {
+    let slug = query
+        .scenario_id
+        .as_deref()
+        .map(|s| s.strip_prefix("scenario-").unwrap_or(s))
+        .filter(|s| !s.is_empty())
+        .unwrap_or("health-check");
+
     let badge_url = "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white";
-    let target_url = "https://tendril.run/playground";
+    let target_url = format!("https://tendril.run/#scenario={}", slug);
     let markdown_snippet = format!(
         "[![Try Tendril in 30 Seconds]({})]({})",
         badge_url, target_url
@@ -1349,7 +1356,7 @@ pub async fn get_banner_info() -> impl IntoResponse {
     Json(BannerEmbedInfo {
         title: "Try Tendril in 30 Seconds Embed Banner".to_string(),
         badge_url: badge_url.to_string(),
-        target_url: target_url.to_string(),
+        target_url,
         markdown_snippet,
         html_snippet,
         raw_svg,

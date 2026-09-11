@@ -56,6 +56,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(articles::export_ivy_web),
         )
         .route(
+            "/api/articles/{id}/auto-post",
+            post(articles::auto_post_article),
+        )
+        .route(
             "/api/articles/{id}/sync-assets",
             post(articles::sync_assets),
         )
@@ -275,6 +279,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::generate_all_contributors_pr),
         )
         .route(
+            "/api/contributors/github-users",
+            get(contributors::search_github_users),
+        )
+        .route(
             "/api/webhooks/github",
             post(contributors::handle_github_webhook)
                 .layer(axum::middleware::from_fn_with_state(
@@ -319,11 +327,6 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/launch/overview", get(launch::get_launch_overview))
         .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
         .route("/api/launch/show-hn", put(launch::update_show_hn))
-        .route("/api/launch/product-hunt", put(launch::update_product_hunt))
-        .route(
-            "/api/launch/product-hunt/checklist/{id}",
-            put(launch::toggle_product_hunt_checklist),
-        )
         .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
         .route(
             "/api/launch/checklist/{id}",
