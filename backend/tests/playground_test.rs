@@ -27,6 +27,9 @@ fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
         ivy_web_content_path: temp_dir.clone(),
         ivy_web_images_path: temp_dir.clone(),
         config: growthhack_backend::config::Config::load(),
+        rate_limiter: Arc::new(
+            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
+        ),
     });
 
     (ctx, data_file)
