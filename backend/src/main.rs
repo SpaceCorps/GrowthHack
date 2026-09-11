@@ -28,6 +28,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runner = AgentRunner::new(config.agy_path.clone());
     let task_manager = TaskManager::new(runner);
 
+    let (metrics_debouncer, metrics_worker) = growthhack_backend::api::MetricsSyncDebouncer::new(
+        tokio::time::Duration::from_secs(3),
+        tokio::time::Duration::from_secs(15),
+    );
+    let metrics_debouncer = Arc::new(metrics_debouncer);
+
     let ctx = Arc::new(AppContext {
         state,
         task_manager,
@@ -38,7 +44,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::clone(&metrics_debouncer),
     });
+
+    metrics_worker.spawn(Arc::downgrade(&ctx));
 
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {

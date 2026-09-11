@@ -22,6 +22,7 @@ pub struct AppContext {
     pub ivy_web_images_path: std::path::PathBuf,
     pub config: Config,
     pub rate_limiter: std::sync::Arc<crate::api::middleware::rate_limit::IpRateLimiter>,
+    pub metrics_debouncer: std::sync::Arc<crate::api::metrics_debouncer::MetricsSyncDebouncer>,
 }
 
 impl Default for AppContext {
@@ -42,6 +43,9 @@ impl Default for AppContext {
             config: crate::config::Config::default(),
             rate_limiter: std::sync::Arc::new(
                 crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
+            metrics_debouncer: std::sync::Arc::new(
+                crate::api::metrics_debouncer::MetricsSyncDebouncer::default(),
             ),
         }
     }
