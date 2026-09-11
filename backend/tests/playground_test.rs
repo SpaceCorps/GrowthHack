@@ -30,6 +30,7 @@ fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::new(growthhack_backend::api::MetricsSyncDebouncer::default()),
     });
 
     (ctx, data_file)

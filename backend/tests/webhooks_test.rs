@@ -4,8 +4,10 @@ use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use growthhack_backend::api;
 use growthhack_backend::api::middleware::webhook_auth::compute_hmac_sha256;
+use growthhack_backend::api::MetricsSyncDebouncer;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -234,6 +236,62 @@ async fn test_webhook_rate_limiting_enforcement() {
     assert!(
         retry_after_header_present,
         "Retry-After header must be present on 429 response"
+    );
+}
+
+#[tokio::test]
+async fn test_webhook_debouncing_coalesces_concurrent_requests() {
+    let guard = common::create_test_context_with_file();
+    let (debouncer, worker) =
+        MetricsSyncDebouncer::new(Duration::from_millis(30), Duration::from_millis(60));
+    let debouncer = Arc::new(debouncer);
+
+    let mut ctx_val = (*guard).clone();
+    ctx_val.metrics_debouncer = Arc::clone(&debouncer);
+    let ctx = Arc::new(ctx_val);
+
+    worker.spawn(Arc::downgrade(&ctx));
+
+    let app = api::router(Arc::clone(&ctx));
+
+    // Dispatch 5 concurrent webhook POST requests
+    let mut handles = Vec::new();
+    for i in 0..5 {
+        let app_clone = app.clone();
+        handles.push(tokio::spawn(async move {
+            let payload = serde_json::json!({
+                "event": "article_updated",
+                "batch_id": i
+            });
+            app_clone
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/webhooks/syndication")
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+        }));
+    }
+
+    for handle in handles {
+        let response = handle.await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["received"], true);
+        assert_eq!(json["status"], "processed");
+    }
+
+    // Wait for debounce window (30ms) plus execution buffer
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_eq!(
+        debouncer.sync_count(),
+        1,
+        "Concurrent webhook burst should be coalesced into a single sync run"
     );
 }
 

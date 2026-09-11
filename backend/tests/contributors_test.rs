@@ -37,6 +37,7 @@ fn create_test_context() -> Arc<AppContext> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::new(growthhack_backend::api::MetricsSyncDebouncer::default()),
     })
 }
 
@@ -278,12 +279,8 @@ async fn test_claim_issue_with_github_sync_skipped_without_token() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     assert!(result.is_ok());
     let (status, Json(claimed_issue)) = result.unwrap();
@@ -410,12 +407,8 @@ async fn test_claim_issue_with_mock_github_client() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     std::env::remove_var("GITHUB_API_BASE_URL");
 
@@ -424,7 +417,10 @@ async fn test_claim_issue_with_mock_github_client() {
     assert_eq!(status, StatusCode::OK);
     assert!(claimed_issue.claimed);
     assert_eq!(claimed_issue.github_sync_status.as_deref(), Some("Synced"));
-    assert!(claimed_issue.github_sync_message.unwrap().contains("claimed"));
+    assert!(claimed_issue
+        .github_sync_message
+        .unwrap()
+        .contains("claimed"));
     assert_eq!(labels_hit.load(Ordering::SeqCst), 1);
     assert_eq!(assignees_hit.load(Ordering::SeqCst), 1);
     assert_eq!(comments_hit.load(Ordering::SeqCst), 1);
@@ -525,7 +521,10 @@ async fn test_generate_all_contributors_pr_payload() {
 
     assert_eq!(resp.branch_name, "docs/add-rocket-dev");
     assert_eq!(resp.file_path, ".all-contributorsrc");
-    assert_eq!(resp.pr_title, "docs: update .all-contributorsrc for @rocket-dev");
+    assert_eq!(
+        resp.pr_title,
+        "docs: update .all-contributorsrc for @rocket-dev"
+    );
     assert!(resp.pr_body.contains("@rocket-dev"));
     assert!(resp.pr_body.contains("doc, review"));
     assert!(resp.file_content.contains("rocket-dev"));
@@ -535,9 +534,11 @@ async fn test_generate_all_contributors_pr_payload() {
     assert_eq!(resp.cli_commands[0], "git checkout -b docs/add-rocket-dev");
     assert!(resp.cli_commands[1].starts_with("cat << 'EOF' > .all-contributorsrc"));
     assert_eq!(resp.cli_commands[2], "git add .all-contributorsrc");
-    assert!(resp.cli_commands[3].contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
+    assert!(resp.cli_commands[3]
+        .contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
     assert_eq!(resp.cli_commands[4], "git push origin docs/add-rocket-dev");
-    assert!(resp.cli_commands[5].starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
+    assert!(resp.cli_commands[5]
+        .starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
 }
 
 #[tokio::test]

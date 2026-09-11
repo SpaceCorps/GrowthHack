@@ -115,9 +115,15 @@ pub async fn update_article(
 ) -> (StatusCode, Json<Option<Article>>) {
     let mut state = ctx.state.write().await;
     if let Some(article) = state.articles.iter_mut().find(|a| a.id == id) {
-        let content_modified = payload.content.as_ref().is_some_and(|c| c != &article.content)
+        let content_modified = payload
+            .content
+            .as_ref()
+            .is_some_and(|c| c != &article.content)
             || payload.title.as_ref().is_some_and(|t| t != &article.title)
-            || payload.summary.as_ref().is_some_and(|s| s != &article.summary);
+            || payload
+                .summary
+                .as_ref()
+                .is_some_and(|s| s != &article.summary);
 
         if let Some(title) = payload.title {
             article.title = title;
@@ -2436,10 +2442,13 @@ pub async fn get_article_engagement_history(
         let velocity = calculate_engagement_velocity(&art.engagement_snapshots, now);
         (
             StatusCode::OK,
-            Json(serde_json::to_value(EngagementHistoryResponse {
-                snapshots: art.engagement_snapshots.clone(),
-                velocity,
-            }).unwrap()),
+            Json(
+                serde_json::to_value(EngagementHistoryResponse {
+                    snapshots: art.engagement_snapshots.clone(),
+                    velocity,
+                })
+                .unwrap(),
+            ),
         )
     } else {
         (
@@ -2506,12 +2515,7 @@ pub async fn handle_syndication_webhook(
         "Received syndication webhook event: {:?}",
         body.as_ref().map(|b| &b.0)
     );
-    let sync_ctx = Arc::clone(&ctx);
-    tokio::spawn(async move {
-        if let Err(e) = sync_all_metrics_internal(&sync_ctx).await {
-            tracing::warn!("Webhook-triggered metrics sync error: {}", e);
-        }
-    });
+    ctx.metrics_debouncer.trigger();
 
     (
         StatusCode::OK,
@@ -2626,6 +2630,9 @@ mod tests {
             config: crate::config::Config::load(),
             rate_limiter: std::sync::Arc::new(
                 crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
+            metrics_debouncer: std::sync::Arc::new(
+                crate::api::metrics_debouncer::MetricsSyncDebouncer::default(),
             ),
         });
 
