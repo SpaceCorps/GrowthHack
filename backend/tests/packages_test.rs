@@ -5,8 +5,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::api::packages::{
-    build_upstream_pr_commands, dispatch_package_pr, extract_pr_url, generate_manifest_content,
-    get_manifest, list_packages, update_package_status, DispatchPackagePrRequest, ManifestQuery,
+    build_upstream_pr_commands, dispatch_package_pr, extract_gh_account, extract_pr_url,
+    generate_manifest_content, get_gh_auth_status, get_manifest, list_packages,
+    parse_gh_auth_output, update_package_status, DispatchPackagePrRequest, ManifestQuery,
     ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
@@ -461,6 +462,7 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
     let payload = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
         notes: Some("Dispatching test PR for scoop".to_string()),
+        skip_auth_check: Some(true),
     };
 
     let (status, Json(response)) = dispatch_package_pr(
@@ -544,4 +546,107 @@ async fn test_pr_url_extraction_updates_state() {
         persisted_pkg.pr_url.as_deref(),
         Some("https://github.com/microsoft/winget-pkgs/pull/189204")
     );
+}
+
+#[tokio::test]
+async fn test_parse_gh_auth_status_success_and_account_extraction() {
+    let mock_stdout = r#"github.com
+  ✓ Logged in to github.com account spacecorps-dev (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'project', 'read:org', 'repo', 'workflow'
+"#;
+    let status = parse_gh_auth_output(true, mock_stdout, "");
+    assert!(status.authenticated);
+    assert_eq!(status.account.as_deref(), Some("spacecorps-dev"));
+    assert!(status.message.contains("@spacecorps-dev"));
+
+    // Also test alternate account line format
+    let account_found =
+        extract_gh_account("Logged in to github.com as account test-user-99 (keyring)");
+    assert_eq!(account_found.as_deref(), Some("test-user-99"));
+}
+
+#[tokio::test]
+async fn test_parse_gh_auth_status_failure_with_remediation_hint() {
+    let mock_stderr =
+        "You are not logged into any GitHub hosts. Run gh auth login to authenticate.";
+    let status = parse_gh_auth_output(false, "", mock_stderr);
+    assert!(!status.authenticated);
+    assert!(status.account.is_none());
+    assert!(status.message.contains("gh auth login"));
+
+    // Test failure without existing remediation command appends guidance
+    let status_raw_err = parse_gh_auth_output(false, "", "error: connection reset by peer");
+    assert!(!status_raw_err.authenticated);
+    assert!(status_raw_err
+        .message
+        .contains("Run 'gh auth login' to authenticate GitHub CLI."));
+}
+
+#[tokio::test]
+async fn test_get_gh_auth_status_endpoint() {
+    // 1. Test override to authenticated
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "authenticated:octocat");
+    let (status_ok, Json(auth_ok)) = get_gh_auth_status().await;
+    assert_eq!(status_ok, StatusCode::OK);
+    assert!(auth_ok.authenticated);
+    assert_eq!(auth_ok.account.as_deref(), Some("octocat"));
+    assert!(auth_ok.message.contains("@octocat"));
+
+    // 2. Test override to unauthenticated
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "unauthenticated");
+    let (status_unauth, Json(auth_unauth)) = get_gh_auth_status().await;
+    assert_eq!(status_unauth, StatusCode::OK);
+    assert!(!auth_unauth.authenticated);
+    assert!(auth_unauth.account.is_none());
+    assert!(auth_unauth.message.contains("gh auth login"));
+
+    std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_dispatch_package_pr_auth_check_and_skip() {
+    let ctx = common::create_test_context();
+
+    // 1. Simulate unauthenticated GitHub CLI environment
+    std::env::set_var("GH_AUTH_STATUS_OVERRIDE", "unauthenticated");
+
+    let payload_no_skip = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        notes: Some("Dispatching test PR".to_string()),
+        skip_auth_check: None,
+    };
+
+    let (status_failed, Json(response_failed)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload_no_skip),
+    )
+    .await;
+
+    assert_eq!(status_failed, StatusCode::PRECONDITION_FAILED);
+    let resp = response_failed.expect("Expected DispatchPackagePrResponse with error");
+    assert!(resp.message.contains("gh auth login"));
+
+    // 2. Dispatch with skip_auth_check: Some(true) succeeds despite unauthenticated state
+    let payload_skip = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        notes: Some("Dispatching test PR with override".to_string()),
+        skip_auth_check: Some(true),
+    };
+
+    let (status_accepted, Json(response_accepted)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.ctx()),
+        Json(payload_skip),
+    )
+    .await;
+
+    assert_eq!(status_accepted, StatusCode::ACCEPTED);
+    let resp_ok = response_accepted.expect("Expected accepted response");
+    assert!(resp_ok.task_id.starts_with("task-pkg-pr-"));
+
+    std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
 }

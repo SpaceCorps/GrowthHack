@@ -157,6 +157,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route(
+            "/api/packages/gh-auth-status",
+            get(packages::get_gh_auth_status),
+        )
+        .route(
             "/api/packages/{target}/manifest",
             get(packages::get_manifest),
         )
@@ -219,6 +223,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/demo/scenarios", get(demo::list_scenarios))
         .route("/api/demo/status", get(demo::get_status))
         .route("/api/demo/start", post(demo::start_demo))
+        .route("/api/demo/stream/{task_id}", get(demo::stream_demo_logs))
         .route("/api/demo/reset", post(demo::reset_demo))
         .route("/api/demo/diff", get(demo::get_diff))
         .route("/api/demo/metrics", get(demo::get_metrics))

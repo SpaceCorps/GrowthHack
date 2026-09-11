@@ -183,3 +183,48 @@ async fn test_demo_metrics_and_persistence() {
     let disk_state: Value = serde_json::from_str(&file_content).unwrap();
     assert_eq!(disk_state["onboarding_metrics"]["github_starred"], true);
 }
+
+#[tokio::test]
+async fn test_demo_sse_streaming() {
+    use futures_util::StreamExt;
+
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let task_id = "test-stream-123";
+    let tx = guard.task_manager.get_or_create_channel(task_id).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/demo/stream/{}", task_id))
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok()),
+        Some("text/event-stream")
+    );
+
+    let mut stream = response.into_body().into_data_stream();
+
+    // Broadcast a test log line
+    let test_msg = "[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...";
+    let _ = tx.send(test_msg.to_string());
+
+    if let Some(Ok(chunk)) = stream.next().await {
+        let chunk_str = String::from_utf8_lossy(&chunk);
+        assert!(chunk_str.contains("data:"));
+        assert!(chunk_str.contains(test_msg));
+    } else {
+        panic!("Expected SSE chunk from stream");
+    }
+}

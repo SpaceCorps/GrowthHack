@@ -4,8 +4,8 @@ use axum::extract::{Path, State};
 use axum::Json;
 use growthhack_backend::api::listings::{
     build_pr_submission_prompt, build_tailored_prompt, check_backlink_content, create_listing,
-    generate_batch_listings, list_listings, submit_listing_pr, update_listing, verify_backlink,
-    CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
+    extract_pr_url, generate_batch_listings, list_listings, submit_listing_pr, update_listing,
+    verify_backlink, CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
@@ -517,4 +517,139 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     assert_eq!(status, axum::http::StatusCode::OK);
     let updated = updated_opt.expect("Listing should exist");
     assert_eq!(updated.blurb_status, None);
+}
+
+#[tokio::test]
+async fn test_pr_submission_prompt_includes_pr_url_instruction() {
+    let listing = Listing {
+        id: "list-prompt-url-test".to_string(),
+        name: "testorg/testrepo".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/testrepo".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let prompt = build_pr_submission_prompt(&listing);
+    assert!(prompt.contains("[PR_URL] <pr_url>"));
+    assert!(prompt.contains("output the final PR URL on a single line starting with:"));
+}
+
+#[tokio::test]
+async fn test_listing_pr_url_extraction_and_state_update() {
+    let guard = common::create_test_context();
+
+    let listing_id = "list-extract-test".to_string();
+    let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: old_time,
+    };
+
+    {
+        let mut state = guard.state.write().await;
+        state.listings.push(test_listing);
+        let _ = state.save(&guard.data_file);
+    }
+
+    // 1. Verify tagged output extraction
+    let tagged_output =
+        "Creating pull request...\n[PR_URL] https://github.com/testorg/awesome-list/pull/42\nDone!";
+    let extracted_tagged = extract_pr_url(tagged_output);
+    assert_eq!(
+        extracted_tagged,
+        Some("https://github.com/testorg/awesome-list/pull/42".to_string())
+    );
+
+    // 2. Verify raw URL extraction without tag
+    let raw_output =
+        "PR created: https://github.com/testorg/awesome-list/pull/99 in branch feat/add-tendril";
+    let extracted_raw = extract_pr_url(raw_output);
+    assert_eq!(
+        extracted_raw,
+        Some("https://github.com/testorg/awesome-list/pull/99".to_string())
+    );
+
+    // 3. Verify state update and persistence to data_file
+    let pr_url = extracted_tagged.unwrap();
+    {
+        let mut state = guard.state.write().await;
+        if let Some(l) = state.listings.iter_mut().find(|l| l.id == listing_id) {
+            l.pr_url = Some(pr_url.clone());
+            l.status = "PR Submitted".to_string();
+            l.updated_at = chrono::Utc::now();
+        }
+        let _ = state.save(&guard.data_file);
+    }
+
+    // Read back from file
+    let loaded_state = GrowthState::load_or_init(&guard.data_file);
+    let updated_listing = loaded_state
+        .listings
+        .iter()
+        .find(|l| l.id == listing_id)
+        .expect("Listing should exist in persisted file");
+    assert_eq!(
+        updated_listing.pr_url,
+        Some("https://github.com/testorg/awesome-list/pull/42".to_string())
+    );
+    assert_eq!(updated_listing.status, "PR Submitted");
+    assert!(updated_listing.updated_at > old_time);
+}
+
+#[tokio::test]
+async fn test_submit_listing_pr_preserves_pr_url_on_resubmission() {
+    let ctx = common::create_test_context();
+
+    let listing_id = "list-resubmit-test".to_string();
+    let existing_pr_url = "https://github.com/testorg/awesome-list/pull/101".to_string();
+    let old_time = chrono::Utc::now() - chrono::Duration::hours(1);
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "PR Submitted".to_string(),
+        pr_url: Some(existing_pr_url.clone()),
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Already submitted once".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: old_time,
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+    }
+
+    // Call submit_listing_pr on already submitted listing
+    let (status, Json(resp)) =
+        submit_listing_pr(Path(listing_id.clone()), State(ctx.ctx())).await;
+    assert_eq!(status, axum::http::StatusCode::ACCEPTED);
+    assert!(!resp.task_id.is_empty());
+
+    let state = ctx.state.read().await;
+    let listing = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    // Existing pr_url is preserved
+    assert_eq!(listing.pr_url, Some(existing_pr_url));
+    assert_eq!(listing.status, "PR Submitted");
+    assert!(listing.updated_at > old_time);
 }
