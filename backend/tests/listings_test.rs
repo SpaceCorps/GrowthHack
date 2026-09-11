@@ -708,7 +708,7 @@ async fn test_sync_listing_pr_statuses_transitions_to_live() {
     let (server_url, _handle) = start_mock_github_pulls_server().await;
     std::env::set_var("GITHUB_API_BASE_URL", &server_url);
 
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
     let listing_id = "list-merge-test-42".to_string();
     let test_listing = Listing {
@@ -757,7 +757,7 @@ async fn test_sync_listing_pr_statuses_leaves_open_prs() {
     let (server_url, _handle) = start_mock_github_pulls_server().await;
     std::env::set_var("GITHUB_API_BASE_URL", &server_url);
 
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
     let listing_id = "list-open-test-43".to_string();
     let test_listing = Listing {
@@ -801,7 +801,7 @@ async fn test_sync_listing_prs_endpoint() {
     let (server_url, _handle) = start_mock_github_pulls_server().await;
     std::env::set_var("GITHUB_API_BASE_URL", &server_url);
 
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
     let listing_id = "list-endpoint-test-44".to_string();
     let test_listing = Listing {
@@ -852,7 +852,7 @@ async fn test_sync_listing_prs_endpoint() {
 
 #[tokio::test]
 async fn test_github_pr_webhook_transitions_listing() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
     let listing_id = "list-webhook-test-50".to_string();
     let test_listing = Listing {

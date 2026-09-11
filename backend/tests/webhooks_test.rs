@@ -5,6 +5,7 @@ use axum::http::{Request, StatusCode};
 use growthhack_backend::api;
 use growthhack_backend::api::middleware::webhook_auth::compute_hmac_sha256;
 use serde_json::Value;
+use std::sync::Arc;
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -238,7 +239,7 @@ async fn test_webhook_rate_limiting_enforcement() {
 
 #[tokio::test]
 async fn test_github_webhook_ping_event() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let app = api::router(guard.ctx());
 
     let payload = serde_json::json!({
@@ -268,7 +269,7 @@ async fn test_github_webhook_ping_event() {
 
 #[tokio::test]
 async fn test_github_webhook_unassigned_syncs_local_state() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
 
     // Claim cf-issue-1 first
@@ -343,7 +344,7 @@ async fn test_github_webhook_unassigned_syncs_local_state() {
 
 #[tokio::test]
 async fn test_github_webhook_closed_syncs_local_state() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
 
     let app = api::router(Arc::clone(&ctx));
@@ -401,7 +402,7 @@ async fn test_github_webhook_closed_syncs_local_state() {
 
 #[tokio::test]
 async fn test_github_webhook_reopened_syncs_local_state() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
 
     // Mark issue 14 as closed first
@@ -471,7 +472,7 @@ async fn test_github_webhook_reopened_syncs_local_state() {
 
 #[tokio::test]
 async fn test_github_webhook_unmatched_issue_returns_ok() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
 
     let app = api::router(ctx);
@@ -511,7 +512,7 @@ async fn test_github_webhook_unmatched_issue_returns_ok() {
 
 #[tokio::test]
 async fn test_github_webhook_hmac_authentication() {
-    let guard = common::create_test_context_with_file();
+    let guard = common::create_test_context();
     let ctx = guard.ctx();
     let secret = "github_webhook_secret_key_123";
     {

@@ -32,6 +32,10 @@ pub struct PlaygroundScenario {
     pub file_tree: Vec<WorktreeFileNode>,
     pub diff: String,
     pub pr_summary: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub issue_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -54,7 +58,7 @@ pub struct VerificationGateItem {
 pub struct PlaygroundRunState {
     pub id: String,
     pub scenario_id: String,
-    pub status: String, // "Idle", "Running", "Completed", "Failed"
+    pub status: String,      // "Idle", "Running", "Completed", "Failed"
     pub current_step: usize, // 1: Intake, 2: Worktree, 3: Verification, 4: PR & Diff
     pub step_progress_pct: u32,
     pub logs: Vec<String>,
@@ -125,7 +129,8 @@ fn get_playground_state() -> Arc<RwLock<PlaygroundRunState>> {
                 step_progress_pct: 0,
                 logs: vec![
                     "tendril.run interactive browser sandbox ready.".to_string(),
-                    "Select a scenario or import a GitHub issue to test the 30-second loop.".to_string(),
+                    "Select a scenario or import a GitHub issue to test the 30-second loop."
+                        .to_string(),
                 ],
                 verification_gates: default_verification_gates(),
                 diff_preview: None,
@@ -329,6 +334,8 @@ Implemented lightweight `/api/health` diagnostic route returning system status, 
 - Executed in ephemeral worktree: `.tendril/Worktrees/growthhack-demo`
 - Base commit: `origin/master` (0 conflicts)
 "#.to_string(),
+            labels: vec!["backend".to_string(), "api".to_string(), "metrics".to_string()],
+            issue_url: None,
         },
         PlaygroundScenario {
             id: "scenario-rate-limiter".to_string(),
@@ -415,6 +422,8 @@ Integrated Tower RateLimitLayer enforcing a 100 req/min threshold across public 
 - **NpmBuild**: Clean
 - **CheckResult**: Verified.
 "#.to_string(),
+            labels: vec!["backend".to_string(), "middleware".to_string(), "security".to_string()],
+            issue_url: None,
         },
         PlaygroundScenario {
             id: "scenario-terminal-theme".to_string(),
@@ -475,6 +484,8 @@ Enhanced terminal theme with accessibility-focused color contrast and Tailwind C
 - **Screenshots**: Captured UI verification evidence.
 - **CheckResult**: Verified.
 "#.to_string(),
+            labels: vec!["frontend".to_string(), "ui".to_string(), "accessibility".to_string()],
+            issue_url: None,
         },
     ]
 }
@@ -486,14 +497,109 @@ pub async fn list_scenarios() -> impl IntoResponse {
     Json(all)
 }
 
+#[derive(Deserialize, Debug)]
+struct GitHubLabel {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubIssueMetadata {
+    title: String,
+    body: Option<String>,
+    #[serde(default)]
+    labels: Vec<GitHubLabel>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    html_url: Option<String>,
+}
+
+pub fn parse_github_issue_url(url: &str) -> Option<(String, String, u64)> {
+    let clean_url = url.trim();
+    let after_scheme = if let Some(stripped) = clean_url.strip_prefix("https://") {
+        stripped
+    } else if let Some(stripped) = clean_url.strip_prefix("http://") {
+        stripped
+    } else {
+        clean_url
+    };
+
+    let without_anchor = after_scheme.split('#').next().unwrap_or(after_scheme);
+    let without_query = without_anchor.split('?').next().unwrap_or(without_anchor);
+    let trimmed = without_query.trim_end_matches('/');
+
+    let parts: Vec<&str> = trimmed.split('/').collect();
+    let domain_idx = parts
+        .iter()
+        .position(|&p| p == "github.com" || p == "www.github.com")?;
+    if parts.len() >= domain_idx + 5 {
+        let owner = parts[domain_idx + 1];
+        let repo = parts[domain_idx + 2];
+        let issues_segment = parts[domain_idx + 3];
+        let num_str = parts[domain_idx + 4];
+
+        if issues_segment == "issues" && !owner.is_empty() && !repo.is_empty() {
+            if let Ok(issue_num) = num_str.parse::<u64>() {
+                return Some((owner.to_string(), repo.to_string(), issue_num));
+            }
+        }
+    }
+    None
+}
+
+async fn fetch_github_issue_metadata(
+    owner: &str,
+    repo: &str,
+    issue_number: u64,
+    token: &str,
+) -> Result<GitHubIssueMetadata, reqwest::Error> {
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let res = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "GrowthHack-Playground/0.1.0")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?;
+
+    if !res.status().is_success() {
+        return Err(res.error_for_status().unwrap_err());
+    }
+
+    res.json::<GitHubIssueMetadata>().await
+}
+
 pub async fn import_issue(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<ImportIssueRequest>,
 ) -> impl IntoResponse {
     let issue_id = format!("custom-{}", Uuid::new_v4().simple());
+
+    let parsed_coords = payload
+        .issue_url
+        .as_deref()
+        .and_then(parse_github_issue_url);
+    let mut live_metadata: Option<GitHubIssueMetadata> = None;
+
+    if let Some((ref owner, ref repo, issue_num)) = parsed_coords {
+        if let Some(token) = ctx.get_github_token() {
+            if let Ok(meta) = fetch_github_issue_metadata(owner, repo, issue_num, &token).await {
+                live_metadata = Some(meta);
+            }
+        }
+    }
+
+    let labels: Vec<String> = live_metadata
+        .as_ref()
+        .map(|m| m.labels.iter().map(|l| l.name.clone()).collect())
+        .unwrap_or_default();
+
     let title = payload
         .title
         .filter(|t| !t.trim().is_empty())
+        .or_else(|| live_metadata.as_ref().map(|m| m.title.clone()))
         .or_else(|| {
             payload.issue_url.as_ref().map(|url| {
                 let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
@@ -510,12 +616,48 @@ pub async fn import_issue(
         .description
         .filter(|d| !d.trim().is_empty())
         .or_else(|| {
+            live_metadata
+                .as_ref()
+                .and_then(|m| m.body.clone())
+                .filter(|b| !b.trim().is_empty())
+                .map(|b| {
+                    if b.len() > 500 {
+                        format!("{}...", &b[..500])
+                    } else {
+                        b
+                    }
+                })
+        })
+        .or_else(|| {
             payload
                 .issue_url
                 .as_ref()
                 .map(|url| format!("Autonomous implementation synthesized from issue: {}", url))
         })
-        .unwrap_or_else(|| "Simulated custom developer workflow and test verification.".to_string());
+        .unwrap_or_else(|| {
+            "Simulated custom developer workflow and test verification.".to_string()
+        });
+
+    let label_lines = if labels.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n## Labels\n{}\n",
+            labels
+                .iter()
+                .map(|l| format!("- `{}`", l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    let diff_labels_comment = if labels.is_empty() {
+        String::new()
+    } else {
+        format!("\n// Labels: [{}]", labels.join(", "))
+    };
+
+    let issue_url = payload.issue_url.clone();
 
     let scenario = PlaygroundScenario {
         id: issue_id.clone(),
@@ -578,16 +720,18 @@ index 0000000..8a9b1c2
 --- /dev/null
 +++ b/backend/src/api/feature.rs
 @@ -0,0 +1,15 @@
-+// Feature implementation for {}
++// Feature implementation for {}{}
 +pub fn execute_feature() -> bool {{
 +    true
 +}}"#,
-            title
+            title, diff_labels_comment
         ),
         pr_summary: format!(
-            "# Pull Request: {}\n\n## Changes\n{}\n\n## Verifications Passed\n- RustClippy: Pass\n- RustTest: Pass\n- NpmLint: Pass\n- CheckResult: Pass\n",
-            title, description
+            "# Pull Request: {}\n\n## Changes\n{}\n{}\n## Verifications Passed\n- RustClippy: Pass\n- RustTest: Pass\n- NpmLint: Pass\n- CheckResult: Pass\n",
+            title, description, label_lines
         ),
+        labels,
+        issue_url,
     };
 
     {
@@ -671,9 +815,14 @@ pub async fn start_simulation(
         s.step_progress_pct = 25;
         s.speed_multiplier = speed;
         s.logs = vec![
-            format!("[00:01] Initializing Tendril autonomous agent for '{}'...", active_scenario.title),
-            "[00:03] Step 1/4 (Intake): Analyzing task specification and acceptance criteria...".to_string(),
-            "[00:05] Step 1/4 (Intake): Target branch identified as 'master'. Plan validated.".to_string(),
+            format!(
+                "[00:01] Initializing Tendril autonomous agent for '{}'...",
+                active_scenario.title
+            ),
+            "[00:03] Step 1/4 (Intake): Analyzing task specification and acceptance criteria..."
+                .to_string(),
+            "[00:05] Step 1/4 (Intake): Target branch identified as 'master'. Plan validated."
+                .to_string(),
         ];
         s.verification_gates = default_verification_gates();
         s.diff_preview = None;
@@ -702,7 +851,10 @@ pub async fn start_simulation(
             s.step_progress_pct = 50;
             s.elapsed_seconds = 14.8;
             s.logs.push("[00:10] Step 2/4 (Worktree): Provisioning ephemeral git worktree at 'Worktrees/spacecorps/growthhack'...".to_string());
-            s.logs.push(format!("[00:13] Step 2/4 (Worktree): Checked out branch 'tendril/{}' from origin/master.", scenario_for_bg.id));
+            s.logs.push(format!(
+                "[00:13] Step 2/4 (Worktree): Checked out branch 'tendril/{}' from origin/master.",
+                scenario_for_bg.id
+            ));
             s.logs.push("[00:15] Step 2/4 (Worktree): Zero uncommitted changes. Worktree sandbox isolation confirmed.".to_string());
             for gate in &mut s.verification_gates {
                 gate.status = "Running".to_string();
@@ -720,7 +872,10 @@ pub async fn start_simulation(
             s.current_step = 3;
             s.step_progress_pct = 75;
             s.elapsed_seconds = 23.4;
-            s.logs.push("[00:18] Step 3/4 (Verification Gates): Running automated test and lint suite...".to_string());
+            s.logs.push(
+                "[00:18] Step 3/4 (Verification Gates): Running automated test and lint suite..."
+                    .to_string(),
+            );
             s.logs.push("[00:20] Step 3/4 (Verification Gates): RustClippy -> cargo clippy -- -D warnings [PASS]".to_string());
             s.logs.push("[00:22] Step 3/4 (Verification Gates): RustTest -> cargo test [PASS: 36 passed, 0 failed]".to_string());
             s.logs.push("[00:24] Step 3/4 (Verification Gates): NpmLint -> vp check [PASS: clean formatting]".to_string());
@@ -730,9 +885,12 @@ pub async fn start_simulation(
                 gate.status = "Passed".to_string();
                 gate.duration_ms = 850 + (idx as u64 * 320);
                 gate.output = match gate.name.as_str() {
-                    "RustClippy" => "cargo clippy -- -D warnings: 0 warnings, clean build.".to_string(),
+                    "RustClippy" => {
+                        "cargo clippy -- -D warnings: 0 warnings, clean build.".to_string()
+                    }
                     "RustTest" => "cargo test: 36 passed, 0 failed, 0 filtered out.".to_string(),
-                    "NpmLint" => "vp fmt --check && vp lint: 0 errors found in TypeScript modules.".to_string(),
+                    "NpmLint" => "vp fmt --check && vp lint: 0 errors found in TypeScript modules."
+                        .to_string(),
                     "NpmBuild" => "vp build: Production bundle generated successfully.".to_string(),
                     _ => "All verification criteria passed without defects.".to_string(),
                 };
@@ -750,10 +908,22 @@ pub async fn start_simulation(
             s.step_progress_pct = 100;
             s.status = "Completed".to_string();
             s.elapsed_seconds = 28.6;
-            s.logs.push(format!("[00:27] Step 4/4 (PR & Diff): Generating commit for '{}'...", scenario_for_bg.title));
-            s.logs.push("[00:28] Step 4/4 (PR & Diff): Unified Git diff preview synthesized cleanly.".to_string());
-            s.logs.push("[00:29] Step 4/4 (PR & Diff): Pull request opened with 0 merge conflicts.".to_string());
-            s.logs.push("[00:30] Workflow execution completed successfully in 28.6s! All 5 gates green.".to_string());
+            s.logs.push(format!(
+                "[00:27] Step 4/4 (PR & Diff): Generating commit for '{}'...",
+                scenario_for_bg.title
+            ));
+            s.logs.push(
+                "[00:28] Step 4/4 (PR & Diff): Unified Git diff preview synthesized cleanly."
+                    .to_string(),
+            );
+            s.logs.push(
+                "[00:29] Step 4/4 (PR & Diff): Pull request opened with 0 merge conflicts."
+                    .to_string(),
+            );
+            s.logs.push(
+                "[00:30] Workflow execution completed successfully in 28.6s! All 5 gates green."
+                    .to_string(),
+            );
             s.diff_preview = Some(scenario_for_bg.diff.clone());
             s.pr_summary = Some(scenario_for_bg.pr_summary.clone());
         }
