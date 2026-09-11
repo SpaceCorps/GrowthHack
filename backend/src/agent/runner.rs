@@ -5,6 +5,7 @@ use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
 pub const DEFAULT_PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Debug)]
 pub struct AgentRunner {
@@ -64,7 +65,7 @@ impl AgentRunner {
         // On Windows, avoid opening a new console window if running as GUI
         #[cfg(windows)]
         {
-            // standard execution
+            cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
         let mut child = match cmd.spawn() {
@@ -226,5 +227,10 @@ mod tests {
             received_error,
             "Broadcast receiver should have received timeout [ERROR] event"
         );
+    }
+
+    #[test]
+    fn test_create_no_window_constant() {
+        assert_eq!(CREATE_NO_WINDOW, 0x08000000);
     }
 }
