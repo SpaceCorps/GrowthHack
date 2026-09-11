@@ -392,6 +392,40 @@ impl GitHubClient {
         Ok(())
     }
 
+    pub async fn create_or_update_file(
+        &self,
+        user: &str,
+        repo: &str,
+        path: &str,
+        branch: &str,
+        message: &str,
+        content: &str,
+    ) -> Result<(), String> {
+        let sha_opt = match self.get_file_content(user, repo, path, branch).await {
+            Ok((_, sha)) => Some(sha),
+            Err(_) => None,
+        };
+
+        let url = format!("{}/repos/{}/{}/contents/{}", self.base_url, user, repo, path);
+        let encoded = BASE64_STANDARD.encode(content.as_bytes());
+        let mut body = serde_json::json!({
+            "message": message,
+            "content": encoded,
+            "branch": branch,
+        });
+        if let Some(sha) = sha_opt {
+            body["sha"] = serde_json::json!(sha);
+        }
+
+        let resp = self.client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("PUT /contents/{} failed ({}): {}", path, status, text));
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn create_pull_request(
         &self,

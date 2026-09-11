@@ -110,7 +110,9 @@ steps:
   // Resolve dynamic CLI snippet in configurator
   const resolvedCliSnippet = useMemo(() => {
     if (!configRecipe) return "";
-    let snippet = configRecipe.cli_snippet || `tendril run recipe/${configRecipe.slug}`;
+    let snippet =
+      configRecipe.cli_snippet ||
+      `curl -s -X POST http://localhost:4200/api/recipes/${configRecipe.slug}/run`;
     const appliedKeys: string[] = [];
 
     configRecipe.parameters.forEach((param) => {
@@ -184,7 +186,7 @@ steps:
           param_type: "string",
         },
       ],
-      cli_snippet: `tendril run recipe/${submitSlug} --target=<target>`,
+      cli_snippet: `curl -s -X POST http://localhost:4200/api/recipes/${submitSlug}/run -H "Content-Type: application/json" -d '{"parameters":{"target":"<target>"}}'`,
     };
 
     try {
@@ -411,10 +413,17 @@ steps:
               <div className="space-y-2 mt-5 pt-4 border-t border-slate-800">
                 {/* 1-Click Copy CLI trigger */}
                 <button
-                  onClick={() => handleCopy(`tendril run recipe/${recipe.slug}`, recipe.id)}
+                  onClick={() =>
+                    handleCopy(
+                      `curl -s -X POST http://localhost:4200/api/recipes/${recipe.slug}/run`,
+                      recipe.id,
+                    )
+                  }
                   className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 font-mono text-xs text-slate-200 transition-colors"
                 >
-                  <span className="truncate mr-2">tendril run recipe/{recipe.slug}</span>
+                  <span className="truncate mr-2">
+                    curl -s -X POST http://localhost:4200/api/recipes/{recipe.slug}/run
+                  </span>
                   <span className="flex-shrink-0 text-slate-400 group-hover:text-white">
                     {copiedSlug === recipe.id ? (
                       <span className="flex items-center gap-1 text-emerald-400 font-sans font-medium text-[11px]">

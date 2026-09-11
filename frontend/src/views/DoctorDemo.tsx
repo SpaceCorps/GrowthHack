@@ -28,7 +28,10 @@ import {
   X,
   Layers,
   Plus,
+  Search,
 } from "lucide-react";
+
+export type TerminalStepFilter = "all" | "intake" | "worktree" | "verification" | "pr_diff";
 
 export const DoctorDemo: React.FC = () => {
   // Diagnostic State
@@ -67,6 +70,10 @@ export const DoctorDemo: React.FC = () => {
   const [submittingScenario, setSubmittingScenario] = useState<boolean>(false);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<OnboardingMetrics | null>(null);
+
+  // Terminal Drawer Filter State
+  const [terminalStepFilter, setTerminalStepFilter] = useState<TerminalStepFilter>("all");
+  const [terminalSearchQuery, setTerminalSearchQuery] = useState<string>("");
 
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -306,6 +313,8 @@ export const DoctorDemo: React.FC = () => {
         const data: DemoRunState = await res.json();
         setDemoState(data);
         setShowCelebrationModal(false);
+        setTerminalStepFilter("all");
+        setTerminalSearchQuery("");
       }
     } catch (err) {
       console.error("Failed to reset demo simulator:", err);
@@ -394,6 +403,46 @@ export const DoctorDemo: React.FC = () => {
   const filteredChecks = report?.checks.filter((check) => {
     if (categoryFilter === "all") return true;
     return check.category === categoryFilter;
+  });
+
+  const filteredLogs = demoState.logs.filter((log) => {
+    if (terminalStepFilter !== "all") {
+      const lower = log.toLowerCase();
+      if (
+        terminalStepFilter === "intake" &&
+        !lower.includes("step 1") &&
+        !lower.includes("intake")
+      ) {
+        return false;
+      }
+      if (
+        terminalStepFilter === "worktree" &&
+        !lower.includes("step 2") &&
+        !lower.includes("worktree")
+      ) {
+        return false;
+      }
+      if (
+        terminalStepFilter === "verification" &&
+        !lower.includes("step 3") &&
+        !lower.includes("verification")
+      ) {
+        return false;
+      }
+      if (
+        terminalStepFilter === "pr_diff" &&
+        !lower.includes("step 4") &&
+        !lower.includes("pr diff")
+      ) {
+        return false;
+      }
+    }
+    if (terminalSearchQuery.trim() !== "") {
+      if (!log.toLowerCase().includes(terminalSearchQuery.trim().toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
   });
 
   const steps = [
@@ -809,25 +858,100 @@ export const DoctorDemo: React.FC = () => {
             )}
           </div>
 
-          <div className="p-4 font-mono text-xs text-slate-300 h-52 overflow-y-auto space-y-1.5">
-            {demoState.logs.map((log, idx) => (
-              <div key={idx} className="leading-relaxed flex items-start gap-2">
-                <span className="text-slate-600 select-none">&gt;</span>
-                <span
-                  className={
-                    log.includes("PASS")
-                      ? "text-emerald-400 font-semibold"
-                      : log.includes("Error")
-                        ? "text-rose-400"
-                        : log.includes("Step")
-                          ? "text-cyan-300 font-medium"
-                          : "text-slate-300"
-                  }
+          {/* Terminal Controls Toolbar */}
+          <div className="bg-slate-900/60 px-4 py-2 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+            {/* Quick Step Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "all", label: "All" },
+                { id: "intake", label: "Intake" },
+                { id: "worktree", label: "Worktree" },
+                { id: "verification", label: "Verification" },
+                { id: "pr_diff", label: "PR Diff" },
+              ].map((step) => (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => setTerminalStepFilter(step.id as TerminalStepFilter)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                    terminalStepFilter === step.id
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                      : "bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-transparent"
+                  }`}
                 >
-                  {log}
-                </span>
+                  {step.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Filter and Count / Reset */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={terminalSearchQuery}
+                  onChange={(e) => setTerminalSearchQuery(e.target.value)}
+                  placeholder="Filter logs..."
+                  className="bg-slate-950 border border-slate-800 rounded-lg pl-7 pr-7 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 transition-colors w-36 sm:w-44"
+                />
+                {terminalSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTerminalSearchQuery("")}
+                    aria-label="Clear search"
+                    className="absolute right-2 text-slate-400 hover:text-slate-200"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
-            ))}
+
+              {(terminalStepFilter !== "all" || terminalSearchQuery.trim() !== "") && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-mono">
+                    Showing {filteredLogs.length} of {demoState.logs.length} logs
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTerminalStepFilter("all");
+                      setTerminalSearchQuery("");
+                    }}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 underline font-medium"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="p-4 font-mono text-xs text-slate-300 h-52 overflow-y-auto space-y-1.5">
+            {filteredLogs.length === 0 ? (
+              <div className="text-slate-500 italic py-4 text-center">
+                No log lines matching active filter.
+              </div>
+            ) : (
+              filteredLogs.map((log, idx) => (
+                <div key={idx} className="leading-relaxed flex items-start gap-2">
+                  <span className="text-slate-600 select-none">&gt;</span>
+                  <span
+                    className={
+                      log.includes("PASS")
+                        ? "text-emerald-400 font-semibold"
+                        : log.includes("Error")
+                          ? "text-rose-400"
+                          : log.includes("Step")
+                            ? "text-cyan-300 font-medium"
+                            : "text-slate-300"
+                    }
+                  >
+                    {log}
+                  </span>
+                </div>
+              ))
+            )}
             <div ref={logsEndRef} />
           </div>
         </div>

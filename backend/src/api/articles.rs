@@ -1,12 +1,12 @@
 use crate::api::issues::AppContext;
-use crate::db::{Article, EngagementMetrics, ExportRecord};
+use crate::db::{Article, EngagementMetrics, EngagementSnapshot, ExportRecord};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -101,6 +101,7 @@ pub async fn create_article(
         slug: Some(slug),
         exports: Vec::new(),
         engagement: None,
+        engagement_snapshots: Vec::new(),
     };
     state.articles.push(new_article.clone());
     let _ = state.save(&ctx.data_file);
@@ -478,6 +479,7 @@ pub async fn generate_article(
                     slug: Some(slug),
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -552,6 +554,7 @@ pub async fn generate_spotlight(
                     slug: None,
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -804,11 +807,7 @@ pub fn sync_hero_asset(
         category
     );
 
-    let blog_dir = if target_images_dir
-        .file_name()
-        .and_then(|f| f.to_str())
-        == Some("blog")
-    {
+    let blog_dir = if target_images_dir.file_name().and_then(|f| f.to_str()) == Some("blog") {
         target_images_dir.to_path_buf()
     } else {
         target_images_dir.join("blog")
@@ -898,11 +897,8 @@ pub async fn export_ivy_web(
         }
 
         let file_path = target_dir.join(format!("{}.mdoc", slug));
-        let post_content = generate_ivy_web_post_with_options(
-            article,
-            &slug,
-            payload.hero_format.as_deref(),
-        );
+        let post_content =
+            generate_ivy_web_post_with_options(article, &slug, payload.hero_format.as_deref());
 
         if let Err(e) = std::fs::write(&file_path, &post_content) {
             return (
@@ -927,7 +923,9 @@ pub async fn export_ivy_web(
                 Err(e) => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) })),
+                        Json(
+                            serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) }),
+                        ),
                     );
                 }
             }
@@ -948,14 +946,17 @@ pub async fn export_ivy_web(
 
         (
             StatusCode::OK,
-            Json(serde_json::to_value(ExportIvyWebResponse {
-                success: true,
-                file_path: file_path.to_string_lossy().to_string(),
-                slug,
-                post_content,
-                record,
-                image_path: image_path_str,
-            }).unwrap()),
+            Json(
+                serde_json::to_value(ExportIvyWebResponse {
+                    success: true,
+                    file_path: file_path.to_string_lossy().to_string(),
+                    slug,
+                    post_content,
+                    record,
+                    image_path: image_path_str,
+                })
+                .unwrap(),
+            ),
         )
     } else {
         (
@@ -985,11 +986,14 @@ pub async fn sync_assets(
         match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
             Ok(img_path) => (
                 StatusCode::OK,
-                Json(serde_json::to_value(SyncAssetsResponse {
-                    success: true,
-                    image_path: img_path.to_string_lossy().to_string(),
-                    slug,
-                }).unwrap()),
+                Json(
+                    serde_json::to_value(SyncAssetsResponse {
+                        success: true,
+                        image_path: img_path.to_string_lossy().to_string(),
+                        slug,
+                    })
+                    .unwrap(),
+                ),
             ),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1022,16 +1026,14 @@ pub async fn get_hero_banner_svg(
         let title = query.title.as_deref().unwrap_or(&article.title);
         let category = query.category.as_deref().unwrap_or(&article.angle);
         let summary = query.summary.as_deref().unwrap_or(&article.summary);
-        let svg = generate_hero_banner_svg(
-            title,
-            category,
-            summary,
-            query.theme.as_deref(),
-        );
+        let svg = generate_hero_banner_svg(title, category, summary, query.theme.as_deref());
 
         (
             StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "image/svg+xml; charset=utf-8",
+            )],
             svg,
         )
             .into_response()
@@ -1075,11 +1077,7 @@ pub async fn upload_hero_image(
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
 
-        let blog_dir = if images_dir
-            .file_name()
-            .and_then(|f| f.to_str())
-            == Some("blog")
-        {
+        let blog_dir = if images_dir.file_name().and_then(|f| f.to_str()) == Some("blog") {
             images_dir
         } else {
             images_dir.join("blog")
@@ -1121,22 +1119,21 @@ pub async fn upload_hero_image(
         }
 
         let svg_path = blog_dir.join(format!("{}-hero.svg", slug));
-        let svg_content = generate_hero_banner_svg(
-            &article.title,
-            &article.angle,
-            &article.summary,
-            None,
-        );
+        let svg_content =
+            generate_hero_banner_svg(&article.title, &article.angle, &article.summary, None);
         let _ = std::fs::write(&svg_path, svg_content);
 
         (
             StatusCode::OK,
-            Json(serde_json::to_value(UploadHeroImageResponse {
-                success: true,
-                image_path: dest_png.to_string_lossy().to_string(),
-                slug,
-                bytes_written: image_bytes.len(),
-            }).unwrap()),
+            Json(
+                serde_json::to_value(UploadHeroImageResponse {
+                    success: true,
+                    image_path: dest_png.to_string_lossy().to_string(),
+                    slug,
+                    bytes_written: image_bytes.len(),
+                })
+                .unwrap(),
+            ),
         )
             .into_response()
     } else {
@@ -1207,6 +1204,8 @@ pub struct SyndicationSettingsResponse {
     pub hashnode_key_preview: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: bool,
+    pub webhook_secret_configured: bool,
+    pub webhook_secret_preview: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -1215,6 +1214,7 @@ pub struct UpdateSyndicationSettingsRequest {
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: Option<bool>,
+    pub webhook_secret: Option<String>,
 }
 
 fn mask_api_key(key: Option<&str>) -> (bool, Option<String>) {
@@ -1250,9 +1250,15 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1261,6 +1267,8 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -1295,6 +1303,13 @@ pub async fn update_syndication_settings(
     if let Some(pad) = payload.publish_as_draft {
         state.syndication_settings.publish_as_draft = pad;
     }
+    if let Some(ref sec) = payload.webhook_secret {
+        state.syndication_settings.webhook_secret = if sec.trim().is_empty() {
+            None
+        } else {
+            Some(sec.trim().to_string())
+        };
+    }
 
     let _ = state.save(&ctx.data_file);
 
@@ -1314,9 +1329,15 @@ pub async fn update_syndication_settings(
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1325,6 +1346,8 @@ pub async fn update_syndication_settings(
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -1849,7 +1872,9 @@ pub struct SyncMetricsSummary {
     pub total_views: u32,
 }
 
-pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetricsSummary, String> {
+pub async fn sync_all_metrics_internal(
+    ctx: &Arc<AppContext>,
+) -> Result<SyncMetricsSummary, String> {
     let (devto_key, hashnode_key, hashnode_pub_id) = {
         let state = ctx.state.read().await;
         let d_key = state
@@ -1925,7 +1950,8 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
                         .await
                     {
                         Ok(r) => match r.json::<serde_json::Value>().await {
-                            Ok(json) => json["data"]["me"]["publications"]["edges"][0]["node"]["id"]
+                            Ok(json) => json["data"]["me"]["publications"]["edges"][0]["node"]
+                                ["id"]
                                 .as_str()
                                 .map(|s| s.to_string()),
                             Err(_) => None,
@@ -1948,15 +1974,13 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
                     .send()
                     .await
                 {
-                    Ok(r) if r.status().is_success() => {
-                        match r.json::<serde_json::Value>().await {
-                            Ok(val) => parse_hashnode_metrics(&val),
-                            Err(e) => {
-                                tracing::warn!("Failed to parse Hashnode GraphQL response: {}", e);
-                                Vec::new()
-                            }
+                    Ok(r) if r.status().is_success() => match r.json::<serde_json::Value>().await {
+                        Ok(val) => parse_hashnode_metrics(&val),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse Hashnode GraphQL response: {}", e);
+                            Vec::new()
                         }
-                    }
+                    },
                     Ok(r) => {
                         tracing::warn!("Hashnode GraphQL returned status: {}", r.status());
                         Vec::new()
@@ -2079,7 +2103,27 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
             total_comments += eng.comments;
             total_views += eng.views;
             synced_count += 1;
+
+            record_engagement_snapshot(
+                &mut article.engagement_snapshots,
+                now,
+                eng.views,
+                eng.reactions,
+                eng.comments,
+                MAX_ARTICLE_SNAPSHOTS,
+            );
         }
+    }
+
+    if synced_count > 0 || !state.articles.is_empty() {
+        record_engagement_snapshot(
+            &mut state.global_engagement_snapshots,
+            now,
+            total_views,
+            total_reactions,
+            total_comments,
+            MAX_GLOBAL_SNAPSHOTS,
+        );
     }
 
     let _ = state.save(&ctx.data_file);
@@ -2091,6 +2135,201 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
         total_comments,
         total_views,
     })
+}
+
+pub const MAX_ARTICLE_SNAPSHOTS: usize = 500;
+pub const MAX_GLOBAL_SNAPSHOTS: usize = 1000;
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct EngagementVelocity {
+    pub views_per_day: f64,
+    pub reactions_per_day: f64,
+    pub comments_per_day: f64,
+    pub views_delta_24h: i64,
+    pub reactions_delta_24h: i64,
+    pub comments_delta_24h: i64,
+    pub trend: String, // "Accelerating", "Steady", "Decelerating", "Flat"
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct EngagementHistoryResponse {
+    pub snapshots: Vec<EngagementSnapshot>,
+    pub velocity: EngagementVelocity,
+}
+
+pub fn record_engagement_snapshot(
+    snapshots: &mut Vec<EngagementSnapshot>,
+    timestamp: DateTime<Utc>,
+    views: u32,
+    reactions: u32,
+    comments: u32,
+    max_capacity: usize,
+) -> bool {
+    let should_record = match snapshots.last() {
+        Some(last) => {
+            let metrics_changed =
+                last.views != views || last.reactions != reactions || last.comments != comments;
+            let elapsed_secs = (timestamp - last.timestamp).num_seconds();
+            metrics_changed || elapsed_secs >= 3600
+        }
+        None => true,
+    };
+
+    if should_record {
+        snapshots.push(EngagementSnapshot {
+            timestamp,
+            views,
+            reactions,
+            comments,
+        });
+        if snapshots.len() > max_capacity {
+            let overflow = snapshots.len() - max_capacity;
+            snapshots.drain(0..overflow);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+pub fn calculate_engagement_velocity(
+    snapshots: &[EngagementSnapshot],
+    _now: DateTime<Utc>,
+) -> EngagementVelocity {
+    if snapshots.is_empty() {
+        return EngagementVelocity {
+            views_per_day: 0.0,
+            reactions_per_day: 0.0,
+            comments_per_day: 0.0,
+            views_delta_24h: 0,
+            reactions_delta_24h: 0,
+            comments_delta_24h: 0,
+            trend: "Flat".to_string(),
+        };
+    }
+
+    let mut sorted = snapshots.to_vec();
+    sorted.sort_by_key(|s| s.timestamp);
+
+    let latest = &sorted[sorted.len() - 1];
+
+    if sorted.len() == 1 {
+        return EngagementVelocity {
+            views_per_day: 0.0,
+            reactions_per_day: 0.0,
+            comments_per_day: 0.0,
+            views_delta_24h: 0,
+            reactions_delta_24h: 0,
+            comments_delta_24h: 0,
+            trend: "Flat".to_string(),
+        };
+    }
+
+    let cutoff_24h = latest.timestamp - chrono::Duration::hours(24);
+    let baseline_idx = sorted
+        .iter()
+        .rposition(|s| s.timestamp <= cutoff_24h)
+        .unwrap_or(0);
+    let baseline_24h = &sorted[baseline_idx];
+
+    let views_delta_24h = latest.views as i64 - baseline_24h.views as i64;
+    let reactions_delta_24h = latest.reactions as i64 - baseline_24h.reactions as i64;
+    let comments_delta_24h = latest.comments as i64 - baseline_24h.comments as i64;
+
+    let dt_secs = (latest.timestamp - baseline_24h.timestamp).num_seconds() as f64;
+    let (views_per_day, reactions_per_day, comments_per_day) = if dt_secs >= 60.0 {
+        let days = dt_secs / 86400.0;
+        (
+            ((latest.views as f64 - baseline_24h.views as f64) / days * 10.0).round() / 10.0,
+            ((latest.reactions as f64 - baseline_24h.reactions as f64) / days * 10.0).round() / 10.0,
+            ((latest.comments as f64 - baseline_24h.comments as f64) / days * 10.0).round() / 10.0,
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+
+    let trend = if views_delta_24h <= 0 && reactions_delta_24h <= 0 && comments_delta_24h <= 0 {
+        "Flat".to_string()
+    } else if sorted.len() >= 3 {
+        let mid_idx = baseline_idx + (sorted.len() - 1 - baseline_idx) / 2;
+        let midpoint = &sorted[mid_idx];
+        let dt_prior = (midpoint.timestamp - baseline_24h.timestamp).num_seconds() as f64;
+        let dt_recent = (latest.timestamp - midpoint.timestamp).num_seconds() as f64;
+
+        if dt_prior >= 60.0 && dt_recent >= 60.0 {
+            let rate_prior = (midpoint.views as f64 - baseline_24h.views as f64) / dt_prior;
+            let rate_recent = (latest.views as f64 - midpoint.views as f64) / dt_recent;
+
+            if rate_prior > 0.0 {
+                let ratio = rate_recent / rate_prior;
+                if ratio > 1.15 {
+                    "Accelerating".to_string()
+                } else if ratio < 0.85 {
+                    "Decelerating".to_string()
+                } else {
+                    "Steady".to_string()
+                }
+            } else if rate_recent > 0.0 {
+                "Accelerating".to_string()
+            } else {
+                "Steady".to_string()
+            }
+        } else {
+            "Steady".to_string()
+        }
+    } else {
+        "Steady".to_string()
+    };
+
+    EngagementVelocity {
+        views_per_day,
+        reactions_per_day,
+        comments_per_day,
+        views_delta_24h,
+        reactions_delta_24h,
+        comments_delta_24h,
+        trend,
+    }
+}
+
+pub async fn get_global_engagement_history(
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    let now = Utc::now();
+    let velocity = calculate_engagement_velocity(&state.global_engagement_snapshots, now);
+    (
+        StatusCode::OK,
+        Json(EngagementHistoryResponse {
+            snapshots: state.global_engagement_snapshots.clone(),
+            velocity,
+        }),
+    )
+}
+
+pub async fn get_article_engagement_history(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    if let Some(art) = state.articles.iter().find(|a| a.id == id) {
+        let now = Utc::now();
+        let velocity = calculate_engagement_velocity(&art.engagement_snapshots, now);
+        (
+            StatusCode::OK,
+            Json(serde_json::to_value(EngagementHistoryResponse {
+                snapshots: art.engagement_snapshots.clone(),
+                velocity,
+            }).unwrap()),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Article not found"
+            })),
+        )
+    }
 }
 
 pub async fn sync_metrics(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
@@ -2144,7 +2383,10 @@ pub async fn handle_syndication_webhook(
     State(ctx): State<Arc<AppContext>>,
     body: Option<Json<serde_json::Value>>,
 ) -> impl IntoResponse {
-    tracing::info!("Received syndication webhook event: {:?}", body.as_ref().map(|b| &b.0));
+    tracing::info!(
+        "Received syndication webhook event: {:?}",
+        body.as_ref().map(|b| &b.0)
+    );
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
         if let Err(e) = sync_all_metrics_internal(&sync_ctx).await {
@@ -2203,6 +2445,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2236,6 +2479,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2267,6 +2511,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_svg =
@@ -2294,6 +2539,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_png =
@@ -2327,6 +2573,7 @@ mod tests {
             slug: Some("test-format-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2339,6 +2586,9 @@ mod tests {
             ivy_web_content_path: content_dir.clone(),
             ivy_web_images_path: images_dir.clone(),
             config: crate::config::Config::load(),
+            rate_limiter: std::sync::Arc::new(
+                crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
         });
 
         let req = ExportIvyWebRequest {
@@ -2385,6 +2635,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let (devto, t1) = format_for_channel(&article, "Dev.to", "test-article");
@@ -2441,6 +2692,7 @@ mod tests {
             slug: Some("temp-export-test".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2475,6 +2727,7 @@ mod tests {
             slug: Some("record-export-test".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let rec = ExportRecord {
@@ -2681,6 +2934,7 @@ mod tests {
             slug: Some("scaling-autonomous-agents-with-worktrees".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let payload =
@@ -2723,6 +2977,7 @@ mod tests {
             slug: Some("15-minute-issue-to-pr-autonomous-loop".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let payload = format_hashnode_publish_mutation(
@@ -2769,6 +3024,7 @@ mod tests {
         assert_eq!(parsed.devto_api_key, None);
         assert_eq!(parsed.hashnode_api_key, None);
         assert_eq!(parsed.hashnode_publication_id, None);
+        assert_eq!(parsed.webhook_secret, None);
         assert!(parsed.publish_as_draft);
 
         // Verify round-trip persistence
@@ -2777,6 +3033,7 @@ mod tests {
             hashnode_api_key: Some("hashnode_pat_456".to_string()),
             hashnode_publication_id: Some("pub_789".to_string()),
             github_token: Some("ghp_roundtrip_test_999".to_string()),
+            webhook_secret: Some("whsec_roundtrip_test_123".to_string()),
             publish_as_draft: false,
         };
         let serialized = serde_json::to_string(&populated).expect("serialize");
@@ -2792,7 +3049,11 @@ mod tests {
 
         let slug = "test-article-slug";
         let res = sync_hero_asset(slug, &temp_dir, "Test Title", "Architecture");
-        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "sync_hero_asset should succeed: {:?}",
+            res.err()
+        );
 
         let created_path = res.unwrap();
         assert!(created_path.exists(), "Synced file must exist");
@@ -2836,6 +3097,7 @@ mod tests {
             slug: Some("test-syncing-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2864,7 +3126,9 @@ mod tests {
 
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         assert!(content_dir.join("test-syncing-article.mdoc").exists());
-        assert!(images_dir.join("blog/test-syncing-article-hero.png").exists());
+        assert!(images_dir
+            .join("blog/test-syncing-article-hero.png")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -2893,6 +3157,7 @@ mod tests {
             slug: Some("test-sync-assets-endpoint".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2917,14 +3182,17 @@ mod tests {
         .into_response();
 
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
-        assert!(images_dir.join("blog/test-sync-assets-endpoint-hero.png").exists());
+        assert!(images_dir
+            .join("blog/test-sync-assets-endpoint-hero.png")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_generate_hero_banner_svg() {
-        let title = "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
+        let title =
+            "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
         let category = "Architecture & Design";
         let summary = "A comprehensive deep dive into isolated git checkouts, automated verification steps, and human approval gates.";
         let svg = generate_hero_banner_svg(title, category, summary, Some("dark-cyan"));
@@ -2950,7 +3218,11 @@ mod tests {
 
         let slug = "dual-asset-article";
         let res = sync_hero_asset(slug, &temp_dir, "Dual Asset Article Title", "Benchmark");
-        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "sync_hero_asset should succeed: {:?}",
+            res.err()
+        );
 
         let png_path = temp_dir.join("blog/dual-asset-article-hero.png");
         let svg_path = temp_dir.join("blog/dual-asset-article-hero.svg");
@@ -2989,6 +3261,7 @@ mod tests {
             slug: Some("dynamic-banner-test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3045,6 +3318,7 @@ mod tests {
             slug: Some("upload-custom-banner-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3237,6 +3511,205 @@ mod tests {
         assert_eq!(parsed[1].views, 310);
     }
 
+    #[test]
+    fn test_engagement_snapshot_serialization() {
+        let now = Utc::now();
+        let snapshot = EngagementSnapshot {
+            timestamp: now,
+            views: 1250,
+            reactions: 84,
+            comments: 16,
+        };
+
+        let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        assert!(json.contains("\"views\":1250"));
+        assert!(json.contains("\"reactions\":84"));
+        assert!(json.contains("\"comments\":16"));
+
+        let deserialized: EngagementSnapshot =
+            serde_json::from_str(&json).expect("deserialize snapshot");
+        assert_eq!(snapshot, deserialized);
+
+        // Default handling
+        let default_json = format!("{{\"timestamp\":\"{}\"}}", now.to_rfc3339());
+        let default_parsed: EngagementSnapshot =
+            serde_json::from_str(&default_json).expect("deserialize default");
+        assert_eq!(default_parsed.views, 0);
+        assert_eq!(default_parsed.reactions, 0);
+        assert_eq!(default_parsed.comments, 0);
+    }
+
+    #[test]
+    fn test_record_engagement_snapshot_and_cap() {
+        let mut snapshots = Vec::new();
+        let base_time = Utc::now();
+
+        // 1. Initial snapshot is recorded
+        let added1 = record_engagement_snapshot(&mut snapshots, base_time, 100, 10, 2, 5);
+        assert!(added1);
+        assert_eq!(snapshots.len(), 1);
+
+        // 2. Duplicate snapshot within 1 hour with unchanged metrics is skipped
+        let soon = base_time + chrono::Duration::minutes(15);
+        let added_dup = record_engagement_snapshot(&mut snapshots, soon, 100, 10, 2, 5);
+        assert!(!added_dup);
+        assert_eq!(snapshots.len(), 1);
+
+        // 3. Snapshot with changed metrics within 1 hour is recorded
+        let added_changed = record_engagement_snapshot(&mut snapshots, soon, 105, 10, 2, 5);
+        assert!(added_changed);
+        assert_eq!(snapshots.len(), 2);
+
+        // 4. Fill up to cap and verify FIFO eviction
+        for i in 3..=7 {
+            let t = base_time + chrono::Duration::hours(i);
+            let ok = record_engagement_snapshot(&mut snapshots, t, 100 + i as u32 * 10, 10, 2, 5);
+            assert!(ok);
+        }
+
+        // Cap was 5
+        assert_eq!(snapshots.len(), 5);
+        // Oldest elements should have been drained, newest retained
+        assert_eq!(snapshots[4].views, 170);
+    }
+
+    #[test]
+    fn test_engagement_velocity_calculation() {
+        let now = Utc::now();
+
+        // Empty snapshots
+        let empty_vel = calculate_engagement_velocity(&[], now);
+        assert_eq!(empty_vel.views_delta_24h, 0);
+        assert_eq!(empty_vel.trend, "Flat");
+
+        // Accelerating trend:
+        // t0: 0h, views=100
+        // t1: 12h, views=150 (gain=50)
+        // t2: 24h, views=250 (gain=100)
+        let t0 = now - chrono::Duration::hours(24);
+        let t1 = now - chrono::Duration::hours(12);
+        let t2 = now;
+
+        let accelerating_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t0,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+            EngagementSnapshot {
+                timestamp: t1,
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+        ];
+
+        let vel = calculate_engagement_velocity(&accelerating_snapshots, now);
+        assert_eq!(vel.views_delta_24h, 150);
+        assert_eq!(vel.views_per_day, 150.0);
+        assert_eq!(vel.trend, "Accelerating");
+
+        // Decelerating trend:
+        // t3: 36h, views=280 (gain=30 in 12h compared to gain of 100 earlier)
+        let t3 = now + chrono::Duration::hours(12);
+        let decelerating_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t1,
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+            EngagementSnapshot {
+                timestamp: t3,
+                views: 280,
+                reactions: 27,
+                comments: 6,
+            },
+        ];
+
+        let dec_vel = calculate_engagement_velocity(&decelerating_snapshots, t3);
+        assert_eq!(dec_vel.trend, "Decelerating");
+
+        // Flat trend (no change)
+        let flat_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t0,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+        ];
+        let flat_vel = calculate_engagement_velocity(&flat_snapshots, now);
+        assert_eq!(flat_vel.trend, "Flat");
+        assert_eq!(flat_vel.views_delta_24h, 0);
+    }
+
+    #[tokio::test]
+    async fn test_engagement_history_endpoint() {
+        let temp_dir = std::env::temp_dir().join("test_engagement_history_endpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let now = Utc::now();
+        growth_state.global_engagement_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: now - chrono::Duration::hours(24),
+                views: 500,
+                reactions: 50,
+                comments: 10,
+            },
+            EngagementSnapshot {
+                timestamp: now,
+                views: 850,
+                reactions: 85,
+                comments: 18,
+            },
+        ];
+
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            data_file,
+            ..AppContext::new_test()
+        });
+
+        let resp = get_global_engagement_history(axum::extract::State(ctx))
+            .await
+            .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: EngagementHistoryResponse =
+            serde_json::from_slice(&body_bytes).expect("parse EngagementHistoryResponse");
+
+        assert_eq!(parsed.snapshots.len(), 2);
+        assert_eq!(parsed.velocity.views_delta_24h, 350);
+        assert_eq!(parsed.velocity.views_per_day, 350.0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
     #[tokio::test]
     async fn test_update_article_resets_status_to_pending_on_content_change() {
         let ctx = Arc::new(AppContext::default());
@@ -3257,6 +3730,7 @@ mod tests {
             slug: Some("original-title".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         {

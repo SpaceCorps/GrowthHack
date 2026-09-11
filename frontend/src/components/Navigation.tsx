@@ -15,6 +15,8 @@ import {
   GitPullRequest,
   Activity,
   Users,
+  Rocket,
+  Globe,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -29,6 +31,7 @@ interface NavigationProps {
   reviewCount?: number;
   recipesCount?: number;
   contributorsCount?: number;
+  launchCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -43,6 +46,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   reviewCount,
   recipesCount,
   contributorsCount,
+  launchCount,
 }) => {
   const navItems = [
     {
@@ -87,6 +91,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       count: listingsCount,
     },
     {
+      id: "launch" as ActiveTab,
+      label: "Launch Campaign",
+      icon: Rocket,
+      count: launchCount,
+    },
+    {
       id: "packages" as ActiveTab,
       label: "Package Blitz",
       icon: Package,
@@ -112,6 +122,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: "doctor" as ActiveTab,
       label: "Doctor & Demo",
       icon: Activity,
+    },
+    {
+      id: "playground" as ActiveTab,
+      label: "Web Playground",
+      icon: Globe,
     },
   ];
 

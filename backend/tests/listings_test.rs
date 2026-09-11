@@ -105,7 +105,7 @@ async fn test_list_and_create_and_update_listing() {
     let ctx = common::create_test_context();
 
     // 1. List listings
-    let Json(initial_listings) = list_listings(State(ctx.clone())).await;
+    let Json(initial_listings) = list_listings(State(ctx.ctx())).await;
     let initial_count = initial_listings.len();
 
     // 2. Create listing
@@ -120,7 +120,7 @@ async fn test_list_and_create_and_update_listing() {
         blurb_status: None,
     };
 
-    let (status, Json(created)) = create_listing(State(ctx.clone()), Json(new_req)).await;
+    let (status, Json(created)) = create_listing(State(ctx.ctx()), Json(new_req)).await;
     assert_eq!(status, axum::http::StatusCode::CREATED);
     assert_eq!(created.name, "test-awesome-list (testorg)");
     assert_eq!(created.status, "Targeted");
@@ -128,7 +128,7 @@ async fn test_list_and_create_and_update_listing() {
     let created_id = created.id.clone();
 
     // 3. Verify listing added
-    let Json(after_create) = list_listings(State(ctx.clone())).await;
+    let Json(after_create) = list_listings(State(ctx.ctx())).await;
     assert_eq!(after_create.len(), initial_count + 1);
 
     // 4. Update listing
@@ -140,12 +140,8 @@ async fn test_list_and_create_and_update_listing() {
         blurb_status: None,
     };
 
-    let (status, Json(updated_opt)) = update_listing(
-        Path(created_id.clone()),
-        State(ctx.clone()),
-        Json(update_req),
-    )
-    .await;
+    let (status, Json(updated_opt)) =
+        update_listing(Path(created_id.clone()), State(ctx.ctx()), Json(update_req)).await;
     assert_eq!(status, axum::http::StatusCode::OK);
     let updated = updated_opt.expect("Listing should exist");
     assert_eq!(updated.status, "PR Submitted");
@@ -251,7 +247,7 @@ async fn test_generate_batch_listings_endpoint() {
         limit: Some(3),
     };
 
-    let (status, Json(resp)) = generate_batch_listings(State(ctx.clone()), Json(batch_req)).await;
+    let (status, Json(resp)) = generate_batch_listings(State(ctx.ctx()), Json(batch_req)).await;
     assert_eq!(status, axum::http::StatusCode::ACCEPTED);
     assert_eq!(resp.targeted_count, 3);
     assert_eq!(resp.task_ids.len(), 3);
@@ -308,7 +304,7 @@ async fn test_backlink_verification_logic_and_endpoint() {
     }
 
     let (status, Json(resp)) =
-        verify_backlink(Path("list-verify-test".to_string()), State(ctx.clone())).await;
+        verify_backlink(Path("list-verify-test".to_string()), State(ctx.ctx())).await;
     assert_eq!(status, axum::http::StatusCode::OK);
     assert!(resp.verified, "Backlink should be verified");
     assert_eq!(resp.status, "Live", "Status should transition to Live");
@@ -349,8 +345,7 @@ async fn test_submit_listing_pr_promotes_status_and_spawns_task() {
         state.listings.push(test_listing);
     }
 
-    let (status, Json(resp)) =
-        submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+    let (status, Json(resp)) = submit_listing_pr(Path(listing_id.clone()), State(ctx.ctx())).await;
     assert_eq!(status, axum::http::StatusCode::ACCEPTED);
     assert!(!resp.task_id.is_empty());
     assert!(resp.task_id.starts_with("task-pr-"));
@@ -439,7 +434,7 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     };
     let (status, Json(updated_opt)) = update_listing(
         Path("list-reset-test".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(update_req),
     )
     .await;
@@ -458,7 +453,7 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     };
     let (status, Json(updated_opt)) = update_listing(
         Path("list-reset-test".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(update_req_explicit),
     )
     .await;
@@ -477,7 +472,7 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     };
     let (status, Json(updated_opt)) = update_listing(
         Path("list-reset-test".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(update_req_non_blurb),
     )
     .await;
@@ -497,7 +492,7 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     };
     let (status, Json(updated_opt)) = update_listing(
         Path("list-reset-test".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(update_req_same_blurb),
     )
     .await;
@@ -515,7 +510,7 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     };
     let (status, Json(updated_opt)) = update_listing(
         Path("list-reset-test".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(update_req_empty),
     )
     .await;
@@ -548,7 +543,7 @@ async fn test_pr_submission_prompt_includes_pr_url_instruction() {
 
 #[tokio::test]
 async fn test_listing_pr_url_extraction_and_state_update() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context();
 
     let listing_id = "list-extract-test".to_string();
     let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
@@ -568,9 +563,9 @@ async fn test_listing_pr_url_extraction_and_state_update() {
     };
 
     {
-        let mut state = ctx.state.write().await;
+        let mut state = guard.state.write().await;
         state.listings.push(test_listing);
-        let _ = state.save(&data_file);
+        let _ = state.save(&guard.data_file);
     }
 
     // 1. Verify tagged output extraction
@@ -594,17 +589,17 @@ async fn test_listing_pr_url_extraction_and_state_update() {
     // 3. Verify state update and persistence to data_file
     let pr_url = extracted_tagged.unwrap();
     {
-        let mut state = ctx.state.write().await;
+        let mut state = guard.state.write().await;
         if let Some(l) = state.listings.iter_mut().find(|l| l.id == listing_id) {
             l.pr_url = Some(pr_url.clone());
             l.status = "PR Submitted".to_string();
             l.updated_at = chrono::Utc::now();
         }
-        let _ = state.save(&data_file);
+        let _ = state.save(&guard.data_file);
     }
 
     // Read back from file
-    let loaded_state = GrowthState::load_or_init(&data_file);
+    let loaded_state = GrowthState::load_or_init(&guard.data_file);
     let updated_listing = loaded_state
         .listings
         .iter()
@@ -647,7 +642,7 @@ async fn test_submit_listing_pr_preserves_pr_url_on_resubmission() {
 
     // Call submit_listing_pr on already submitted listing
     let (status, Json(resp)) =
-        submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+        submit_listing_pr(Path(listing_id.clone()), State(ctx.ctx())).await;
     assert_eq!(status, axum::http::StatusCode::ACCEPTED);
     assert!(!resp.task_id.is_empty());
 
