@@ -97,7 +97,7 @@ describe("App URL Hash Routing", () => {
     });
 
     // When activeTab === "playground", Playground view is mounted
-    expect(screen.getByText(/Interactive Browser Web Playground/i)).toBeDefined();
+    expect(await screen.findByText(/Interactive Browser Web Playground/i)).toBeDefined();
   });
 
   it("handleHashChange switches active tab to playground when hash transitions to #scenario=terminal-theme", async () => {
@@ -117,6 +117,6 @@ describe("App URL Hash Routing", () => {
     });
 
     // Now switched to playground tab
-    expect(screen.getByText(/Interactive Browser Web Playground/i)).toBeDefined();
+    expect(await screen.findByText(/Interactive Browser Web Playground/i)).toBeDefined();
   });
 });

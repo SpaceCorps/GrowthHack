@@ -80,13 +80,20 @@ pub async fn stream_agent_logs(
     Path(task_id): Path<String>,
     State(ctx): State<Arc<AppContext>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let rx = tx.subscribe();
+    let (history, rx) = ctx.task_manager.subscribe(&task_id).await;
 
-    let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
+    let history_stream = futures_util::stream::iter(
+        history
+            .into_iter()
+            .map(|text| Ok(Event::default().data(text))),
+    );
+
+    let live_stream = BroadcastStream::new(rx).filter_map(|msg| match msg {
         Ok(text) => Some(Ok(Event::default().data(text))),
         Err(_) => None,
     });
+
+    let stream = history_stream.chain(live_stream);
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
