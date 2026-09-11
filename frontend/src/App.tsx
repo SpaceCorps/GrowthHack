@@ -84,8 +84,11 @@ export const App: React.FC = () => {
   const [terminalTitle, setTerminalTitle] = useState<string>("Antigravity Agent");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [articleModalTab, setArticleModalTab] = useState<
-    "content" | "raw" | "backlinks" | "export"
-  >((searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export") || "content");
+    "content" | "raw" | "backlinks" | "export" | "engagement"
+  >(
+    (searchParams?.get("modalTab") as "content" | "raw" | "backlinks" | "export" | "engagement") ||
+      "content",
+  );
 
   // Initial Data Fetching
   const fetchAll = async () => {

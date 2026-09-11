@@ -1,12 +1,12 @@
 use crate::api::issues::AppContext;
-use crate::db::{Article, EngagementMetrics, ExportRecord};
+use crate::db::{Article, EngagementMetrics, EngagementSnapshot, ExportRecord};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -101,6 +101,7 @@ pub async fn create_article(
         slug: Some(slug),
         exports: Vec::new(),
         engagement: None,
+        engagement_snapshots: Vec::new(),
     };
     state.articles.push(new_article.clone());
     let _ = state.save(&ctx.data_file);
@@ -471,6 +472,7 @@ pub async fn generate_article(
                     slug: Some(slug),
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -545,6 +547,7 @@ pub async fn generate_spotlight(
                     slug: None,
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -2072,7 +2075,27 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
             total_comments += eng.comments;
             total_views += eng.views;
             synced_count += 1;
+
+            record_engagement_snapshot(
+                &mut article.engagement_snapshots,
+                now,
+                eng.views,
+                eng.reactions,
+                eng.comments,
+                MAX_ARTICLE_SNAPSHOTS,
+            );
         }
+    }
+
+    if synced_count > 0 || !state.articles.is_empty() {
+        record_engagement_snapshot(
+            &mut state.global_engagement_snapshots,
+            now,
+            total_views,
+            total_reactions,
+            total_comments,
+            MAX_GLOBAL_SNAPSHOTS,
+        );
     }
 
     let _ = state.save(&ctx.data_file);
@@ -2084,6 +2107,201 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
         total_comments,
         total_views,
     })
+}
+
+pub const MAX_ARTICLE_SNAPSHOTS: usize = 500;
+pub const MAX_GLOBAL_SNAPSHOTS: usize = 1000;
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct EngagementVelocity {
+    pub views_per_day: f64,
+    pub reactions_per_day: f64,
+    pub comments_per_day: f64,
+    pub views_delta_24h: i64,
+    pub reactions_delta_24h: i64,
+    pub comments_delta_24h: i64,
+    pub trend: String, // "Accelerating", "Steady", "Decelerating", "Flat"
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct EngagementHistoryResponse {
+    pub snapshots: Vec<EngagementSnapshot>,
+    pub velocity: EngagementVelocity,
+}
+
+pub fn record_engagement_snapshot(
+    snapshots: &mut Vec<EngagementSnapshot>,
+    timestamp: DateTime<Utc>,
+    views: u32,
+    reactions: u32,
+    comments: u32,
+    max_capacity: usize,
+) -> bool {
+    let should_record = match snapshots.last() {
+        Some(last) => {
+            let metrics_changed =
+                last.views != views || last.reactions != reactions || last.comments != comments;
+            let elapsed_secs = (timestamp - last.timestamp).num_seconds();
+            metrics_changed || elapsed_secs >= 3600
+        }
+        None => true,
+    };
+
+    if should_record {
+        snapshots.push(EngagementSnapshot {
+            timestamp,
+            views,
+            reactions,
+            comments,
+        });
+        if snapshots.len() > max_capacity {
+            let overflow = snapshots.len() - max_capacity;
+            snapshots.drain(0..overflow);
+        }
+        true
+    } else {
+        false
+    }
+}
+
+pub fn calculate_engagement_velocity(
+    snapshots: &[EngagementSnapshot],
+    _now: DateTime<Utc>,
+) -> EngagementVelocity {
+    if snapshots.is_empty() {
+        return EngagementVelocity {
+            views_per_day: 0.0,
+            reactions_per_day: 0.0,
+            comments_per_day: 0.0,
+            views_delta_24h: 0,
+            reactions_delta_24h: 0,
+            comments_delta_24h: 0,
+            trend: "Flat".to_string(),
+        };
+    }
+
+    let mut sorted = snapshots.to_vec();
+    sorted.sort_by_key(|s| s.timestamp);
+
+    let latest = &sorted[sorted.len() - 1];
+
+    if sorted.len() == 1 {
+        return EngagementVelocity {
+            views_per_day: 0.0,
+            reactions_per_day: 0.0,
+            comments_per_day: 0.0,
+            views_delta_24h: 0,
+            reactions_delta_24h: 0,
+            comments_delta_24h: 0,
+            trend: "Flat".to_string(),
+        };
+    }
+
+    let cutoff_24h = latest.timestamp - chrono::Duration::hours(24);
+    let baseline_idx = sorted
+        .iter()
+        .rposition(|s| s.timestamp <= cutoff_24h)
+        .unwrap_or(0);
+    let baseline_24h = &sorted[baseline_idx];
+
+    let views_delta_24h = latest.views as i64 - baseline_24h.views as i64;
+    let reactions_delta_24h = latest.reactions as i64 - baseline_24h.reactions as i64;
+    let comments_delta_24h = latest.comments as i64 - baseline_24h.comments as i64;
+
+    let dt_secs = (latest.timestamp - baseline_24h.timestamp).num_seconds() as f64;
+    let (views_per_day, reactions_per_day, comments_per_day) = if dt_secs >= 60.0 {
+        let days = dt_secs / 86400.0;
+        (
+            ((latest.views as f64 - baseline_24h.views as f64) / days * 10.0).round() / 10.0,
+            ((latest.reactions as f64 - baseline_24h.reactions as f64) / days * 10.0).round() / 10.0,
+            ((latest.comments as f64 - baseline_24h.comments as f64) / days * 10.0).round() / 10.0,
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+
+    let trend = if views_delta_24h <= 0 && reactions_delta_24h <= 0 && comments_delta_24h <= 0 {
+        "Flat".to_string()
+    } else if sorted.len() >= 3 {
+        let mid_idx = baseline_idx + (sorted.len() - 1 - baseline_idx) / 2;
+        let midpoint = &sorted[mid_idx];
+        let dt_prior = (midpoint.timestamp - baseline_24h.timestamp).num_seconds() as f64;
+        let dt_recent = (latest.timestamp - midpoint.timestamp).num_seconds() as f64;
+
+        if dt_prior >= 60.0 && dt_recent >= 60.0 {
+            let rate_prior = (midpoint.views as f64 - baseline_24h.views as f64) / dt_prior;
+            let rate_recent = (latest.views as f64 - midpoint.views as f64) / dt_recent;
+
+            if rate_prior > 0.0 {
+                let ratio = rate_recent / rate_prior;
+                if ratio > 1.15 {
+                    "Accelerating".to_string()
+                } else if ratio < 0.85 {
+                    "Decelerating".to_string()
+                } else {
+                    "Steady".to_string()
+                }
+            } else if rate_recent > 0.0 {
+                "Accelerating".to_string()
+            } else {
+                "Steady".to_string()
+            }
+        } else {
+            "Steady".to_string()
+        }
+    } else {
+        "Steady".to_string()
+    };
+
+    EngagementVelocity {
+        views_per_day,
+        reactions_per_day,
+        comments_per_day,
+        views_delta_24h,
+        reactions_delta_24h,
+        comments_delta_24h,
+        trend,
+    }
+}
+
+pub async fn get_global_engagement_history(
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    let now = Utc::now();
+    let velocity = calculate_engagement_velocity(&state.global_engagement_snapshots, now);
+    (
+        StatusCode::OK,
+        Json(EngagementHistoryResponse {
+            snapshots: state.global_engagement_snapshots.clone(),
+            velocity,
+        }),
+    )
+}
+
+pub async fn get_article_engagement_history(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    if let Some(art) = state.articles.iter().find(|a| a.id == id) {
+        let now = Utc::now();
+        let velocity = calculate_engagement_velocity(&art.engagement_snapshots, now);
+        (
+            StatusCode::OK,
+            Json(serde_json::to_value(EngagementHistoryResponse {
+                snapshots: art.engagement_snapshots.clone(),
+                velocity,
+            }).unwrap()),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Article not found"
+            })),
+        )
+    }
 }
 
 pub async fn sync_metrics(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
@@ -2196,6 +2414,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2228,6 +2447,8 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2258,6 +2479,8 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_svg =
@@ -2284,6 +2507,8 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let fm_png =
@@ -2316,6 +2541,8 @@ mod tests {
             published_at: None,
             slug: Some("test-format-article".to_string()),
             exports: vec![],
+            engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2374,6 +2601,7 @@ mod tests {
             slug: Some("test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let (devto, t1) = format_for_channel(&article, "Dev.to", "test-article");
@@ -2430,6 +2658,7 @@ mod tests {
             slug: Some("temp-export-test".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2464,6 +2693,7 @@ mod tests {
             slug: Some("record-export-test".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let rec = ExportRecord {
@@ -2670,6 +2900,7 @@ mod tests {
             slug: Some("scaling-autonomous-agents-with-worktrees".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let payload =
@@ -2712,6 +2943,7 @@ mod tests {
             slug: Some("15-minute-issue-to-pr-autonomous-loop".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
 
         let payload = format_hashnode_publish_mutation(
@@ -2825,6 +3057,7 @@ mod tests {
             slug: Some("test-syncing-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2882,6 +3115,7 @@ mod tests {
             slug: Some("test-sync-assets-endpoint".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2978,6 +3212,7 @@ mod tests {
             slug: Some("dynamic-banner-test-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3034,6 +3269,7 @@ mod tests {
             slug: Some("upload-custom-banner-article".to_string()),
             exports: vec![],
             engagement: None,
+            engagement_snapshots: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3224,5 +3460,204 @@ mod tests {
         assert_eq!(parsed[1].reactions, 21);
         assert_eq!(parsed[1].comments, 2);
         assert_eq!(parsed[1].views, 310);
+    }
+
+    #[test]
+    fn test_engagement_snapshot_serialization() {
+        let now = Utc::now();
+        let snapshot = EngagementSnapshot {
+            timestamp: now,
+            views: 1250,
+            reactions: 84,
+            comments: 16,
+        };
+
+        let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        assert!(json.contains("\"views\":1250"));
+        assert!(json.contains("\"reactions\":84"));
+        assert!(json.contains("\"comments\":16"));
+
+        let deserialized: EngagementSnapshot =
+            serde_json::from_str(&json).expect("deserialize snapshot");
+        assert_eq!(snapshot, deserialized);
+
+        // Default handling
+        let default_json = format!("{{\"timestamp\":\"{}\"}}", now.to_rfc3339());
+        let default_parsed: EngagementSnapshot =
+            serde_json::from_str(&default_json).expect("deserialize default");
+        assert_eq!(default_parsed.views, 0);
+        assert_eq!(default_parsed.reactions, 0);
+        assert_eq!(default_parsed.comments, 0);
+    }
+
+    #[test]
+    fn test_record_engagement_snapshot_and_cap() {
+        let mut snapshots = Vec::new();
+        let base_time = Utc::now();
+
+        // 1. Initial snapshot is recorded
+        let added1 = record_engagement_snapshot(&mut snapshots, base_time, 100, 10, 2, 5);
+        assert!(added1);
+        assert_eq!(snapshots.len(), 1);
+
+        // 2. Duplicate snapshot within 1 hour with unchanged metrics is skipped
+        let soon = base_time + chrono::Duration::minutes(15);
+        let added_dup = record_engagement_snapshot(&mut snapshots, soon, 100, 10, 2, 5);
+        assert!(!added_dup);
+        assert_eq!(snapshots.len(), 1);
+
+        // 3. Snapshot with changed metrics within 1 hour is recorded
+        let added_changed = record_engagement_snapshot(&mut snapshots, soon, 105, 10, 2, 5);
+        assert!(added_changed);
+        assert_eq!(snapshots.len(), 2);
+
+        // 4. Fill up to cap and verify FIFO eviction
+        for i in 3..=7 {
+            let t = base_time + chrono::Duration::hours(i);
+            let ok = record_engagement_snapshot(&mut snapshots, t, 100 + i as u32 * 10, 10, 2, 5);
+            assert!(ok);
+        }
+
+        // Cap was 5
+        assert_eq!(snapshots.len(), 5);
+        // Oldest elements should have been drained, newest retained
+        assert_eq!(snapshots[4].views, 170);
+    }
+
+    #[test]
+    fn test_engagement_velocity_calculation() {
+        let now = Utc::now();
+
+        // Empty snapshots
+        let empty_vel = calculate_engagement_velocity(&[], now);
+        assert_eq!(empty_vel.views_delta_24h, 0);
+        assert_eq!(empty_vel.trend, "Flat");
+
+        // Accelerating trend:
+        // t0: 0h, views=100
+        // t1: 12h, views=150 (gain=50)
+        // t2: 24h, views=250 (gain=100)
+        let t0 = now - chrono::Duration::hours(24);
+        let t1 = now - chrono::Duration::hours(12);
+        let t2 = now;
+
+        let accelerating_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t0,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+            EngagementSnapshot {
+                timestamp: t1,
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+        ];
+
+        let vel = calculate_engagement_velocity(&accelerating_snapshots, now);
+        assert_eq!(vel.views_delta_24h, 150);
+        assert_eq!(vel.views_per_day, 150.0);
+        assert_eq!(vel.trend, "Accelerating");
+
+        // Decelerating trend:
+        // t3: 36h, views=280 (gain=30 in 12h compared to gain of 100 earlier)
+        let t3 = now + chrono::Duration::hours(12);
+        let decelerating_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t1,
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+            EngagementSnapshot {
+                timestamp: t3,
+                views: 280,
+                reactions: 27,
+                comments: 6,
+            },
+        ];
+
+        let dec_vel = calculate_engagement_velocity(&decelerating_snapshots, t3);
+        assert_eq!(dec_vel.trend, "Decelerating");
+
+        // Flat trend (no change)
+        let flat_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t0,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+        ];
+        let flat_vel = calculate_engagement_velocity(&flat_snapshots, now);
+        assert_eq!(flat_vel.trend, "Flat");
+        assert_eq!(flat_vel.views_delta_24h, 0);
+    }
+
+    #[tokio::test]
+    async fn test_engagement_history_endpoint() {
+        let temp_dir = std::env::temp_dir().join("test_engagement_history_endpoint");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let data_file = temp_dir.join("data.json");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        let now = Utc::now();
+        growth_state.global_engagement_snapshots = vec![
+            EngagementSnapshot {
+                timestamp: now - chrono::Duration::hours(24),
+                views: 500,
+                reactions: 50,
+                comments: 10,
+            },
+            EngagementSnapshot {
+                timestamp: now,
+                views: 850,
+                reactions: 85,
+                comments: 18,
+            },
+        ];
+
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            data_file,
+            ..AppContext::new_test()
+        });
+
+        let resp = get_global_engagement_history(axum::extract::State(ctx))
+            .await
+            .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: EngagementHistoryResponse =
+            serde_json::from_slice(&body_bytes).expect("parse EngagementHistoryResponse");
+
+        assert_eq!(parsed.snapshots.len(), 2);
+        assert_eq!(parsed.velocity.views_delta_24h, 350);
+        assert_eq!(parsed.velocity.views_per_day, 350.0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

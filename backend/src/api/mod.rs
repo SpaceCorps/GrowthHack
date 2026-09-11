@@ -82,6 +82,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(articles::sync_article_metrics),
         )
         .route(
+            "/api/articles/engagement-history",
+            get(articles::get_global_engagement_history),
+        )
+        .route(
+            "/api/articles/{id}/engagement-history",
+            get(articles::get_article_engagement_history),
+        )
+        .route(
             "/api/webhooks/syndication",
             post(articles::handle_syndication_webhook),
         )

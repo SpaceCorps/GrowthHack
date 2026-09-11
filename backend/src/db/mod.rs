@@ -35,6 +35,17 @@ pub struct EngagementMetrics {
     pub last_synced_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementSnapshot {
+    pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub views: u32,
+    #[serde(default)]
+    pub reactions: u32,
+    #[serde(default)]
+    pub comments: u32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExportRecord {
     pub channel: String, // "ivy-web", "Dev.to", "Hashnode", "Medium", "Substack", "LinkedIn", "XThread"
@@ -67,6 +78,8 @@ pub struct Article {
     pub exports: Vec<ExportRecord>,
     #[serde(default)]
     pub engagement: Option<EngagementMetrics>,
+    #[serde(default)]
+    pub engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -263,6 +276,8 @@ pub struct GrowthState {
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
+    #[serde(default)]
+    pub global_engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -580,6 +595,7 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                     },
                 ],
                 engagement: None,
+                engagement_snapshots: Vec::new(),
             },
             Article {
                 id: "art-2".to_string(),
@@ -634,6 +650,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                     },
                 ],
                 engagement: None,
+                engagement_snapshots: Vec::new(),
             },
         ];
 
@@ -762,6 +779,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             onboarding_metrics: OnboardingMetrics::default(),
             contributor_issues,
             contributors,
+            global_engagement_snapshots: Vec::new(),
         }
     }
 

@@ -21,6 +21,28 @@ export interface EngagementMetrics {
   last_synced_at?: string;
 }
 
+export interface EngagementSnapshot {
+  timestamp: string;
+  views: number;
+  reactions: number;
+  comments: number;
+}
+
+export interface EngagementVelocity {
+  views_per_day: number;
+  reactions_per_day: number;
+  comments_per_day: number;
+  views_delta_24h: number;
+  reactions_delta_24h: number;
+  comments_delta_24h: number;
+  trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
+}
+
+export interface EngagementHistoryResponse {
+  snapshots: EngagementSnapshot[];
+  velocity: EngagementVelocity;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
@@ -47,6 +69,7 @@ export interface Article {
   image_path?: string;
   exports?: ExportRecord[];
   engagement?: EngagementMetrics;
+  engagement_snapshots?: EngagementSnapshot[];
 }
 
 export interface ExportIvyWebRequest {

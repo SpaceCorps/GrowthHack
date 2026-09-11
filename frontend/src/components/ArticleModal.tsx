@@ -1,5 +1,11 @@
 import React, { useEffect, useState, useMemo } from "react";
-import type { Article, ExportRecord, HeroBannerTheme, SyndicationStatusResponse } from "../types";
+import type {
+  Article,
+  ExportRecord,
+  HeroBannerTheme,
+  SyndicationStatusResponse,
+  EngagementHistoryResponse,
+} from "../types";
 import {
   X,
   Copy,
@@ -23,7 +29,12 @@ import {
   Palette,
   Layers,
   Upload,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Activity,
 } from "lucide-react";
+import { EngagementVelocityChart } from "./EngagementVelocityChart";
 import {
   BANNER_THEMES,
   getThemeForCategory,
@@ -36,7 +47,7 @@ interface ArticleModalProps {
   onClose: () => void;
   onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
   onArticleUpdated?: (article: Article) => void;
-  initialTab?: "content" | "raw" | "backlinks" | "export";
+  initialTab?: "content" | "raw" | "backlinks" | "export" | "engagement";
 }
 
 export const ArticleModal: React.FC<ArticleModalProps> = ({
@@ -47,9 +58,11 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   initialTab = "content",
 }) => {
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"content" | "raw" | "backlinks" | "export">(
-    initialTab,
-  );
+  const [activeTab, setActiveTab] = useState<
+    "content" | "raw" | "backlinks" | "export" | "engagement"
+  >(initialTab);
+  const [articleHistory, setArticleHistory] = useState<EngagementHistoryResponse | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
 
   // Export tab state
   const [selectedChannel, setSelectedChannel] = useState<string>("Dev.to");
@@ -126,6 +139,37 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       setDownloadSuccessMessage(null);
     }
   }, [article?.id, initialTab]);
+
+  useEffect(() => {
+    if (!article?.id) {
+      setArticleHistory(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingHistory(true);
+
+    fetch(`/api/articles/${article.id}/engagement-history`)
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error("History fetch failed");
+      })
+      .then((data: EngagementHistoryResponse) => {
+        if (isMounted) {
+          setArticleHistory(data);
+        }
+      })
+      .catch(() => {
+        // Fallback gracefully
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingHistory(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [article?.id]);
 
   const fetchSyndicationSettings = () => {
     fetch("/api/settings/syndication")
@@ -607,6 +651,20 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>Export & Syndicate ({exportsList.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("engagement")}
+              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
+                activeTab === "engagement"
+                  ? "border-pink-400 text-pink-300"
+                  : "border-transparent text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>
+                Engagement & Velocity (
+                {articleHistory?.snapshots?.length ?? article.engagement_snapshots?.length ?? 0})
+              </span>
             </button>
           </div>
         </div>
@@ -1501,6 +1559,157 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                         </span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "engagement" && (
+            <div className="space-y-6">
+              {/* Velocity and 24h Delta Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                    Views Velocity
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-cyan-400">
+                      +{articleHistory?.velocity?.views_per_day.toFixed(1) || "0.0"}/d
+                    </span>
+                    <span className="text-[11px] text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                      +{articleHistory?.velocity?.views_24h ?? 0} (24h)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                    Reactions Velocity
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-pink-400">
+                      +{articleHistory?.velocity?.reactions_per_day.toFixed(1) || "0.0"}/d
+                    </span>
+                    <span className="text-[11px] text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                      +{articleHistory?.velocity?.reactions_24h ?? 0} (24h)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                    Comments Velocity
+                  </span>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="text-xl font-bold text-emerald-400">
+                      +{articleHistory?.velocity?.comments_per_day.toFixed(1) || "0.0"}/d
+                    </span>
+                    <span className="text-[11px] text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                      +{articleHistory?.velocity?.comments_24h ?? 0} (24h)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                    Trend Trajectory
+                  </span>
+                  <div className="mt-2 flex items-center">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                        articleHistory?.velocity?.trend === "Accelerating"
+                          ? "bg-emerald-950/80 text-emerald-300 border-emerald-800"
+                          : articleHistory?.velocity?.trend === "Steady"
+                            ? "bg-cyan-950/80 text-cyan-300 border-cyan-800"
+                            : articleHistory?.velocity?.trend === "Decelerating"
+                              ? "bg-amber-950/80 text-amber-300 border-amber-800"
+                              : "bg-slate-800 text-slate-300 border-slate-700"
+                      }`}
+                    >
+                      {articleHistory?.velocity?.trend === "Accelerating" && (
+                        <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                      )}
+                      {articleHistory?.velocity?.trend === "Steady" && (
+                        <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                      )}
+                      {articleHistory?.velocity?.trend === "Decelerating" && (
+                        <TrendingDown className="w-3.5 h-3.5 text-amber-400" />
+                      )}
+                      {articleHistory?.velocity?.trend === "Flat" && (
+                        <Minus className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                      <span>{articleHistory?.velocity?.trend || "Flat"}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Engagement Velocity Chart */}
+              <EngagementVelocityChart
+                snapshots={articleHistory?.snapshots || article.engagement_snapshots || []}
+                velocity={articleHistory?.velocity}
+                title={`${article.title}: Historical Velocity and Trend`}
+              />
+
+              {/* Snapshot Timeline History */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-cyan-400" />
+                    <span>
+                      Recorded Snapshot History (
+                      {articleHistory?.snapshots?.length ||
+                        article.engagement_snapshots?.length ||
+                        0}
+                      )
+                    </span>
+                  </div>
+                  {isLoadingHistory && (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-sans normal-case">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400" />
+                      <span>Loading history...</span>
+                    </div>
+                  )}
+                </h4>
+                {(articleHistory?.snapshots || article.engagement_snapshots || []).length === 0 ? (
+                  <div className="text-center py-6 text-xs text-slate-500">
+                    No historical snapshots recorded yet. Sync metrics to begin recording velocity
+                    checkpoints.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                          <th className="pb-2 font-medium">Timestamp</th>
+                          <th className="pb-2 font-medium text-right">Views</th>
+                          <th className="pb-2 font-medium text-right">Reactions</th>
+                          <th className="pb-2 font-medium text-right">Comments</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850">
+                        {(articleHistory?.snapshots || article.engagement_snapshots || [])
+                          .slice()
+                          .reverse()
+                          .map((snap, idx) => (
+                            <tr key={idx} className="hover:bg-slate-900/40">
+                              <td className="py-2 text-slate-300">
+                                {new Date(snap.timestamp).toLocaleString()}
+                              </td>
+                              <td className="py-2 text-right text-cyan-400 font-bold">
+                                {snap.views}
+                              </td>
+                              <td className="py-2 text-right text-pink-400 font-bold">
+                                {snap.reactions}
+                              </td>
+                              <td className="py-2 text-right text-emerald-400 font-bold">
+                                {snap.comments}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
