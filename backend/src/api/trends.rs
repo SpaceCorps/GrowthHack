@@ -564,8 +564,13 @@ pub async fn update_trend(
     let mut state = ctx.state.write().await;
     match state.trends.iter_mut().find(|t| t.id == id) {
         Some(trend) => {
+            let content_modified = payload.topic.as_ref().is_some_and(|t| t != &trend.topic)
+                || payload.summary.as_ref().is_some_and(|s| s != &trend.summary);
+
             if let Some(status) = payload.status {
                 trend.status = status;
+            } else if content_modified {
+                trend.status = "Pending".to_string();
             }
             if let Some(topic) = payload.topic {
                 trend.topic = topic;
@@ -839,6 +844,7 @@ Requirements:
                     slug: Some(slug),
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
 
@@ -935,5 +941,116 @@ mod tests {
         assert!(prompt.contains("Lobste.rs"));
         assert!(prompt.contains("forum.cursor.com"));
         assert!(prompt.contains("developer forums & platforms (Lobste.rs, forum.cursor.com)"));
+    }
+
+    #[tokio::test]
+    async fn test_update_trend_resets_status_to_pending_on_topic_or_summary_change() {
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let trend = TrendTopic {
+            id: "trend-reset-test".to_string(),
+            source: "GitHub".to_string(),
+            topic: "Original Topic".to_string(),
+            url: "https://github.com/test".to_string(),
+            engagement: "100 stars".to_string(),
+            summary: "Original summary.".to_string(),
+            tendril_tie_in: "direct".to_string(),
+            status: "Approved".to_string(),
+            generated_article_id: None,
+            created_at: now,
+        };
+
+        {
+            let mut state = ctx.state.write().await;
+            state.trends.push(trend);
+        }
+
+        // 1. Modifying topic without explicit status resets status to Pending
+        let update_topic_req = UpdateTrendRequest {
+            topic: Some("Modified Topic".to_string()),
+            ..Default::default()
+        };
+
+        let result = update_trend(
+            Path("trend-reset-test".to_string()),
+            State(ctx.clone()),
+            Json(update_topic_req),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let Json(updated) = result.unwrap();
+        assert_eq!(updated.topic, "Modified Topic");
+        assert_eq!(updated.status, "Pending");
+
+        // Re-set to Published
+        {
+            let mut state = ctx.state.write().await;
+            if let Some(t) = state.trends.iter_mut().find(|t| t.id == "trend-reset-test") {
+                t.status = "Published".to_string();
+            }
+        }
+
+        // 2. Modifying summary without explicit status resets status to Pending
+        let update_summary_req = UpdateTrendRequest {
+            summary: Some("Modified Summary.".to_string()),
+            ..Default::default()
+        };
+
+        let result2 = update_trend(
+            Path("trend-reset-test".to_string()),
+            State(ctx.clone()),
+            Json(update_summary_req),
+        )
+        .await;
+
+        assert!(result2.is_ok());
+        let Json(updated2) = result2.unwrap();
+        assert_eq!(updated2.summary, "Modified Summary.");
+        assert_eq!(updated2.status, "Pending");
+    }
+
+    #[tokio::test]
+    async fn test_update_trend_preserves_explicit_status() {
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let trend = TrendTopic {
+            id: "trend-explicit-test".to_string(),
+            source: "GitHub".to_string(),
+            topic: "Original Topic".to_string(),
+            url: "https://github.com/test".to_string(),
+            engagement: "100 stars".to_string(),
+            summary: "Original summary.".to_string(),
+            tendril_tie_in: "direct".to_string(),
+            status: "Approved".to_string(),
+            generated_article_id: None,
+            created_at: now,
+        };
+
+        {
+            let mut state = ctx.state.write().await;
+            state.trends.push(trend);
+        }
+
+        // Modifying topic and summary with explicit status preserves explicit status
+        let update_req = UpdateTrendRequest {
+            topic: Some("New Topic".to_string()),
+            summary: Some("New Summary".to_string()),
+            status: Some("Rejected".to_string()),
+            ..Default::default()
+        };
+
+        let result = update_trend(
+            Path("trend-explicit-test".to_string()),
+            State(ctx.clone()),
+            Json(update_req),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let Json(updated) = result.unwrap();
+        assert_eq!(updated.topic, "New Topic");
+        assert_eq!(updated.summary, "New Summary");
+        assert_eq!(updated.status, "Rejected");
     }
 }

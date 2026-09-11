@@ -19,6 +19,8 @@ const mockIssues: ContributorIssue[] = [
     reproduction_steps: ["Run cargo run -- completion --help", "Observe missing zsh generator"],
     mentor: "@rorychatt",
     claimed: false,
+    github_issue_number: 42,
+    github_repo: "SpaceCorps/GrowthHack",
   },
   {
     id: "cf-issue-2",
@@ -45,6 +47,10 @@ const mockIssues: ContributorIssue[] = [
     claimed: true,
     claimed_by: "@test-dev",
     claimed_at: "2026-09-10T12:00:00Z",
+    github_issue_number: 99,
+    github_repo: "SpaceCorps/GrowthHack",
+    github_sync_status: "Synced",
+    github_sync_message: "Assigned to @test-dev with claimed label",
   },
 ];
 
@@ -75,6 +81,75 @@ const mockContributors: AllContributorsResponse = {
     "[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg)](#contributors)",
 };
 
+const mockRcConfig = {
+  projectName: "growthhack",
+  projectOwner: "spacecorps",
+  repoType: "github",
+  repoHost: "https://github.com",
+  files: ["README.md"],
+  imageSize: 100,
+  commit: false,
+  commitConvention: "angular",
+  contributors: [
+    {
+      login: "rorychatt",
+      name: "Rory Chatt",
+      avatar_url: "https://github.com/rorychatt.png",
+      profile: "https://github.com/rorychatt",
+      contributions: ["code", "architecture"],
+    },
+    {
+      login: "sarah-ui",
+      name: "Sarah Jenkins",
+      avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4",
+      profile: "https://github.com/sarah-ui",
+      contributions: ["design", "frontend"],
+    },
+  ],
+  contributorsPerLine: 7,
+  linkToUsage: true,
+};
+
+const mockAllContributorsRc = {
+  filename: ".all-contributorsrc",
+  content: JSON.stringify(mockRcConfig, null, 2),
+  config: mockRcConfig,
+  contributor_count: 2,
+};
+
+const mockVerifyResponse = {
+  success: true,
+  message: "Contributor verified successfully",
+  contributor: {
+    id: "contrib-test",
+    name: "test-dev",
+    login: "test-dev",
+    email: null,
+    points: 100,
+    tier: "Rising Star",
+    joined_date: "2026-09-10",
+    contributions: ["code", "doc"],
+    avatar_url: "https://github.com/test-dev.png",
+    verified: true,
+    verified_at: "2026-09-11T00:00:00Z",
+    pr_url: null,
+  },
+  issue: null,
+  pr: {
+    branch_name: "all-contributors/add-test-dev",
+    pr_url: null,
+    pr_title: "docs: add test-dev to .all-contributorsrc [skip ci]",
+    cli_commands: [
+      "git checkout -b all-contributors/add-test-dev",
+      "git add .all-contributorsrc",
+      'git commit -m "docs: add test-dev to .all-contributorsrc [skip ci]"',
+      "git push origin all-contributors/add-test-dev",
+    ],
+    updated_config: mockRcConfig,
+    instructions: "Run the CLI commands to open a PR.",
+  },
+};
+
 describe("ContributorFlywheel View", () => {
   beforeEach(() => {
     // Mock clipboard
@@ -86,8 +161,32 @@ describe("ContributorFlywheel View", () => {
       writable: true,
     });
 
+    // Mock URL object methods for download test
+    Object.defineProperty(window.URL, "createObjectURL", {
+      value: vi.fn().mockReturnValue("blob:mock-url"),
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    });
+
     // Mock fetch
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    global.fetch = vi.fn().mockImplementation((url: string, _options?: RequestInit) => {
+      if (url.includes("/api/contributors/verify")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockVerifyResponse),
+        });
+      }
+      if (url.includes("/api/contributors/all-contributorsrc")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockAllContributorsRc),
+        });
+      }
       if (url.includes("/api/contributors/issues") && !url.includes("/claim")) {
         return Promise.resolve({
           ok: true,
@@ -113,7 +212,9 @@ describe("ContributorFlywheel View", () => {
             Promise.resolve({
               ...mockIssues[0],
               claimed: true,
-              claimed_by: "@test-claimer",
+              claimed_by: "@janedev",
+              github_sync_status: "Synced",
+              github_sync_message: "Issue #42 assigned to @janedev with 'claimed' label",
             }),
         });
       }
@@ -153,6 +254,25 @@ describe("ContributorFlywheel View", () => {
     // Check contributor avatars
     expect(screen.getByText("Rory Chatt")).toBeDefined();
     expect(screen.getByText("Sarah Jenkins")).toBeDefined();
+  });
+
+  it("renders GitHub issue badges and sync status tags", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("github-issue-badge-cf-issue-1")).toBeDefined();
+    });
+
+    const badge1 = screen.getByTestId("github-issue-badge-cf-issue-1") as HTMLAnchorElement;
+    expect(badge1.href).toBe("https://github.com/SpaceCorps/GrowthHack/issues/42");
+    expect(badge1.textContent).toContain("#42");
+
+    // Unlinked issue should not have a badge
+    expect(screen.queryByTestId("github-issue-badge-cf-issue-2")).toBeNull();
+
+    // Claimed issue should display sync status tag
+    const syncTag = screen.getByTestId("github-sync-status-cf-issue-3");
+    expect(syncTag.textContent).toContain("GitHub: Synced");
   });
 
   it("handles onboarding checklist toggle and command copy", async () => {
@@ -202,7 +322,7 @@ describe("ContributorFlywheel View", () => {
     expect(screen.queryByText("Improve empty state message on Plan Review view")).toBeNull();
   });
 
-  it("opens claim modal and successfully claims an issue", async () => {
+  it("opens claim modal and successfully claims an issue with GitHub sync", async () => {
     const onIssueClaimed = vi.fn();
     render(<ContributorFlywheel onIssueClaimed={onIssueClaimed} />);
 
@@ -218,6 +338,12 @@ describe("ContributorFlywheel View", () => {
 
     const nameInput = screen.getByTestId("claim-name-input");
     const handleInput = screen.getByTestId("claim-handle-input");
+    const issueNumberInput = screen.getByTestId("claim-issue-number-input") as HTMLInputElement;
+    const autoSyncCheckbox = screen.getByTestId("claim-auto-sync-checkbox") as HTMLInputElement;
+
+    expect(issueNumberInput.value).toBe("42");
+    expect(autoSyncCheckbox.checked).toBe(true);
+
     fireEvent.change(nameInput, { target: { value: "Jane Developer" } });
     fireEvent.change(handleInput, { target: { value: "@janedev" } });
 
@@ -232,11 +358,20 @@ describe("ContributorFlywheel View", () => {
           body: JSON.stringify({
             contributor_name: "Jane Developer",
             github_handle: "@janedev",
+            github_issue_number: 42,
+            auto_sync_github: true,
           }),
         }),
       );
       expect(onIssueClaimed).toHaveBeenCalled();
+      expect(screen.getByTestId("claim-feedback-banner")).toBeDefined();
+      expect(screen.getByTestId("claim-feedback-sync-status").textContent).toContain("Synced");
     });
+
+    // Close feedback modal
+    const doneBtn = screen.getByTestId("claim-modal-done-btn");
+    fireEvent.click(doneBtn);
+    expect(screen.queryByTestId("claim-feedback-banner")).toBeNull();
   });
 
   it("copies contributing markdown, badge snippet, and html grid to clipboard", async () => {
@@ -260,5 +395,89 @@ describe("ContributorFlywheel View", () => {
     const copyGridBtn = screen.getByTestId("copy-grid-html-btn");
     fireEvent.click(copyGridBtn);
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(mockContributors.html_grid);
+  });
+
+  it("renders .all-contributorsrc studio, copies JSON, and downloads file", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByText(".all-contributorsrc Studio & PR Generator")).toBeDefined();
+    });
+
+    // Check preview renders .all-contributorsrc content
+    await waitFor(() => {
+      expect(screen.getByTestId("all-contributorsrc-preview").textContent).toContain("growthhack");
+    });
+
+    // Copy .all-contributorsrc JSON
+    const copyJsonBtn = screen.getByTestId("copy-all-contributorsrc-btn");
+    fireEvent.click(copyJsonBtn);
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(mockAllContributorsRc.content);
+
+    // Download .all-contributorsrc file
+    const downloadBtn = screen.getByTestId("download-all-contributorsrc-btn");
+    fireEvent.click(downloadBtn);
+    expect(window.URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it("opens verification modal, submits contributor verification with PR generation, and displays CLI commands", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("verify-issue-btn-cf-issue-3")).toBeDefined();
+    });
+
+    // Click "Verify & Generate PR" on the claimed issue (cf-issue-3)
+    const verifyBtn = screen.getByTestId("verify-issue-btn-cf-issue-3");
+    fireEvent.click(verifyBtn);
+
+    // Check modal rendered with prefilled handle
+    expect(screen.getByText("Verify Contributor & Generate PR")).toBeDefined();
+    const handleInput = screen.getByTestId("verify-handle-input") as HTMLInputElement;
+    expect(handleInput.value).toBe("@test-dev");
+
+    // Toggle a contribution badge (e.g. doc)
+    const docBadgeBtn = screen.getByTestId("badge-select-doc");
+    fireEvent.click(docBadgeBtn);
+
+    // Submit verification form
+    const submitVerifyBtn = screen.getByTestId("submit-verify-btn");
+    fireEvent.click(submitVerifyBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/verify",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            issue_id: "cf-issue-3",
+            contributor_name: "test-dev",
+            github_handle: "@test-dev",
+            contributions: ["code", "doc"],
+            auto_generate_pr: true,
+          }),
+        }),
+      );
+    });
+
+    // Check verification success and PR commands are shown
+    await waitFor(() => {
+      expect(screen.getByText(/Contributor verified successfully/i)).toBeDefined();
+      expect(screen.getByTestId("generated-branch").textContent).toBe(
+        "all-contributors/add-test-dev",
+      );
+      expect(screen.getByText("CLI Execution Commands")).toBeDefined();
+    });
+
+    // Test copying the CLI commands
+    const copyCommandsBtn = screen.getByTestId("copy-cli-commands-btn");
+    fireEvent.click(copyCommandsBtn);
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      mockVerifyResponse.pr.cli_commands.join("\n"),
+    );
+
+    // Close modal
+    const finishBtn = screen.getByTestId("finish-verify-btn");
+    fireEvent.click(finishBtn);
   });
 });

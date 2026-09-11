@@ -540,4 +540,65 @@ describe("ReviewQueue Component", () => {
     const updatedPayload = onRefineMock.mock.calls[0][1];
     expect(updatedPayload.status).toBeUndefined();
   });
+
+  it("refining an approved trend synthesis resets status to Pending when topic or summary/content is modified", async () => {
+    const onRefineMock = vi.fn();
+    const approvedTrend: ReviewItem = {
+      id: "trend-approved-1",
+      type: "trend_synthesis",
+      title: "Original Trend Topic",
+      subtitle: "Sub",
+      channel: "GitHub",
+      summary: "Original trend summary",
+      content: "Original trend content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "trend-1",
+    };
+
+    render(<ReviewQueue items={[approvedTrend]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    const topicInput = screen.getByDisplayValue("Original Trend Topic");
+    fireEvent.change(topicInput, { target: { value: "Updated Trend Topic" } });
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledWith(
+      approvedTrend,
+      expect.objectContaining({
+        title: "Updated Trend Topic",
+        status: "Pending",
+      }),
+    );
+  });
+
+  it("saving trend synthesis refinement without changes preserves existing status", async () => {
+    const onRefineMock = vi.fn();
+    const approvedTrend: ReviewItem = {
+      id: "trend-approved-2",
+      type: "trend_synthesis",
+      title: "Original Trend Topic",
+      subtitle: "Sub",
+      channel: "GitHub",
+      summary: "Original trend summary",
+      content: "Original trend content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "trend-2",
+    };
+
+    render(<ReviewQueue items={[approvedTrend]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledTimes(1);
+    const updatedPayload = onRefineMock.mock.calls[0][1];
+    expect(updatedPayload.status).toBeUndefined();
+  });
 });

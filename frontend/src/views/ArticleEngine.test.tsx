@@ -387,4 +387,141 @@ describe("ArticleEngine Component", () => {
     expect(syncButton!.textContent).toContain("Sync Metrics");
     expect(syncButton!.disabled).toBe(false);
   });
+
+  it("renders engagement velocity statistics and trend trajectory badge when history is loaded", async () => {
+    const mockHistory = {
+      snapshots: [
+        {
+          timestamp: new Date(Date.now() - 86400000).toISOString(),
+          views: 100,
+          reactions: 10,
+          comments: 2,
+        },
+        {
+          timestamp: new Date().toISOString(),
+          views: 350,
+          reactions: 35,
+          comments: 8,
+        },
+      ],
+      velocity: {
+        views_24h: 250,
+        reactions_24h: 25,
+        comments_24h: 6,
+        views_per_day: 250.0,
+        reactions_per_day: 25.0,
+        comments_per_day: 6.0,
+        trend: "Accelerating",
+      },
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return Promise.resolve(new Response(JSON.stringify(mockHistory), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    // Wait for fetch effect
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container!.textContent).toContain("+250.0/day");
+    expect(container!.textContent).toContain("Trend Trajectory:");
+    expect(container!.textContent).toContain("Accelerating");
+    expect(container!.textContent).toContain("+250 views, +25 reacts, +6 comments");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("renders engagement velocity chart with pure SVG elements and timeframe buttons", async () => {
+    const mockHistory = {
+      snapshots: [
+        {
+          timestamp: new Date(Date.now() - 3 * 86400000).toISOString(),
+          views: 50,
+          reactions: 5,
+          comments: 1,
+        },
+        {
+          timestamp: new Date(Date.now() - 86400000).toISOString(),
+          views: 120,
+          reactions: 15,
+          comments: 3,
+        },
+        {
+          timestamp: new Date().toISOString(),
+          views: 300,
+          reactions: 40,
+          comments: 10,
+        },
+      ],
+      velocity: {
+        views_24h: 180,
+        reactions_24h: 25,
+        comments_24h: 7,
+        views_per_day: 180.0,
+        reactions_per_day: 25.0,
+        comments_per_day: 7.0,
+        trend: "Accelerating",
+      },
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return Promise.resolve(new Response(JSON.stringify(mockHistory), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container!.textContent).toContain("Global Engagement Velocity & Trend Trajectory");
+    const svgEl = container!.querySelector("svg");
+    expect(svgEl).toBeDefined();
+
+    // Verify timeframe buttons
+    const timeframeButtons = Array.from(container!.querySelectorAll("button")).filter((b) =>
+      ["24h", "7d", "30d", "All"].includes(b.textContent || ""),
+    );
+    expect(timeframeButtons.length).toBe(4);
+
+    // Switch to 24h
+    const btn24h = timeframeButtons.find((b) => b.textContent === "24h");
+    expect(btn24h).toBeDefined();
+
+    await act(async () => {
+      btn24h!.click();
+    });
+
+    // Verify 24h is now selected
+    expect(btn24h!.className).toContain("bg-indigo-950");
+
+    fetchSpy.mockRestore();
+  });
 });

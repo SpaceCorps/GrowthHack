@@ -7,12 +7,14 @@ pub struct Config {
     pub port: u16,
     pub agy_path: PathBuf,
     pub data_file: PathBuf,
+    pub frontend_dist_dir: Option<PathBuf>,
     pub ivy_web_content_path: PathBuf,
     pub ivy_web_images_path: PathBuf,
     pub devto_api_key: Option<String>,
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub github_token: Option<String>,
+    pub syndication_webhook_secret: Option<String>,
 }
 
 pub fn get_user_home() -> Option<PathBuf> {
@@ -24,6 +26,56 @@ pub fn get_user_home() -> Option<PathBuf> {
 
 pub fn probe_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
+}
+
+pub fn resolve_frontend_dist_dir(
+    env_var: Option<String>,
+    current_exe: Option<&Path>,
+) -> Option<PathBuf> {
+    resolve_frontend_dist_dir_from(env_var, None, current_exe)
+}
+
+pub fn resolve_frontend_dist_dir_from(
+    env_var: Option<String>,
+    cwd: Option<&Path>,
+    current_exe: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(custom) = env_var {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if path.exists() {
+                return Some(path);
+            } else {
+                tracing::warn!(
+                    "FRONTEND_DIST_DIR is set to {:?}, but directory does not exist",
+                    path
+                );
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+
+    if let Some(base_cwd) = cwd {
+        candidates.push(base_cwd.join("frontend/dist"));
+        candidates.push(base_cwd.join("../frontend/dist"));
+    } else {
+        candidates.push(PathBuf::from("frontend/dist"));
+        candidates.push(PathBuf::from("../frontend/dist"));
+    }
+
+    if let Some(exe) = current_exe {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("frontend/dist"));
+            candidates.push(exe_dir.join("dist"));
+            candidates.push(exe_dir.join("../frontend/dist"));
+            candidates.push(exe_dir.join("../../../frontend/dist"));
+            candidates.push(exe_dir.join("../../frontend/dist"));
+        }
+    }
+
+    probe_existing_path(&candidates)
 }
 
 pub fn derive_images_path_from_content(content_path: &Path) -> Option<PathBuf> {
@@ -131,6 +183,11 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("growth_data.json"));
 
+        let frontend_dist_dir = resolve_frontend_dist_dir(
+            std::env::var("FRONTEND_DIST_DIR").ok(),
+            std::env::current_exe().ok().as_deref(),
+        );
+
         let ivy_web_content_path = resolve_ivy_web_content_path(
             std::env::var("IVY_WEB_CONTENT_PATH").ok(),
             home.as_deref(),
@@ -163,17 +220,24 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let syndication_webhook_secret = std::env::var("SYNDICATION_WEBHOOK_SECRET")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Self {
             host,
             port,
             agy_path,
             data_file,
+            frontend_dist_dir,
             ivy_web_content_path,
             ivy_web_images_path,
             devto_api_key,
             hashnode_api_key,
             hashnode_publication_id,
             github_token,
+            syndication_webhook_secret,
         }
     }
 }
@@ -273,7 +337,10 @@ mod tests {
         std::env::set_var("GITHUB_TOKEN", "ghp_test_token_12345");
         let config = Config::load();
         std::env::remove_var("GITHUB_TOKEN");
-        assert_eq!(config.github_token, Some("ghp_test_token_12345".to_string()));
+        assert_eq!(
+            config.github_token,
+            Some("ghp_test_token_12345".to_string())
+        );
 
         std::env::set_var("GITHUB_PAT", "ghp_pat_token_67890");
         let config = Config::load();
@@ -327,6 +394,66 @@ mod tests {
 
         let resolved = resolve_agy_path(None, None, Some(&temp_dir));
         assert_eq!(resolved, test_bin);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_syndication_webhook_secret_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("SYNDICATION_WEBHOOK_SECRET", "test_secret_val_123");
+        let config = Config::load();
+        std::env::remove_var("SYNDICATION_WEBHOOK_SECRET");
+        assert_eq!(
+            config.syndication_webhook_secret,
+            Some("test_secret_val_123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_frontend_dist_dir_custom_env() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_frontend_dist_custom_{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let custom = Some(temp_dir.to_string_lossy().to_string());
+        let resolved = resolve_frontend_dist_dir(custom, None);
+        assert_eq!(resolved, Some(temp_dir.clone()));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_frontend_dist_dir_exe_relative() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_frontend_dist_exe_{}", uuid::Uuid::new_v4()));
+        let exe_dir = temp_dir.join("bin");
+        let exe_path = exe_dir.join("growthhack-backend");
+        let dist_dir = exe_dir.join("frontend/dist");
+
+        let _ = std::fs::create_dir_all(&dist_dir);
+        let _ = std::fs::write(&exe_path, b"dummy binary");
+
+        let resolved = resolve_frontend_dist_dir_from(None, Some(&temp_dir), Some(&exe_path));
+        assert_eq!(resolved, Some(dist_dir));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_frontend_dist_dir_nonexistent_returns_none() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_frontend_dist_none_{}", uuid::Uuid::new_v4()));
+        let exe_dir = temp_dir.join("isolated_bin");
+        let exe_path = exe_dir.join("dummy_exe");
+        let _ = std::fs::create_dir_all(&exe_dir);
+
+        let custom_nonexistent = Some(temp_dir.join("nonexistent_dist").to_string_lossy().to_string());
+        let resolved = resolve_frontend_dist_dir_from(custom_nonexistent, Some(&temp_dir), Some(&exe_path));
+        assert!(resolved.is_none());
+
+        let resolved_none = resolve_frontend_dist_dir_from(None, Some(&temp_dir), Some(&exe_path));
+        assert!(resolved_none.is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

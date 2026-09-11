@@ -7,8 +7,11 @@ pub mod demo;
 pub mod demos;
 pub mod doctor;
 pub mod issues;
+pub mod launch;
 pub mod listings;
+pub mod middleware;
 pub mod packages;
+pub mod playground;
 pub mod recipes;
 pub mod submission;
 pub mod trends;
@@ -19,7 +22,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-pub use issues::AppContext;
+pub use issues::{AppContext, TestContextGuard};
 
 pub fn router(ctx: Arc<AppContext>) -> Router {
     Router::new()
@@ -85,8 +88,24 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(articles::sync_article_metrics),
         )
         .route(
+            "/api/articles/engagement-history",
+            get(articles::get_global_engagement_history),
+        )
+        .route(
+            "/api/articles/{id}/engagement-history",
+            get(articles::get_article_engagement_history),
+        )
+        .route(
             "/api/webhooks/syndication",
-            post(articles::handle_syndication_webhook),
+            post(articles::handle_syndication_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
         )
         // Syndication Settings
         .route(
@@ -202,12 +221,28 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::claim_contributor_issue),
         )
         .route(
+            "/api/contributors/issues/{id}/github",
+            put(contributors::link_github_issue),
+        )
+        .route(
             "/api/contributors/contributing-md",
             get(contributors::get_contributing_guide),
         )
         .route(
             "/api/contributors/all-contributors",
             get(contributors::get_all_contributors),
+        )
+        .route(
+            "/api/contributors/all-contributorsrc",
+            get(contributors::get_all_contributorsrc),
+        )
+        .route(
+            "/api/contributors/verify",
+            post(contributors::verify_contributor),
+        )
+        .route(
+            "/api/contributors/generate-pr",
+            post(contributors::generate_all_contributors_pr),
         )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
@@ -228,5 +263,26 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/demo/diff", get(demo::get_diff))
         .route("/api/demo/metrics", get(demo::get_metrics))
         .route("/api/demo/star-click", post(demo::record_star_click))
+        // Coordinated 48-Hour Launch Campaign Orchestrator
+        .route("/api/launch/overview", get(launch::get_launch_overview))
+        .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
+        .route("/api/launch/show-hn", put(launch::update_show_hn))
+        .route("/api/launch/product-hunt", put(launch::update_product_hunt))
+        .route("/api/launch/product-hunt/checklist/{id}", put(launch::toggle_product_hunt_checklist))
+        .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
+        .route("/api/launch/checklist/{id}", put(launch::toggle_syndication_checklist))
+        .route("/api/launch/timeline/{phase_id}/tasks/{task_id}", put(launch::toggle_timeline_task))
+        .route("/api/launch/reset", post(launch::reset_launch_campaign))
+        // Interactive Browser Web Playground (tendril.run)
+        .route("/api/playground/scenarios", get(playground::list_scenarios))
+        .route("/api/playground/import-issue", post(playground::import_issue))
+        .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/status", get(playground::get_status))
+        .route("/api/playground/start", post(playground::start_simulation))
+        .route("/api/playground/reset", post(playground::reset_simulation))
+        .route("/api/playground/diff", get(playground::get_diff))
+        .route("/api/playground/metrics", get(playground::get_metrics))
+        .route("/api/playground/star-click", post(playground::record_star_click))
+        .route("/api/playground/banner", get(playground::get_banner_info))
         .with_state(ctx)
 }
