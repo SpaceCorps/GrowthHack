@@ -10,7 +10,8 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_webhook_without_secret_allows_request() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     // Ensure no secret is set
     {
         let mut state = ctx.state.write().await;
@@ -40,13 +41,12 @@ async fn test_webhook_without_secret_allows_request() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["received"], true);
     assert_eq!(json["status"], "processed");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_webhook_with_valid_hmac_passes() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     let secret = "test_webhook_signing_secret_99";
     {
         let mut state = ctx.state.write().await;
@@ -80,13 +80,12 @@ async fn test_webhook_with_valid_hmac_passes() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["received"], true);
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_webhook_with_raw_hex_signature_passes() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     let secret = "test_raw_hex_secret_77";
     {
         let mut state = ctx.state.write().await;
@@ -119,13 +118,12 @@ async fn test_webhook_with_raw_hex_signature_passes() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["received"], true);
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_webhook_with_invalid_signature_rejected() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     let secret = "secure_production_secret";
     {
         let mut state = ctx.state.write().await;
@@ -155,13 +153,12 @@ async fn test_webhook_with_invalid_signature_rejected() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], false);
     assert_eq!(json["error"], "Invalid HMAC signature");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_webhook_missing_signature_when_secret_set_rejected() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     let secret = "mandatory_secret_key";
     {
         let mut state = ctx.state.write().await;
@@ -188,13 +185,12 @@ async fn test_webhook_missing_signature_when_secret_set_rejected() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["success"], false);
     assert_eq!(json["error"], "Invalid HMAC signature");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_webhook_rate_limiting_enforcement() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
     let test_ip = "198.51.100.99";
 
     // Initial requests within burst capacity (10) should succeed (assuming no secret configured)
@@ -245,6 +241,4 @@ async fn test_webhook_rate_limiting_enforcement() {
         retry_after_header_present,
         "Retry-After header must be present on 429 response"
     );
-
-    let _ = std::fs::remove_file(data_file);
 }
