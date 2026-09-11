@@ -16,6 +16,9 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
 }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [status, setStatus] = useState<"connecting" | "running" | "completed" | "error">(
+    "connecting",
+  );
   const [copied, setCopied] = useState(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -24,6 +27,19 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
 
     setLogs([`Connecting to Antigravity stream for task: ${taskId}...`]);
     setIsStreaming(true);
+    setStatus("connecting");
+
+    const watchdog = setTimeout(() => {
+      setLogs((prev) => {
+        if (prev.length <= 1) {
+          return [
+            ...prev,
+            "[WARNING] No logs received after 90s. Check that the Antigravity backend service is running and agy CLI is installed.",
+          ];
+        }
+        return prev;
+      });
+    }, 90000);
 
     const eventSource = new EventSource(`/api/agent/stream/${taskId}`);
 
@@ -31,20 +47,40 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
       const line = event.data;
       setLogs((prev) => [...prev, line]);
 
-      if (line.includes("[DONE]") || line.includes("[ERROR]")) {
+      if (line.includes("[DONE]")) {
         setIsStreaming(false);
+        setStatus("completed");
         if (onTaskCompleted) {
           onTaskCompleted();
         }
+      } else if (line.includes("[ERROR]")) {
+        setIsStreaming(false);
+        setStatus("error");
+        if (onTaskCompleted) {
+          onTaskCompleted();
+        }
+      } else {
+        setStatus("running");
       }
     };
 
     eventSource.onerror = () => {
       setIsStreaming(false);
       eventSource.close();
+      setLogs((prev) => {
+        const hasDone = prev.some((l) => l.includes("[DONE]"));
+        if (!hasDone) {
+          setStatus("error");
+          return [...prev, "[ERROR] Stream connection disconnected or lost."];
+        } else {
+          setStatus("completed");
+          return prev;
+        }
+      });
     };
 
     return () => {
+      clearTimeout(watchdog);
       eventSource.close();
     };
   }, [taskId, onTaskCompleted]);
@@ -75,7 +111,11 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
           </div>
           <Terminal className="w-3.5 h-3.5 text-emerald-400 ml-1" />
           <span className="font-semibold text-slate-200">{title}</span>
-          {isStreaming ? (
+          {status === "error" ? (
+            <span className="flex items-center gap-1 text-[10px] text-rose-400 font-sans px-2 py-0.5 rounded-full bg-rose-950 border border-rose-800">
+              Disconnected
+            </span>
+          ) : isStreaming ? (
             <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-sans px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800">
               <RefreshCw className="w-2.5 h-2.5 animate-spin" />
               Running
@@ -119,9 +159,11 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
         {logs.map((line, idx) => {
           let lineClass = "text-slate-300";
           if (line.startsWith("[SYSTEM]")) lineClass = "text-cyan-400 font-semibold";
+          else if (line.startsWith("[STAGE]")) lineClass = "text-purple-400 font-semibold";
           else if (line.startsWith("[PROMPT]")) lineClass = "text-indigo-400 italic";
           else if (line.startsWith("[DONE]")) lineClass = "text-emerald-400 font-bold";
           else if (line.startsWith("[ERROR]")) lineClass = "text-rose-400 font-semibold";
+          else if (line.startsWith("[WARNING]")) lineClass = "text-amber-400 font-semibold";
           else if (line.startsWith("[STDERR]")) lineClass = "text-amber-300/80";
           else if (line.startsWith("#")) lineClass = "text-emerald-300 font-bold";
 
