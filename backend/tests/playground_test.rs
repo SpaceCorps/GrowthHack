@@ -98,12 +98,25 @@ async fn test_import_custom_issue() {
 
     assert_eq!(scenario["title"], "Add Prometheus metrics endpoint");
     assert!(scenario["id"].as_str().unwrap().starts_with("custom-"));
-    assert!(scenario["diff"].as_str().unwrap().contains("Add Prometheus metrics endpoint"));
+    assert_eq!(
+        scenario["issue_url"],
+        "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/42"
+    );
+    assert!(scenario["labels"].is_array());
+    assert!(scenario["diff"]
+        .as_str()
+        .unwrap()
+        .contains("Add Prometheus metrics endpoint"));
 
     // Verify imported count in persisted metrics
     let disk_content = std::fs::read_to_string(&data_file).unwrap();
     let disk_state: Value = serde_json::from_str(&disk_content).unwrap();
-    assert!(disk_state["playground_metrics"]["issues_imported"].as_u64().unwrap() >= 1);
+    assert!(
+        disk_state["playground_metrics"]["issues_imported"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
 
     let _ = std::fs::remove_file(data_file);
 }
@@ -222,7 +235,10 @@ async fn test_simulation_lifecycle() {
     assert_eq!(diff_res.status(), StatusCode::OK);
     let diff_body = to_bytes(diff_res.into_body(), usize::MAX).await.unwrap();
     let diff_data: Value = serde_json::from_slice(&diff_body).unwrap();
-    assert!(diff_data["diff"].as_str().unwrap().contains("HealthResponse"));
+    assert!(diff_data["diff"]
+        .as_str()
+        .unwrap()
+        .contains("HealthResponse"));
 
     let _ = std::fs::remove_file(data_file);
 }
@@ -294,9 +310,100 @@ async fn test_banner_embed_generator() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let banner: Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(banner["markdown_snippet"].as_str().unwrap().contains("[![Try Tendril"));
-    assert!(banner["html_snippet"].as_str().unwrap().contains("<a href=\"https://tendril.run/playground\""));
+    assert!(banner["markdown_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("[![Try Tendril"));
+    assert!(banner["html_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("<a href=\"https://tendril.run/playground\""));
     assert!(banner["raw_svg"].as_str().unwrap().contains("<svg"));
+
+    let _ = std::fs::remove_file(data_file);
+}
+
+#[test]
+fn test_parse_github_issue_url() {
+    use growthhack_backend::api::playground::parse_github_issue_url;
+
+    // Standard issue URL
+    let parsed = parse_github_issue_url("https://github.com/Ivy-Interactive/Ivy-Tendril/issues/42");
+    assert_eq!(
+        parsed,
+        Some(("Ivy-Interactive".to_string(), "Ivy-Tendril".to_string(), 42))
+    );
+
+    // Trailing slash
+    let parsed_slash =
+        parse_github_issue_url("https://github.com/spacecorps/growthhack/issues/100/");
+    assert_eq!(
+        parsed_slash,
+        Some(("spacecorps".to_string(), "growthhack".to_string(), 100))
+    );
+
+    // Query parameters and anchor fragments
+    let parsed_complex = parse_github_issue_url(
+        "https://github.com/owner/my-repo/issues/777?tab=comments&filter=all#issuecomment-999",
+    );
+    assert_eq!(
+        parsed_complex,
+        Some(("owner".to_string(), "my-repo".to_string(), 777))
+    );
+
+    // Non-issue or malformed URLs
+    assert_eq!(
+        parse_github_issue_url("https://github.com/owner/repo/pull/42"),
+        None
+    );
+    assert_eq!(
+        parse_github_issue_url("https://github.com/owner/repo"),
+        None
+    );
+    assert_eq!(
+        parse_github_issue_url("https://example.com/not/github"),
+        None
+    );
+    assert_eq!(parse_github_issue_url("invalid-url"), None);
+}
+
+#[tokio::test]
+async fn test_import_issue_graceful_fallback_without_token() {
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx);
+
+    let payload = serde_json::json!({
+        "issue_url": "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/105"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/playground/import-issue")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let scenario: Value = serde_json::from_slice(&body).unwrap();
+
+    // Verifies fallback heuristic works without token: title derived from issue number
+    assert_eq!(scenario["title"], "Imported GitHub Issue #105");
+    assert_eq!(
+        scenario["issue_url"],
+        "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/105"
+    );
+    assert!(scenario["labels"].is_array());
+    assert!(scenario["description"]
+        .as_str()
+        .unwrap()
+        .contains("https://github.com/Ivy-Interactive/Ivy-Tendril/issues/105"));
 
     let _ = std::fs::remove_file(data_file);
 }
