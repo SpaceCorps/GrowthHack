@@ -315,8 +315,6 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/launch/overview", get(launch::get_launch_overview))
         .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
         .route("/api/launch/show-hn", put(launch::update_show_hn))
-        .route("/api/launch/product-hunt", put(launch::update_product_hunt))
-        .route("/api/launch/product-hunt/checklist/{id}", put(launch::toggle_product_hunt_checklist))
         .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
         .route("/api/launch/checklist/{id}", put(launch::toggle_syndication_checklist))
         .route("/api/launch/timeline/{phase_id}/tasks/{task_id}", put(launch::toggle_timeline_task))
