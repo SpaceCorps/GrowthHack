@@ -28,6 +28,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runner = AgentRunner::new(config.agy_path.clone());
     let task_manager = TaskManager::new(runner);
 
+    let (metrics_debouncer, metrics_worker) = growthhack_backend::api::MetricsSyncDebouncer::new(
+        tokio::time::Duration::from_secs(3),
+        tokio::time::Duration::from_secs(15),
+    );
+    let metrics_debouncer = Arc::new(metrics_debouncer);
+
     let ctx = Arc::new(AppContext {
         state,
         task_manager,
@@ -38,7 +44,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::clone(&metrics_debouncer),
     });
+
+    metrics_worker.spawn(Arc::downgrade(&ctx));
 
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
@@ -48,6 +57,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("Running periodic syndication engagement metrics sync...");
             if let Err(e) = api::articles::sync_all_metrics_internal(&sync_ctx).await {
                 tracing::warn!("Periodic metrics sync warning: {}", e);
+            }
+        }
+    });
+
+    let timeout_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic contributor issue claim timeout sweep...");
+            match api::contributors::check_claim_timeouts_internal(&timeout_ctx, 7).await {
+                Ok(unclaimed) => {
+                    tracing::info!(
+                        "Claim timeout sweep completed: {} issues automatically unclaimed ({:?})",
+                        unclaimed.len(),
+                        unclaimed
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Claim timeout sweep warning: {}", e);
+                }
             }
         }
     });

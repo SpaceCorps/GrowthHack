@@ -678,6 +678,139 @@ impl GitHubClient {
         }
         Ok(())
     }
+
+    pub async fn remove_issue_label(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        label: &str,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/labels/{}",
+            self.base_url, owner, repo, issue_number, label
+        );
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.status().is_success() || resp.status().as_u16() == 404 {
+            return Ok(());
+        }
+
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        Err(format!(
+            "DELETE /issues/{}/labels/{} failed ({}): {}",
+            issue_number, label, status, text
+        ))
+    }
+
+    pub async fn remove_issue_assignees(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        assignees: &[&str],
+    ) -> Result<Vec<String>, String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/assignees",
+            self.base_url, owner, repo, issue_number
+        );
+        let payload = serde_json::json!({
+            "assignees": assignees
+        });
+        let resp = self
+            .client
+            .delete(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            if resp.status().as_u16() == 404 {
+                return Ok(Vec::new());
+            }
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "DELETE /issues/{}/assignees failed ({}): {}",
+                issue_number, status, text
+            ));
+        }
+
+        let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+        if let Some(arr) = val.get("assignees").and_then(|a| a.as_array()) {
+            let logins = arr
+                .iter()
+                .filter_map(|u| {
+                    u.get("login")
+                        .and_then(|l| l.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(logins);
+        }
+        Ok(Vec::new())
+    }
+
+    pub async fn check_issue_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+    ) -> Result<Option<String>, String> {
+        let timeline_url = format!(
+            "{}/repos/{}/{}/issues/{}/timeline",
+            self.base_url, owner, repo, issue_number
+        );
+        if let Ok(resp) = self.client.get(&timeline_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(events) = resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = events.as_array() {
+                        for event in arr {
+                            if let Some(source) = event.get("source").and_then(|s| s.get("issue")) {
+                                if source.get("pull_request").is_some() {
+                                    if let Some(html_url) = source.get("html_url").and_then(|h| h.as_str()) {
+                                        return Ok(Some(html_url.to_string()));
+                                    }
+                                }
+                            }
+                            if let Some(pr) = event.get("pull_request") {
+                                if let Some(html_url) = pr.get("html_url").and_then(|h| h.as_str()) {
+                                    return Ok(Some(html_url.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let search_url = format!(
+            "{}/search/issues?q=repo:{}/{}+type:pr+{}",
+            self.base_url, owner, repo, issue_number
+        );
+        if let Ok(resp) = self.client.get(&search_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(val) = resp.json::<serde_json::Value>().await {
+                    if let Some(items) = val.get("items").and_then(|i| i.as_array()) {
+                        if let Some(first) = items.first() {
+                            if let Some(html_url) = first.get("html_url").and_then(|h| h.as_str()) {
+                                return Ok(Some(html_url.to_string()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 pub async fn get_github_status(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {

@@ -41,6 +41,7 @@ fn create_test_context(token: Option<String>) -> Arc<AppContext> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::new(growthhack_backend::api::MetricsSyncDebouncer::default()),
     })
 }
 
