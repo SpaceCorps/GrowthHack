@@ -28,6 +28,7 @@ import { PrFlywheel } from "./views/PrFlywheel";
 import { RecipeHub } from "./views/RecipeHub";
 import { ContributorFlywheel } from "./views/ContributorFlywheel";
 import { DoctorDemo } from "./views/DoctorDemo";
+import { Playground } from "./views/Playground";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
       "review",
       "flywheel",
       "doctor",
+      "playground",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -156,6 +158,8 @@ export const App: React.FC = () => {
         "agent",
         "review",
         "flywheel",
+        "doctor",
+        "playground",
       ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
@@ -1014,6 +1018,7 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === "doctor" && <DoctorDemo />}
+        {activeTab === "playground" && <Playground />}
       </main>
 
       {/* Footer */}
