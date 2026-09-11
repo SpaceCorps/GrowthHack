@@ -13,6 +13,7 @@ import {
   Cpu,
   CheckCheck,
   GitPullRequest,
+  Users,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -26,6 +27,7 @@ interface NavigationProps {
   packagesCount?: number;
   reviewCount?: number;
   recipesCount?: number;
+  contributorsCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -39,6 +41,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   packagesCount,
   reviewCount,
   recipesCount,
+  contributorsCount,
 }) => {
   const navItems = [
     {
@@ -87,6 +90,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Package Blitz",
       icon: Package,
       count: packagesCount,
+    },
+    {
+      id: "contributors" as ActiveTab,
+      label: "Contributor Flywheel",
+      icon: Users,
+      count: contributorsCount,
     },
     {
       id: "flywheel" as ActiveTab,

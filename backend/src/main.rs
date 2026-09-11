@@ -37,6 +37,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: config.clone(),
     });
 
+    let sync_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic syndication engagement metrics sync...");
+            if let Err(e) = api::articles::sync_all_metrics_internal(&sync_ctx).await {
+                tracing::warn!("Periodic metrics sync warning: {}", e);
+            }
+        }
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

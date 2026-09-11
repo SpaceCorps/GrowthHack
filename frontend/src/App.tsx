@@ -3,6 +3,7 @@ import type {
   ActiveTab,
   AgentStatus,
   Article,
+  ContributorIssue,
   GrowthIssue,
   Listing,
   PackageManagerTarget,
@@ -25,6 +26,7 @@ import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 import { PrFlywheel } from "./views/PrFlywheel";
 import { RecipeHub } from "./views/RecipeHub";
+import { ContributorFlywheel } from "./views/ContributorFlywheel";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -41,6 +43,7 @@ export const App: React.FC = () => {
       "demos",
       "listings",
       "packages",
+      "contributors",
       "recipes",
       "agent",
       "review",
@@ -64,6 +67,7 @@ export const App: React.FC = () => {
   const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -85,6 +89,7 @@ export const App: React.FC = () => {
         resStatus,
         resDemos,
         resRecipes,
+        resContributors,
       ] = await Promise.all([
         fetch("/api/issues").then((r) => r.json()),
         fetch("/api/articles").then((r) => r.json()),
@@ -94,6 +99,7 @@ export const App: React.FC = () => {
         fetch("/api/agent/status").then((r) => r.json()),
         fetch("/api/demos").then((r) => r.json()),
         fetch("/api/recipes").then((r) => r.json()),
+        fetch("/api/contributors/issues").then((r) => r.json()),
       ]);
       setIssues(resIssues);
       setArticles(resArticles);
@@ -103,6 +109,7 @@ export const App: React.FC = () => {
       setAgentStatus(resStatus);
       setDemos(resDemos);
       setRecipes(resRecipes);
+      setContributorIssues(resContributors);
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -127,6 +134,7 @@ export const App: React.FC = () => {
         "demos",
         "listings",
         "packages",
+        "contributors",
         "recipes",
         "agent",
         "review",
@@ -271,6 +279,17 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.error("Update article status error:", err);
+    }
+  };
+
+  const handleSyncMetrics = async () => {
+    try {
+      const res = await fetch("/api/articles/sync-metrics", { method: "POST" });
+      if (res.ok) {
+        fetchAll();
+      }
+    } catch (err) {
+      console.error("Sync metrics error:", err);
     }
   };
 
@@ -428,6 +447,25 @@ export const App: React.FC = () => {
       fetchAll();
     } catch (err) {
       console.error("Update package status error:", err);
+    }
+  };
+
+  const handleDispatchPackagePr = async (id: string, version?: string) => {
+    try {
+      const res = await fetch(`/api/packages/${id}/dispatch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version }),
+      });
+      const data = await res.json();
+      if (data && data.task_id) {
+        setTerminalTitle("Antigravity Upstream PR Dispatcher");
+        setActiveTaskId(data.task_id);
+      }
+      fetchAll();
+      return data?.task_id;
+    } catch (err) {
+      console.error("Dispatch package PR error:", err);
     }
   };
 
@@ -812,6 +850,7 @@ export const App: React.FC = () => {
         packagesCount={packages.length}
         reviewCount={pendingReviewCount}
         recipesCount={recipes.length}
+        contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -837,6 +876,7 @@ export const App: React.FC = () => {
               setArticleModalTab(tab || "content");
             }}
             onUpdateStatus={handleUpdateArticleStatus}
+            onSyncMetrics={handleSyncMetrics}
           />
         )}
 
@@ -877,14 +917,41 @@ export const App: React.FC = () => {
           <PackageManagerBlitz
             packages={packages}
             onUpdatePackageStatus={handleUpdatePackageStatus}
+            onDispatchPackagePr={handleDispatchPackagePr}
           />
         )}
+
+        {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
+
         {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800 bg-slate-900/50 py-6 text-center text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p>GrowthHack Platform &middot; Scaling Ivy-Tendril adoption</p>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setActiveTab("contributors")}
+              className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+            >
+              Contributor Guide & Fast-Track Onboarding
+            </button>
+            <a
+              href="https://github.com/SpaceCorps/GrowthHack"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-slate-200 transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
 
       {/* Floating Live Terminal for Real-Time Streaming */}
       <LiveTerminal
