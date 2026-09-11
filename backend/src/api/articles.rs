@@ -2747,6 +2747,386 @@ pub async fn sync_article_metrics(
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+pub struct SeedEngagementRequest {
+    #[serde(default)]
+    pub views: Option<u32>,
+    #[serde(default)]
+    pub reactions: Option<u32>,
+    #[serde(default)]
+    pub comments: Option<u32>,
+    #[serde(default)]
+    pub channels: Option<std::collections::HashMap<String, ChannelMetrics>>,
+    #[serde(default)]
+    pub generate_history_days: Option<u32>,
+    #[serde(default)]
+    pub reset_badges: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedEngagementResponse {
+    pub success: bool,
+    pub article: Article,
+    pub new_alerts: Vec<EngagementMilestoneAlert>,
+    pub new_alerts_count: usize,
+    pub velocity: EngagementVelocity,
+}
+
+pub fn is_dev_endpoints_enabled() -> bool {
+    if let Ok(val) = std::env::var("ENABLE_DEV_ENDPOINTS") {
+        if val == "0" || val.eq_ignore_ascii_case("false") {
+            return false;
+        }
+        if val == "1" || val.eq_ignore_ascii_case("true") {
+            return true;
+        }
+    }
+    cfg!(debug_assertions)
+}
+
+pub fn seed_article_metrics(
+    article: &mut Article,
+    req: &SeedEngagementRequest,
+    now: DateTime<Utc>,
+) -> (Vec<EngagementMilestoneAlert>, EngagementVelocity) {
+    if req.reset_badges.unwrap_or(false) {
+        article.engagement_badges.clear();
+        article.milestone_alerts.clear();
+        article.engagement_snapshots.clear();
+    }
+
+    let default_channels = {
+        let mut m = std::collections::HashMap::new();
+        m.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 750,
+                reactions: 40,
+                comments: 10,
+            },
+        );
+        m.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 500,
+                reactions: 25,
+                comments: 8,
+            },
+        );
+        m
+    };
+
+    let channels = req.channels.clone().unwrap_or(default_channels);
+    let views = req.views.unwrap_or_else(|| {
+        if req.channels.is_some() {
+            channels.values().map(|c| c.views).sum()
+        } else {
+            1250
+        }
+    });
+    let reactions = req.reactions.unwrap_or_else(|| {
+        if req.channels.is_some() {
+            channels.values().map(|c| c.reactions).sum()
+        } else {
+            65
+        }
+    });
+    let comments = req.comments.unwrap_or_else(|| {
+        if req.channels.is_some() {
+            channels.values().map(|c| c.comments).sum()
+        } else {
+            18
+        }
+    });
+
+    article.engagement = Some(EngagementMetrics {
+        views,
+        reactions,
+        comments,
+        last_synced_at: Some(now),
+    });
+
+    for export in &mut article.exports {
+        if let Some(ch_metrics) = channels.get(&export.channel) {
+            export.engagement = Some(EngagementMetrics {
+                reactions: ch_metrics.reactions,
+                comments: ch_metrics.comments,
+                views: ch_metrics.views,
+                last_synced_at: Some(now),
+            });
+        }
+    }
+
+    let history_days = req.generate_history_days.unwrap_or(7);
+    if history_days > 0 {
+        let steps: Vec<(chrono::Duration, f64)> = if history_days >= 7 {
+            vec![
+                (chrono::Duration::days(history_days as i64), 0.10),
+                (chrono::Duration::days((history_days as i64 * 4) / 7), 0.25),
+                (chrono::Duration::days((history_days as i64 * 2) / 7), 0.50),
+                (chrono::Duration::hours(26), 0.65),
+                (chrono::Duration::hours(6), 0.85),
+                (chrono::Duration::zero(), 1.0),
+            ]
+        } else if history_days >= 2 {
+            vec![
+                (chrono::Duration::days(history_days as i64), 0.25),
+                (chrono::Duration::hours(26), 0.65),
+                (chrono::Duration::hours(6), 0.85),
+                (chrono::Duration::zero(), 1.0),
+            ]
+        } else {
+            vec![
+                (chrono::Duration::hours(26), 0.65),
+                (chrono::Duration::hours(6), 0.85),
+                (chrono::Duration::zero(), 1.0),
+            ]
+        };
+
+        for (offset, frac) in steps {
+            let ts = now - offset;
+            let v = (views as f64 * frac).round() as u32;
+            let r = (reactions as f64 * frac).round() as u32;
+            let c = (comments as f64 * frac).round() as u32;
+            let mut step_channels = std::collections::HashMap::new();
+            for (ch_name, ch_m) in &channels {
+                step_channels.insert(
+                    ch_name.clone(),
+                    ChannelMetrics {
+                        views: (ch_m.views as f64 * frac).round() as u32,
+                        reactions: (ch_m.reactions as f64 * frac).round() as u32,
+                        comments: (ch_m.comments as f64 * frac).round() as u32,
+                    },
+                );
+            }
+            record_engagement_snapshot(
+                &mut article.engagement_snapshots,
+                ts,
+                v,
+                r,
+                c,
+                step_channels,
+                MAX_ARTICLE_SNAPSHOTS,
+            );
+        }
+        article.engagement_snapshots.sort_by_key(|s| s.timestamp);
+    } else {
+        record_engagement_snapshot(
+            &mut article.engagement_snapshots,
+            now,
+            views,
+            reactions,
+            comments,
+            channels.clone(),
+            MAX_ARTICLE_SNAPSHOTS,
+        );
+    }
+
+    let new_alerts = evaluate_article_milestones(article, now);
+    let velocity = calculate_engagement_velocity(&article.engagement_snapshots, now);
+    (new_alerts, velocity)
+}
+
+pub async fn seed_article_engagement(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    body: Option<Json<SeedEngagementRequest>>,
+) -> impl IntoResponse {
+    if !is_dev_endpoints_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "Dev seed endpoints are only available in debug builds or when ENABLE_DEV_ENDPOINTS=1"
+            })),
+        );
+    }
+
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let now = Utc::now();
+    let mut state = ctx.state.write().await;
+
+    let article = match state.articles.iter_mut().find(|a| a.id == id) {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "Article not found"
+                })),
+            );
+        }
+    };
+
+    let (new_alerts, velocity) = seed_article_metrics(article, &req, now);
+    let cloned_article = article.clone();
+
+    if !new_alerts.is_empty() {
+        let mut combined = new_alerts.clone();
+        combined.append(&mut state.engagement_alerts);
+        combined.truncate(200);
+        state.engagement_alerts = combined;
+    }
+
+    let total_views: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.views))
+        .sum();
+    let total_reactions: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.reactions))
+        .sum();
+    let total_comments: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.comments))
+        .sum();
+
+    let mut global_channels: std::collections::HashMap<String, ChannelMetrics> =
+        std::collections::HashMap::new();
+    for art in &state.articles {
+        for export in &art.exports {
+            if let Some(ref eng) = export.engagement {
+                let g = global_channels.entry(export.channel.clone()).or_default();
+                g.views += eng.views;
+                g.reactions += eng.reactions;
+                g.comments += eng.comments;
+            }
+        }
+        if let Some(last_snap) = art.engagement_snapshots.last() {
+            for (ch, m) in &last_snap.channels {
+                let g = global_channels.entry(ch.clone()).or_default();
+                if art.exports.iter().all(|e| &e.channel != ch) {
+                    g.views += m.views;
+                    g.reactions += m.reactions;
+                    g.comments += m.comments;
+                }
+            }
+        }
+    }
+
+    record_engagement_snapshot(
+        &mut state.global_engagement_snapshots,
+        now,
+        total_views,
+        total_reactions,
+        total_comments,
+        global_channels,
+        MAX_GLOBAL_SNAPSHOTS,
+    );
+
+    let _ = state.save(&ctx.data_file);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "article": cloned_article,
+            "new_alerts": new_alerts,
+            "new_alerts_count": new_alerts.len(),
+            "velocity": velocity
+        })),
+    )
+}
+
+pub async fn seed_engagement_batch(
+    State(ctx): State<Arc<AppContext>>,
+    body: Option<Json<SeedEngagementRequest>>,
+) -> impl IntoResponse {
+    if !is_dev_endpoints_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "Dev seed endpoints are only available in debug builds or when ENABLE_DEV_ENDPOINTS=1"
+            })),
+        );
+    }
+
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let now = Utc::now();
+    let mut state = ctx.state.write().await;
+
+    let mut all_new_alerts = Vec::new();
+    let seeded_count = state.articles.len();
+
+    for article in &mut state.articles {
+        let (alerts, _) = seed_article_metrics(article, &req, now);
+        all_new_alerts.extend(alerts);
+    }
+
+    if !all_new_alerts.is_empty() {
+        let mut combined = all_new_alerts.clone();
+        combined.append(&mut state.engagement_alerts);
+        combined.truncate(200);
+        state.engagement_alerts = combined;
+    }
+
+    let total_views: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.views))
+        .sum();
+    let total_reactions: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.reactions))
+        .sum();
+    let total_comments: u32 = state
+        .articles
+        .iter()
+        .filter_map(|a| a.engagement.as_ref().map(|e| e.comments))
+        .sum();
+
+    let mut global_channels: std::collections::HashMap<String, ChannelMetrics> =
+        std::collections::HashMap::new();
+    for art in &state.articles {
+        for export in &art.exports {
+            if let Some(ref eng) = export.engagement {
+                let g = global_channels.entry(export.channel.clone()).or_default();
+                g.views += eng.views;
+                g.reactions += eng.reactions;
+                g.comments += eng.comments;
+            }
+        }
+        if let Some(last_snap) = art.engagement_snapshots.last() {
+            for (ch, m) in &last_snap.channels {
+                let g = global_channels.entry(ch.clone()).or_default();
+                if art.exports.iter().all(|e| &e.channel != ch) {
+                    g.views += m.views;
+                    g.reactions += m.reactions;
+                    g.comments += m.comments;
+                }
+            }
+        }
+    }
+
+    record_engagement_snapshot(
+        &mut state.global_engagement_snapshots,
+        now,
+        total_views,
+        total_reactions,
+        total_comments,
+        global_channels,
+        MAX_GLOBAL_SNAPSHOTS,
+    );
+
+    let _ = state.save(&ctx.data_file);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "seeded_count": seeded_count,
+            "new_alerts": all_new_alerts,
+            "new_alerts_count": all_new_alerts.len()
+        })),
+    )
+}
+
 pub async fn handle_syndication_webhook(
     State(ctx): State<Arc<AppContext>>,
     body: Option<Json<serde_json::Value>>,
@@ -4675,5 +5055,232 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let remaining_unack: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
         assert!(remaining_unack.is_empty());
+    }
+
+    static SEED_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[tokio::test]
+    async fn test_seed_engagement_default_preset() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let article = Article {
+            id: "art-seed-default".to_string(),
+            title: "Test Default Seed".to_string(),
+            created_at: now,
+            ..Article::default_for_test()
+        };
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.push(article);
+        }
+
+        let resp = seed_article_engagement(
+            Path("art-seed-default".to_string()),
+            State(ctx.clone()),
+            None,
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["article"]["engagement"]["views"], 1250);
+        assert_eq!(json["article"]["engagement"]["reactions"], 65);
+        assert_eq!(json["article"]["engagement"]["comments"], 18);
+
+        // Verify milestone badges are awarded
+        let badges: Vec<String> =
+            serde_json::from_value(json["article"]["engagement_badges"].clone()).unwrap();
+        assert!(badges.contains(&"100+ Views".to_string()));
+        assert!(badges.contains(&"500+ Views".to_string()));
+        assert!(badges.contains(&"1K+ Views".to_string()));
+        assert!(badges.contains(&"25+ Reactions".to_string()));
+        assert!(badges.contains(&"50+ Reactions".to_string()));
+        assert!(badges.contains(&"10+ Comments".to_string()));
+
+        // Verify alerts are added to article and global alert list
+        assert_eq!(json["new_alerts_count"], 6);
+        let state = ctx.state.read().await;
+        let global_has_alert = state
+            .engagement_alerts
+            .iter()
+            .any(|a| a.article_id == "art-seed-default");
+        assert!(global_has_alert);
+
+        // Verify historical snapshots are generated
+        let art = state
+            .articles
+            .iter()
+            .find(|a| a.id == "art-seed-default")
+            .unwrap();
+        assert!(art.engagement_snapshots.len() >= 5);
+        assert_eq!(json["velocity"]["trend"], "Accelerating");
+    }
+
+    #[tokio::test]
+    async fn test_seed_engagement_custom_payload() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let mut custom_channels = std::collections::HashMap::new();
+        custom_channels.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 3000,
+                reactions: 60,
+                comments: 10,
+            },
+        );
+        custom_channels.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 2000,
+                reactions: 40,
+                comments: 5,
+            },
+        );
+
+        let article = Article {
+            id: "art-seed-custom".to_string(),
+            title: "Test Custom Seed".to_string(),
+            created_at: now,
+            exports: vec![ExportRecord {
+                channel: "Dev.to".to_string(),
+                exported_at: now,
+                target_path: None,
+                status: "Success".to_string(),
+                external_id: None,
+                engagement: None,
+            }],
+            ..Article::default_for_test()
+        };
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.push(article);
+        }
+
+        let req = SeedEngagementRequest {
+            views: Some(5000),
+            reactions: Some(100),
+            comments: Some(15),
+            channels: Some(custom_channels),
+            generate_history_days: Some(7),
+            reset_badges: Some(false),
+        };
+
+        let resp = seed_article_engagement(
+            Path("art-seed-custom".to_string()),
+            State(ctx.clone()),
+            Some(Json(req)),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["article"]["engagement"]["views"], 5000);
+        assert_eq!(json["article"]["engagement"]["reactions"], 100);
+        assert_eq!(json["article"]["engagement"]["comments"], 15);
+
+        // Verify channel breakdown in export
+        let state = ctx.state.read().await;
+        let art = state
+            .articles
+            .iter()
+            .find(|a| a.id == "art-seed-custom")
+            .unwrap();
+        let devto_export = art.exports.iter().find(|e| e.channel == "Dev.to").unwrap();
+        assert_eq!(devto_export.engagement.as_ref().unwrap().views, 3000);
+        assert_eq!(devto_export.engagement.as_ref().unwrap().reactions, 60);
+
+        // Verify 5K+ views threshold triggered
+        assert!(art.engagement_badges.contains(&"5K+ Views".to_string()));
+        assert!(art.engagement_badges.contains(&"100+ Reactions".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_seed_engagement_article_not_found() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let resp = seed_article_engagement(
+            Path("non-existent-art-id".to_string()),
+            State(ctx),
+            None,
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert_eq!(json["error"], "Article not found");
+    }
+
+    #[tokio::test]
+    async fn test_seed_engagement_gating() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        std::env::set_var("ENABLE_DEV_ENDPOINTS", "0");
+
+        let resp = seed_article_engagement(
+            Path("art-gating-test".to_string()),
+            State(ctx),
+            None,
+        )
+        .await
+        .into_response();
+
+        std::env::remove_var("ENABLE_DEV_ENDPOINTS");
+
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert_eq!(
+            json["error"],
+            "Dev seed endpoints are only available in debug builds or when ENABLE_DEV_ENDPOINTS=1"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_seed_engagement_batch() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let art1 = Article {
+            id: "art-batch-1".to_string(),
+            title: "Article Batch 1".to_string(),
+            created_at: now,
+            ..Article::default_for_test()
+        };
+        let art2 = Article {
+            id: "art-batch-2".to_string(),
+            title: "Article Batch 2".to_string(),
+            created_at: now,
+            ..Article::default_for_test()
+        };
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.clear();
+            state.articles.push(art1);
+            state.articles.push(art2);
+        }
+
+        let resp = seed_engagement_batch(State(ctx.clone()), None)
+            .await
+            .into_response();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["seeded_count"], 2);
+        assert!(json["new_alerts_count"].as_u64().unwrap() >= 12);
     }
 }

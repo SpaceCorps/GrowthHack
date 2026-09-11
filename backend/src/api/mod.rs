@@ -93,6 +93,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/articles/{id}/sync-metrics",
             post(articles::sync_article_metrics),
         )
+        // Dev Seeding Endpoints
+        .route(
+            "/api/articles/seed-engagement",
+            post(articles::seed_engagement_batch),
+        )
+        .route(
+            "/api/articles/{id}/seed-engagement",
+            post(articles::seed_article_engagement),
+        )
         .route(
             "/api/articles/engagement-history",
             get(articles::get_global_engagement_history),
