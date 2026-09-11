@@ -95,6 +95,10 @@ pub async fn update_demo(
     let mut state = ctx.state.write().await;
     match state.video_demos.iter_mut().find(|d| d.id == id) {
         Some(demo) => {
+            let text_modified = payload.headline.as_ref().is_some_and(|h| h != &demo.headline)
+                || payload.body.as_ref().is_some_and(|b| b != &demo.body)
+                || payload.storyboard.as_ref().is_some_and(|s| s != &demo.storyboard);
+
             if let Some(f) = payload.feature {
                 demo.feature = f;
             }
@@ -115,6 +119,8 @@ pub async fn update_demo(
             }
             if let Some(st) = payload.status {
                 demo.status = st;
+            } else if text_modified {
+                demo.status = "Pending".to_string();
             }
             demo.updated_at = Utc::now();
             let updated = demo.clone();
