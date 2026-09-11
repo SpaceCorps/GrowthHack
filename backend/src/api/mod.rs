@@ -2,6 +2,7 @@ pub mod agent;
 pub mod articles;
 pub mod badges;
 pub mod banner;
+pub mod contributors;
 pub mod demos;
 pub mod issues;
 pub mod listings;
@@ -125,6 +126,23 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/badges/generate", post(badges::generate_badge))
         .route("/api/badges/svg", get(badges::render_svg_badge))
         .route("/api/badges/workflows", get(badges::get_workflow_templates))
+        // Contributor Flywheel & Fast Track Onboarding
+        .route(
+            "/api/contributors/issues",
+            get(contributors::list_contributor_issues),
+        )
+        .route(
+            "/api/contributors/issues/{id}/claim",
+            post(contributors::claim_contributor_issue),
+        )
+        .route(
+            "/api/contributors/contributing-md",
+            get(contributors::get_contributing_guide),
+        )
+        .route(
+            "/api/contributors/all-contributors",
+            get(contributors::get_all_contributors),
+        )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
