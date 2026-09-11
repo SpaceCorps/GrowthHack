@@ -44,6 +44,11 @@ pub struct GenerateBatchRequest {
     pub limit: Option<usize>,
 }
 
+#[derive(Deserialize)]
+pub struct BatchSubmitPrRequest {
+    pub listing_ids: Option<Vec<String>>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GenerateBatchResponse {
     pub task_ids: Vec<String>,
@@ -161,6 +166,34 @@ Write a submission entry and description for Ivy-Tendril (https://github.com/Ivy
             listing.name, listing.url, listing.category
         ),
     }
+}
+
+pub fn build_pr_submission_prompt(listing: &Listing) -> String {
+    format!(
+        r#"You are an automated open-source contributor preparing and submitting a pull request for Ivy-Tendril (https://github.com/Ivy-Interactive/Ivy-Tendril).
+Target Repository: {}
+URL: {}
+Category: {}
+
+Approved Submission Blurb:
+{}
+
+Goal:
+Execute automated PR generation and submission for this target:
+1. Determine git branch name (e.g. `add-ivy-tendril`) and commit message.
+2. Determine target file path (e.g. README.md) and exact insertion position (alphabetical ordering).
+3. Format the complete GitHub Pull Request title and body with checklist.
+4. Generate and output the GitHub CLI submission command: `gh pr create --repo <owner/repo> --title "<title>" --body "<body>"`.
+"#,
+        listing.name,
+        listing.url,
+        listing.category,
+        if listing.submission_blurb.trim().is_empty() {
+            "No custom blurb provided. Use standard Ivy-Tendril submission entry."
+        } else {
+            &listing.submission_blurb
+        }
+    )
 }
 
 pub fn check_backlink_content(content: &str) -> bool {
@@ -436,6 +469,115 @@ pub async fn verify_backlink(
             verified,
             status: current_status,
             message,
+        }),
+    )
+}
+
+pub async fn submit_listing_pr(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<ListingActionResponse>) {
+    let mut state = ctx.state.write().await;
+    let listing = match state.listings.iter_mut().find(|l| l.id == id) {
+        Some(l) => {
+            if l.status == "Targeted" {
+                l.status = "PR Submitted".to_string();
+            }
+            l.updated_at = Utc::now();
+            l.clone()
+        }
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ListingActionResponse {
+                    task_id: String::new(),
+                    message: "Listing target not found".to_string(),
+                }),
+            );
+        }
+    };
+    let _ = state.save(&ctx.data_file);
+    drop(state);
+
+    let task_id = format!("task-pr-{}", Uuid::new_v4().simple());
+    let prompt = build_pr_submission_prompt(&listing);
+
+    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+    let runner = ctx.task_manager.runner().clone();
+
+    tokio::spawn(async move {
+        match runner.execute(&prompt, tx.clone()).await {
+            Ok(_content) => {
+                let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+            }
+            Err(e) => {
+                let _ = tx.send(format!("[ERROR] PR generation failed: {}", e));
+            }
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(ListingActionResponse {
+            task_id,
+            message: format!(
+                "PR submission and automated generation initiated for {}",
+                listing.name
+            ),
+        }),
+    )
+}
+
+pub async fn batch_submit_listing_prs(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<BatchSubmitPrRequest>,
+) -> (StatusCode, Json<GenerateBatchResponse>) {
+    let mut state = ctx.state.write().await;
+    let mut targets: Vec<Listing> = Vec::new();
+
+    for l in state.listings.iter_mut() {
+        let is_match = match &payload.listing_ids {
+            Some(ids) => ids.is_empty() || ids.contains(&l.id),
+            None => true,
+        };
+        if is_match && l.status == "Targeted" {
+            l.status = "PR Submitted".to_string();
+            l.updated_at = Utc::now();
+            targets.push(l.clone());
+        }
+    }
+    let _ = state.save(&ctx.data_file);
+    drop(state);
+
+    let targeted_count = targets.len();
+    let mut task_ids = Vec::new();
+
+    for listing in targets {
+        let task_id = format!("task-pr-{}", Uuid::new_v4().simple());
+        task_ids.push(task_id.clone());
+
+        let prompt = build_pr_submission_prompt(&listing);
+        let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+        let runner = ctx.task_manager.runner().clone();
+
+        tokio::spawn(async move {
+            match runner.execute(&prompt, tx.clone()).await {
+                Ok(_content) => {
+                    let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+                }
+                Err(e) => {
+                    let _ = tx.send(format!("[ERROR] PR generation failed: {}", e));
+                }
+            }
+        });
+    }
+
+    (
+        StatusCode::ACCEPTED,
+        Json(GenerateBatchResponse {
+            task_ids,
+            targeted_count,
+            message: format!("Started PR submission for {} listings", targeted_count),
         }),
     )
 }

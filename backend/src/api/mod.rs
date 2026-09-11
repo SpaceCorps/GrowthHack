@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod issues;
 pub mod listings;
 pub mod packages;
+pub mod recipes;
 pub mod trends;
 
 use axum::{
@@ -118,6 +119,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/{id}/verify-backlink",
             post(listings::verify_backlink),
         )
+        .route(
+            "/api/listings/{id}/submit-pr",
+            post(listings::submit_listing_pr),
+        )
+        .route(
+            "/api/listings/batch-submit-pr",
+            post(listings::batch_submit_listing_prs),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
@@ -128,6 +137,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/badges/generate", post(badges::generate_badge))
         .route("/api/badges/svg", get(badges::render_svg_badge))
         .route("/api/badges/workflows", get(badges::get_workflow_templates))
+        // Ready-to-Run Recipes & Community Hub
+        .route(
+            "/api/recipes",
+            get(recipes::list_recipes).post(recipes::create_or_update_recipe),
+        )
+        .route("/api/recipes/{id}", get(recipes::get_recipe))
+        .route("/api/recipes/{id}/run", post(recipes::run_recipe))
+        .route("/api/recipes/submit", post(recipes::submit_recipe))
         // Contributor Flywheel & Fast Track Onboarding
         .route(
             "/api/contributors/issues",

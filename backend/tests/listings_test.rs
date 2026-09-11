@@ -3,9 +3,9 @@ mod common;
 use axum::extract::{Path, State};
 use axum::Json;
 use growthhack_backend::api::listings::{
-    build_tailored_prompt, check_backlink_content, create_listing, generate_batch_listings,
-    list_listings, update_listing, verify_backlink, CreateListingRequest, GenerateBatchRequest,
-    UpdateListingRequest,
+    build_pr_submission_prompt, build_tailored_prompt, check_backlink_content, create_listing,
+    generate_batch_listings, list_listings, submit_listing_pr, update_listing, verify_backlink,
+    CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
@@ -251,6 +251,83 @@ async fn test_backlink_verification_logic_and_endpoint() {
     let state = ctx.state.read().await;
     let verified_listing = state.listings.iter().find(|l| l.id == "list-verify-test").unwrap();
     assert_eq!(verified_listing.status, "Live");
+}
+
+#[tokio::test]
+async fn test_submit_listing_pr_promotes_status_and_spawns_task() {
+    let ctx = common::create_test_context();
+
+    let listing_id = "list-test-pr-submit".to_string();
+    let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "test-awesome-agents (e2b-dev)".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/e2b-dev/awesome-ai-agents".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.".to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: old_time,
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+    }
+
+    let (status, Json(resp)) = submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+    assert_eq!(status, axum::http::StatusCode::ACCEPTED);
+    assert!(!resp.task_id.is_empty());
+    assert!(resp.task_id.starts_with("task-pr-"));
+    assert!(resp.message.contains("test-awesome-agents (e2b-dev)"));
+
+    // Verify status was promoted to "PR Submitted" and updated_at was updated
+    let state = ctx.state.read().await;
+    let updated = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    assert_eq!(updated.status, "PR Submitted");
+    assert!(updated.updated_at > old_time);
+}
+
+#[tokio::test]
+async fn test_pr_submission_prompt_tailoring() {
+    let listing = Listing {
+        id: "list-prompt-test".to_string(),
+        name: "frenck/awesome-devtools".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/frenck/awesome-devtools".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents.".to_string(),
+        notes: "Devtools list".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let prompt = build_pr_submission_prompt(&listing);
+    assert!(prompt.contains("Target Repository: frenck/awesome-devtools"));
+    assert!(prompt.contains("URL: https://github.com/frenck/awesome-devtools"));
+    assert!(prompt.contains("Category: Awesome Repo"));
+    assert!(prompt.contains("Approved Submission Blurb:"));
+    assert!(prompt.contains("- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents."));
+    assert!(prompt.contains("gh pr create"));
+
+    // Test with empty blurb fallback
+    let empty_blurb_listing = Listing {
+        id: "list-prompt-empty".to_string(),
+        name: "test/empty-repo".to_string(),
+        category: "Dev Directory".to_string(),
+        url: "https://example.com".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb: "   ".to_string(),
+        notes: "".to_string(),
+        blurb_status: None,
+        updated_at: chrono::Utc::now(),
+    };
+    let empty_prompt = build_pr_submission_prompt(&empty_blurb_listing);
+    assert!(empty_prompt.contains("No custom blurb provided. Use standard Ivy-Tendril submission entry."));
 }
 
 #[tokio::test]

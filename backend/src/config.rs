@@ -170,6 +170,12 @@ impl Config {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::load()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +256,14 @@ mod tests {
         std::env::set_var("HOST", "invalid-ip-address");
         let config = Config::load();
         std::env::remove_var("HOST");
+        assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let config = Config::default();
+        assert_eq!(config.port, 4200);
         assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     }
 

@@ -198,6 +198,7 @@ export type ActiveTab =
   | "review"
   | "flywheel"
   | "contributors"
+  | "recipes"
   | "doctor";
 
 export interface DiagnosticCheck {
@@ -249,6 +250,57 @@ export interface OnboardingMetrics {
   diagnostic_runs_count: number;
   time_to_first_pr_seconds?: number;
   github_starred: boolean;
+}
+
+export interface RecipeParameter {
+  name: string;
+  description: string;
+  default_value: string;
+  required: boolean;
+  param_type: string;
+  options?: string[];
+}
+
+export interface Recipe {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  author: string;
+  author_avatar?: string;
+  version: string;
+  tags: string[];
+  promptware_template: string;
+  parameters: RecipeParameter[];
+  cli_snippet: string;
+  forks_count: number;
+  stars_count: number;
+  is_official: boolean;
+  badge?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitRecipeRequest {
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  author?: string;
+  author_avatar?: string;
+  version?: string;
+  tags?: string[];
+  promptware_template: string;
+  parameters?: RecipeParameter[];
+  cli_snippet?: string;
+}
+
+export interface RunRecipeResponse {
+  task_id: string;
+  recipe_id: string;
+  cli_command: string;
+  message: string;
 }
 
 export interface ContributorIssue {

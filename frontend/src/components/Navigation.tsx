@@ -27,6 +27,7 @@ interface NavigationProps {
   listingsCount: number;
   packagesCount?: number;
   reviewCount?: number;
+  recipesCount?: number;
   contributorsCount?: number;
 }
 
@@ -40,6 +41,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   listingsCount,
   packagesCount,
   reviewCount,
+  recipesCount,
   contributorsCount,
 }) => {
   const navItems = [
@@ -60,6 +62,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Approval Deck",
       icon: CheckCheck,
       count: reviewCount,
+    },
+    {
+      id: "recipes" as ActiveTab,
+      label: "Recipe Hub & Packs",
+      icon: Sparkles,
+      count: recipesCount,
     },
     {
       id: "trends" as ActiveTab,
