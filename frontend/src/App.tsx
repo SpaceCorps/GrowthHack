@@ -32,39 +32,88 @@ import { DoctorDemo } from "./views/DoctorDemo";
 import { LaunchCampaign } from "./views/LaunchCampaign";
 import { Playground } from "./views/Playground";
 
+const VALID_TABS: ActiveTab[] = [
+  "issues",
+  "articles",
+  "trends",
+  "demos",
+  "listings",
+  "packages",
+  "contributors",
+  "recipes",
+  "agent",
+  "review",
+  "flywheel",
+  "doctor",
+  "launch",
+  "playground",
+];
+
+export const resolveActiveTabFromLocation = (
+  rawHash: string,
+  searchStr: string = "",
+): ActiveTab => {
+  const currentSearch = searchStr ? new URLSearchParams(searchStr) : null;
+  if (rawHash.includes("scenario=") || (currentSearch && currentSearch.has("scenario"))) {
+    return "playground";
+  }
+
+  const hashWithoutPound = rawHash.replace(/^#/, "");
+  if (
+    hashWithoutPound.includes("?") ||
+    hashWithoutPound.includes("&") ||
+    hashWithoutPound.includes("=")
+  ) {
+    try {
+      const [possibleTab] = hashWithoutPound.split("?");
+      if (VALID_TABS.includes(possibleTab as ActiveTab)) {
+        return possibleTab as ActiveTab;
+      }
+      const hashParams = new URLSearchParams(hashWithoutPound);
+      const tabParam = hashParams.get("tab") as ActiveTab | null;
+      if (tabParam && VALID_TABS.includes(tabParam)) {
+        return tabParam;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (VALID_TABS.includes(hashWithoutPound as ActiveTab)) {
+    return hashWithoutPound as ActiveTab;
+  }
+
+  const tabParam = currentSearch?.get("tab") as ActiveTab | null;
+  if (tabParam && VALID_TABS.includes(tabParam)) {
+    return tabParam;
+  }
+
+  return "issues";
+};
+
 export const App: React.FC = () => {
   const searchParams =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const initialTabParam = searchParams?.get("tab") as ActiveTab | null;
   const initialArticleId = searchParams?.get("article");
 
   const getInitialTab = (): ActiveTab => {
-    const hash = window.location.hash.replace("#", "") as ActiveTab;
-    const validTabs: ActiveTab[] = [
-      "issues",
-      "articles",
-      "trends",
-      "demos",
-      "listings",
-      "packages",
-      "contributors",
-      "recipes",
-      "agent",
-      "review",
-      "flywheel",
-      "doctor",
-      "launch",
-      "playground",
-    ];
-    if (validTabs.includes(hash)) return hash;
-    return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
+    const rawHash = typeof window !== "undefined" ? window.location.hash : "";
+    const searchStr = typeof window !== "undefined" ? window.location.search : "";
+    return resolveActiveTabFromLocation(rawHash, searchStr);
   };
 
   const [activeTab, setActiveTabState] = useState<ActiveTab>(getInitialTab);
 
   const setActiveTab = (tab: ActiveTab) => {
     setActiveTabState(tab);
-    window.location.hash = tab;
+    if (tab === "playground") {
+      const currentHash = typeof window !== "undefined" ? window.location.hash : "";
+      if (!currentHash.includes("scenario=") && !currentHash.startsWith("#playground")) {
+        window.location.hash = "playground";
+      }
+    } else {
+      window.location.hash = tab;
+    }
   };
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [issues, setIssues] = useState<GrowthIssue[]>([]);
@@ -159,26 +208,10 @@ export const App: React.FC = () => {
     fetchAll();
 
     const handleHashChange = () => {
-      const hash = window.location.hash.replace("#", "") as ActiveTab;
-      const validTabs: ActiveTab[] = [
-        "issues",
-        "articles",
-        "trends",
-        "demos",
-        "listings",
-        "packages",
-        "contributors",
-        "recipes",
-        "agent",
-        "review",
-        "flywheel",
-        "doctor",
-        "launch",
-        "playground",
-      ];
-      if (validTabs.includes(hash)) {
-        setActiveTabState(hash);
-      }
+      const rawHash = typeof window !== "undefined" ? window.location.hash : "";
+      const searchStr = typeof window !== "undefined" ? window.location.search : "";
+      const resolved = resolveActiveTabFromLocation(rawHash, searchStr);
+      setActiveTabState(resolved);
     };
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
