@@ -190,7 +190,11 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
           editTitle !== currentItem.title ||
           editSummary !== currentItem.summary)) ||
       (currentItem.type === "video_demo" &&
-        (editContent !== currentItem.content || editTitle !== currentItem.title));
+        (editContent !== currentItem.content || editTitle !== currentItem.title)) ||
+      (currentItem.type === "trend_synthesis" &&
+        (editTitle !== currentItem.title ||
+          editSummary !== currentItem.summary ||
+          editContent !== currentItem.content));
 
     const updated: Partial<ReviewItem> = {
       title: editTitle,
