@@ -220,12 +220,7 @@ pub async fn run_recipe(
     let _ = state.save(&ctx.data_file);
     drop(state);
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
-
-    tokio::spawn(async move {
-        let _ = runner.execute(&prompt, tx).await;
-    });
+    ctx.task_manager.spawn_task(&task_id, prompt).await;
 
     (
         StatusCode::ACCEPTED,
