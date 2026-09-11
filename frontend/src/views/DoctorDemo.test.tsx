@@ -371,4 +371,91 @@ describe("DoctorDemo View Component", () => {
 
     vi.useRealTimers();
   });
+
+  it("streams simulation logs and updates steps reactively via EventSource", async () => {
+    let messageListener: ((e: { data: string }) => void) | null = null;
+    let closed = false;
+
+    class MockEventSource {
+      url: string;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(url: string) {
+        this.url = url;
+        setTimeout(() => {
+          if (this.onmessage) {
+            messageListener = this.onmessage;
+          }
+        }, 0);
+      }
+      close() {
+        closed = true;
+      }
+    }
+
+    (global as any).EventSource = MockEventSource;
+
+    try {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      const startButton = screen.getByText("Start Replayable Demo");
+      await act(async () => {
+        fireEvent.click(startButton);
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith("/api/demo/start", expect.any(Object));
+
+      // Wait a tick for EventSource instantiation
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      });
+
+      // Simulate Step 2 log arrival
+      await act(async () => {
+        if (messageListener) {
+          messageListener({
+            data: "[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...",
+          });
+        }
+      });
+
+      // Verify line is rendered in terminal drawer
+      expect(
+        screen.getByText(
+          "[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...",
+        ),
+      ).toBeDefined();
+
+      // Simulate Step 3 log arrival
+      await act(async () => {
+        if (messageListener) {
+          messageListener({
+            data: "[00:30] Step 3/4 (Verification): RustClippy check: cargo clippy -- -D warnings -> PASS",
+          });
+        }
+      });
+
+      expect(
+        screen.getByText(
+          "[00:30] Step 3/4 (Verification): RustClippy check: cargo clippy -- -D warnings -> PASS",
+        ),
+      ).toBeDefined();
+
+      // Simulate [DONE] log arrival
+      await act(async () => {
+        if (messageListener) {
+          messageListener({
+            data: "[DONE] Autonomous pipeline completed successfully.",
+          });
+        }
+      });
+
+      expect(screen.getByText("[DONE] Autonomous pipeline completed successfully.")).toBeDefined();
+      expect(closed).toBe(true);
+    } finally {
+      delete (global as any).EventSource;
+    }
+  });
 });

@@ -13,6 +13,7 @@ pub struct Config {
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub github_token: Option<String>,
+    pub syndication_webhook_secret: Option<String>,
 }
 
 pub fn get_user_home() -> Option<PathBuf> {
@@ -163,6 +164,11 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let syndication_webhook_secret = std::env::var("SYNDICATION_WEBHOOK_SECRET")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
         Self {
             host,
             port,
@@ -174,6 +180,7 @@ impl Config {
             hashnode_api_key,
             hashnode_publication_id,
             github_token,
+            syndication_webhook_secret,
         }
     }
 }
@@ -273,7 +280,10 @@ mod tests {
         std::env::set_var("GITHUB_TOKEN", "ghp_test_token_12345");
         let config = Config::load();
         std::env::remove_var("GITHUB_TOKEN");
-        assert_eq!(config.github_token, Some("ghp_test_token_12345".to_string()));
+        assert_eq!(
+            config.github_token,
+            Some("ghp_test_token_12345".to_string())
+        );
 
         std::env::set_var("GITHUB_PAT", "ghp_pat_token_67890");
         let config = Config::load();
@@ -329,5 +339,17 @@ mod tests {
         assert_eq!(resolved, test_bin);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_syndication_webhook_secret_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("SYNDICATION_WEBHOOK_SECRET", "test_secret_val_123");
+        let config = Config::load();
+        std::env::remove_var("SYNDICATION_WEBHOOK_SECRET");
+        assert_eq!(
+            config.syndication_webhook_secret,
+            Some("test_secret_val_123".to_string())
+        );
     }
 }

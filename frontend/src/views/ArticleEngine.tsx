@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import type { Article } from "../types";
+import React, { useState, useEffect } from "react";
+import type { Article, EngagementHistoryResponse } from "../types";
 import {
   Sparkles,
   BookOpen,
@@ -13,7 +13,12 @@ import {
   Flame,
   ExternalLink,
   RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Activity,
 } from "lucide-react";
+import { EngagementVelocityChart } from "../components/EngagementVelocityChart";
 
 export interface ArticleEngineProps {
   articles: Article[];
@@ -28,7 +33,7 @@ export interface ArticleEngineProps {
   }) => void;
   onSelectArticle: (
     article: Article,
-    initialTab?: "content" | "raw" | "backlinks" | "export",
+    initialTab?: "content" | "raw" | "backlinks" | "export" | "engagement",
   ) => void;
   onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
   onSyncMetrics?: () => Promise<void> | void;
@@ -45,6 +50,23 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   const [mode, setMode] = useState<"feature" | "spotlight">("feature");
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [globalHistory, setGlobalHistory] = useState<EngagementHistoryResponse | null>(null);
+
+  const fetchGlobalHistory = async () => {
+    try {
+      const res = await fetch("/api/articles/engagement-history");
+      if (res.ok) {
+        const data: EngagementHistoryResponse = await res.json();
+        setGlobalHistory(data);
+      }
+    } catch {
+      // Graceful fallback if endpoint is unreachable or mocked
+    }
+  };
+
+  useEffect(() => {
+    fetchGlobalHistory();
+  }, []);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -58,6 +80,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
           throw new Error(`Sync failed with status ${res.status}`);
         }
       }
+      fetchGlobalHistory().catch(() => {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sync failed";
       setSyncError(msg);
@@ -550,18 +573,84 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                 <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
                   <span className="text-[10px] text-slate-400 uppercase">Total Views</span>
                   <span className="text-base font-bold text-cyan-400 mt-0.5">{totalViews}</span>
+                  {globalHistory?.velocity && (
+                    <span
+                      className="text-[10px] text-cyan-300 font-mono mt-0.5"
+                      title="Daily velocity"
+                    >
+                      +{globalHistory.velocity.views_per_day.toFixed(1)}/day
+                    </span>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
                   <span className="text-[10px] text-slate-400 uppercase">Total Reactions</span>
                   <span className="text-base font-bold text-pink-400 mt-0.5">{totalReactions}</span>
+                  {globalHistory?.velocity && (
+                    <span
+                      className="text-[10px] text-pink-300 font-mono mt-0.5"
+                      title="Daily velocity"
+                    >
+                      +{globalHistory.velocity.reactions_per_day.toFixed(1)}/day
+                    </span>
+                  )}
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center text-center">
                   <span className="text-[10px] text-slate-400 uppercase">Total Comments</span>
                   <span className="text-base font-bold text-emerald-400 mt-0.5">
                     {totalComments}
                   </span>
+                  {globalHistory?.velocity && (
+                    <span
+                      className="text-[10px] text-emerald-300 font-mono mt-0.5"
+                      title="Daily velocity"
+                    >
+                      +{globalHistory.velocity.comments_per_day.toFixed(1)}/day
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Velocity & Trend Trajectory Summary */}
+              {globalHistory?.velocity && (
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-xs mb-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Trend Trajectory:</span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                        globalHistory.velocity.trend === "Accelerating"
+                          ? "bg-emerald-950/80 text-emerald-300 border-emerald-800"
+                          : globalHistory.velocity.trend === "Steady"
+                            ? "bg-cyan-950/80 text-cyan-300 border-cyan-800"
+                            : globalHistory.velocity.trend === "Decelerating"
+                              ? "bg-amber-950/80 text-amber-300 border-amber-800"
+                              : "bg-slate-800 text-slate-300 border-slate-700"
+                      }`}
+                    >
+                      {globalHistory.velocity.trend === "Accelerating" && (
+                        <TrendingUp className="w-3 h-3 text-emerald-400" />
+                      )}
+                      {globalHistory.velocity.trend === "Steady" && (
+                        <Activity className="w-3 h-3 text-cyan-400" />
+                      )}
+                      {globalHistory.velocity.trend === "Decelerating" && (
+                        <TrendingDown className="w-3 h-3 text-amber-400" />
+                      )}
+                      {globalHistory.velocity.trend === "Flat" && (
+                        <Minus className="w-3 h-3 text-slate-400" />
+                      )}
+                      <span>{globalHistory.velocity.trend}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/60 font-mono">
+                    <span>24h Net Delta:</span>
+                    <span className="text-slate-200">
+                      +{globalHistory.velocity.views_24h} views, +
+                      {globalHistory.velocity.reactions_24h} reacts, +
+                      {globalHistory.velocity.comments_24h} comments
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                 <span>Last Synced:</span>
@@ -577,6 +666,17 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
             transfer SEO equity.
           </div>
         </div>
+      </div>
+
+      {/* Global Historical Engagement Velocity Chart */}
+      <div className="mt-6 mb-2">
+        <EngagementVelocityChart
+          snapshots={globalHistory?.snapshots || []}
+          velocity={globalHistory?.velocity}
+          onSyncTrigger={handleSync}
+          isSyncing={isSyncing}
+          title="Global Engagement Velocity & Trend Trajectory"
+        />
       </div>
 
       {/* Filter Bar */}
@@ -778,6 +878,19 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
 
               {/* Quick Actions */}
               <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectArticle(article, "engagement");
+                  }}
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-pink-950/70 hover:bg-pink-900 text-pink-300 border border-pink-800 text-xs font-semibold transition-colors"
+                  title="Inspect Historical Engagement & Velocity"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>Velocity</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={(e) => {

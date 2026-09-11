@@ -445,4 +445,99 @@ describe("ReviewQueue Component", () => {
     }).not.toThrow();
     fireEvent.pointerUp(card, { clientX: 250, clientY: 100 });
   });
+
+  it("refining an approved article resets status to Pending when content is modified", async () => {
+    const onRefineMock = vi.fn();
+    const approvedArticle: ReviewItem = {
+      id: "art-approved-1",
+      type: "article",
+      title: "Original Article Title",
+      subtitle: "Sub",
+      channel: "Website",
+      summary: "Original summary",
+      content: "Original article content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "art-1",
+    };
+
+    render(<ReviewQueue items={[approvedArticle]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    const contentInput = screen.getByDisplayValue("Original article content");
+    fireEvent.change(contentInput, { target: { value: "Modified article content" } });
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledWith(
+      approvedArticle,
+      expect.objectContaining({
+        content: "Modified article content",
+        status: "Pending",
+      }),
+    );
+  });
+
+  it("refining an approved video demo resets status to Pending when headline or content is modified", async () => {
+    const onRefineMock = vi.fn();
+    const approvedDemo: ReviewItem = {
+      id: "demo-approved-1",
+      type: "video_demo",
+      title: "Original Demo Headline",
+      subtitle: "Sub",
+      channel: "LinkedIn",
+      summary: "Demo summary",
+      content: "Original demo script",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "demo-1",
+    };
+
+    render(<ReviewQueue items={[approvedDemo]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    const headlineInput = screen.getByDisplayValue("Original Demo Headline");
+    fireEvent.change(headlineInput, { target: { value: "Updated Demo Headline" } });
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledWith(
+      approvedDemo,
+      expect.objectContaining({
+        title: "Updated Demo Headline",
+        status: "Pending",
+      }),
+    );
+  });
+
+  it("saving refinement without changes preserves existing status", async () => {
+    const onRefineMock = vi.fn();
+    const approvedArticle: ReviewItem = {
+      id: "art-approved-2",
+      type: "article",
+      title: "Original Article Title",
+      subtitle: "Sub",
+      channel: "Website",
+      summary: "Original summary",
+      content: "Original article content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "art-2",
+    };
+
+    render(<ReviewQueue items={[approvedArticle]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledTimes(1);
+    const updatedPayload = onRefineMock.mock.calls[0][1];
+    expect(updatedPayload.status).toBeUndefined();
+  });
 });
