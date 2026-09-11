@@ -170,6 +170,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::claim_contributor_issue),
         )
         .route(
+            "/api/contributors/issues/{id}/github",
+            put(contributors::link_github_issue),
+        )
+        .route(
             "/api/contributors/contributing-md",
             get(contributors::get_contributing_guide),
         )
