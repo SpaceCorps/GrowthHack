@@ -1,39 +1,14 @@
+mod common;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::{self, AppContext};
+use growthhack_backend::api;
 use growthhack_backend::db::{GrowthState, VideoDemo};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower::ServiceExt;
-
-fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
-    let temp_dir = std::env::temp_dir();
-    let file_id = uuid::Uuid::new_v4().simple().to_string();
-    let data_file = temp_dir.join(format!("test_growth_data_{}.json", file_id));
-
-    let state = GrowthState::seed_default();
-    let _ = state.save(&data_file);
-
-    let state_arc = Arc::new(RwLock::new(state));
-    let runner = AgentRunner::new(std::path::PathBuf::from("agy"));
-    let task_manager = TaskManager::new(runner);
-
-    let ctx = Arc::new(AppContext {
-        state: state_arc,
-        task_manager,
-        data_file: data_file.clone(),
-        ivy_web_content_path: temp_dir.clone(),
-        ivy_web_images_path: temp_dir.clone(),
-        config: growthhack_backend::config::Config::load(),
-    });
-
-    (ctx, data_file)
-}
 
 #[tokio::test]
 async fn test_get_demos_returns_seeded() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let response = app
@@ -60,7 +35,7 @@ async fn test_get_demos_returns_seeded() {
 
 #[tokio::test]
 async fn test_post_demo_creates_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let new_demo_payload = serde_json::json!({
@@ -103,7 +78,7 @@ async fn test_post_demo_creates_and_persists() {
 
 #[tokio::test]
 async fn test_put_demo_updates_status_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let update_payload = serde_json::json!({
@@ -142,7 +117,7 @@ async fn test_put_demo_updates_status_and_persists() {
 
 #[tokio::test]
 async fn test_delete_demo_removes_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let response = app

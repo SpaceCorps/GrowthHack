@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
-import { PrFlywheel } from "./PrFlywheel";
+import { PrFlywheel, DEFAULT_ACTION_YML, DEFAULT_WORKFLOW_YML } from "./PrFlywheel";
 
 describe("PrFlywheel Component", () => {
   beforeEach(() => {
@@ -125,5 +125,24 @@ describe("PrFlywheel Component", () => {
     // Check referral clicks update
     const clicksElem = screen.getByTestId("referral-clicks");
     expect(clicksElem.textContent).toBeDefined();
+  });
+
+  it("includes updated upsert definition and permissions in workflow templates", async () => {
+    render(<PrFlywheel />);
+
+    expect(DEFAULT_ACTION_YML).toContain("<!-- tendril-flywheel-badge -->");
+    expect(DEFAULT_ACTION_YML).toContain("EXISTING_COMMENT_ID");
+    expect(DEFAULT_ACTION_YML).toContain(
+      'gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}"',
+    );
+    expect(DEFAULT_ACTION_YML).toContain('gh pr comment "${PR_NUMBER}"');
+    expect(DEFAULT_WORKFLOW_YML).toContain("pull-requests: write");
+    expect(DEFAULT_WORKFLOW_YML).toContain("issues: write");
+
+    const copyActionBtn = screen.getByTestId("copy-action-yml-btn");
+    fireEvent.click(copyActionBtn);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    expect(screen.getByText("Copied action.yml")).toBeDefined();
   });
 });

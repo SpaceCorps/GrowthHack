@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { PackageManagerBlitz } from "./PackageManagerBlitz";
 import type { PackageManagerTarget } from "../types";
 
@@ -270,5 +270,40 @@ describe("PackageManagerBlitz View", () => {
     // Verify release tag updated to v1.3.0
     expect(await screen.findByText("Release: v1.3.0 (Dynamic)")).toBeDefined();
     expect(await screen.findByText("# Formula content v1.3.0")).toBeDefined();
+  });
+
+  it("renders dispatch PR action button for package targets", () => {
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    // Winget, Scoop, Homebrew have dispatch action buttons
+    expect(screen.getByTestId("dispatch-pr-pkg-winget")).toBeDefined();
+    expect(screen.getByTestId("dispatch-pr-pkg-scoop")).toBeDefined();
+    expect(screen.getByTestId("dispatch-pr-pkg-homebrew")).toBeDefined();
+
+    // npx should not have dispatch PR button
+    expect(screen.queryByTestId("dispatch-pr-pkg-npx")).toBeNull();
+  });
+
+  it("opens dispatch modal and triggers onDispatchPackagePr callback", async () => {
+    const onDispatch = vi.fn().mockImplementation(() => Promise.resolve());
+    render(<PackageManagerBlitz packages={mockPackages} onDispatchPackagePr={onDispatch} />);
+
+    // Click dispatch button for Scoop
+    const dispatchScoopBtn = screen.getByTestId("dispatch-pr-pkg-scoop");
+    fireEvent.click(dispatchScoopBtn);
+
+    // Modal opens
+    const modal = screen.getByTestId("dispatch-modal");
+    expect(modal).toBeDefined();
+    expect(within(modal).getByText("Dispatch Upstream PR: Scoop (Extras)")).toBeDefined();
+    expect(within(modal).getByText("ScoopInstaller/Extras")).toBeDefined();
+    expect(within(modal).getByText(/gh repo fork ScoopInstaller\/Extras/)).toBeDefined();
+
+    // Confirm dispatch
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn");
+    fireEvent.click(confirmBtn);
+
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith("pkg-scoop", "0.8.4");
   });
 });

@@ -90,7 +90,7 @@
       "description": "Turn every pull request created or verified by Tendril into a viral distribution channel by adding an elegant verification badge and workflow attribution back to Tendril.",
       "direct_actions": [
         "Create standard GitHub Action action.yml for automated verification in CI",
-        "Design clean, respectful PR description footer badge: '\u26a1 Orchestrated with Ivy-Tendril (3 agents in isolated worktrees)'",
+        "Design clean, respectful PR description footer badge: '⚡ Orchestrated with Ivy-Tendril (3 agents in isolated worktrees)'",
         "Include benchmark summary (tests passed, tokens saved, worktree diff link) in PR comments"
       ],
       "routine_schedule": null,
@@ -159,7 +159,7 @@
     {
       "id": "issue-9",
       "number": 9,
-      "title": "Daily Tech Radar & Trend Synthesizer (GitHub, Reddit, LinkedIn Trending \u2192 Website Posts)",
+      "title": "Daily Tech Radar & Trend Synthesizer (GitHub, Reddit, LinkedIn Trending → Website Posts)",
       "category": "Trend Newsroom",
       "status": "Active Routine",
       "priority": "Critical",
@@ -208,7 +208,7 @@
       "direct_actions": [
         "Implement \tendril doctor CLI command validating Git worktree support, installed agent CLIs (Claude Code, Gemini, Codex), API keys, and port availability",
         "Bundle a pre-packaged sample repo (\tendril demo) allowing anyone to run an issue-to-verified-PR workflow in 60 seconds without configuring external dependencies",
-        "Add automatic post-success prompt on first verified PR: 'Enjoying Tendril? Star us on GitHub! \u2b50'",
+        "Add automatic post-success prompt on first verified PR: 'Enjoying Tendril? Star us on GitHub! ⭐'",
         "Surface actionable fix suggestions for common errors (missing Git worktree permissions, stale CLI paths, missing node/cargo)"
       ],
       "routine_schedule": null,
@@ -224,9 +224,9 @@
       "category": "Distribution & Launches",
       "status": "In Progress",
       "priority": "Critical",
-      "description": "Orchestrate a high-density 48-hour launch event across Hacker News, Product Hunt, and developer communities to trigger the initial 2,000\u20135,000 star influx and trend #1 globally on GitHub.",
+      "description": "Orchestrate a high-density 48-hour launch event across Hacker News, Product Hunt, and developer communities to trigger the initial 2,000–5,000 star influx and trend #1 globally on GitHub.",
       "direct_actions": [
-        "Draft an engineering-first, high-authenticity Show HN post: 'Show HN: Tendril \u2013 Run multiple coding agents safely in isolated Git worktrees'",
+        "Draft an engineering-first, high-authenticity Show HN post: 'Show HN: Tendril – Run multiple coding agents safely in isolated Git worktrees'",
         "Prepare a 90-second uncut technical demo video showcasing simultaneous agent execution and automated test verification",
         "Recruit and coordinate 20 technical beta testers from the community to seed substantive technical discussion within the first 60 minutes",
         "Submit coordinated launch across Product Hunt, Reddit r/programming, and developer newsletters (TLDR, Console.dev, Changelog)"
@@ -349,7 +349,7 @@
       "channel": "Dev.to",
       "angle": "Tutorial",
       "summary": "Step-by-step guide showing how to connect Ivy-Tendril to your GitHub repository, assign an issue to an autonomous agent, and verify passing tests before human code review.",
-      "content": "# From GitHub Issue to Verified Pull Request: The 15-Minute Autonomous Loop\n\nMost \"autonomous coding agent\" demos stop at generating a code snippet in a chat window. But engineering teams don't need snippets\u2014they need **verified pull requests**.\n\nHere is the exact workflow for taking a production GitHub issue and turning it into a tested PR in 15 minutes using [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril).\n\n## Step 1: Import the GitHub Issue\nTendril connects directly to your repository issues. Select the issue and Tendril extracts:\n- Problem description & reproduction steps\n- Affected modules and stack traces\n- Labels and acceptance criteria\n\n## Step 2: Planning & Worktree Provisioning\nRather than making blind edits, Tendril generates an execution plan and clones your repo into a temporary Git worktree.\n\n## Step 3: Verification Gates (The Differentiator)\nBefore opening the PR, Tendril executes your test suite:\n```bash\ncargo test --workspace\n```\nIf a test fails, the agent self-corrects within the worktree. Only when tests pass is the PR opened.\n\nCheck out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril) to run this workflow locally.\n",
+      "content": "# From GitHub Issue to Verified Pull Request: The 15-Minute Autonomous Loop\n\nMost \"autonomous coding agent\" demos stop at generating a code snippet in a chat window. But engineering teams don't need snippets—they need **verified pull requests**.\n\nHere is the exact workflow for taking a production GitHub issue and turning it into a tested PR in 15 minutes using [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril).\n\n## Step 1: Import the GitHub Issue\nTendril connects directly to your repository issues. Select the issue and Tendril extracts:\n- Problem description & reproduction steps\n- Affected modules and stack traces\n- Labels and acceptance criteria\n\n## Step 2: Planning & Worktree Provisioning\nRather than making blind edits, Tendril generates an execution plan and clones your repo into a temporary Git worktree.\n\n## Step 3: Verification Gates (The Differentiator)\nBefore opening the PR, Tendril executes your test suite:\n```bash\ncargo test --workspace\n```\nIf a test fails, the agent self-corrects within the worktree. Only when tests pass is the PR opened.\n\nCheck out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril) to run this workflow locally.\n",
       "backlinks": [
         "https://github.com/Ivy-Interactive/Ivy-Tendril"
       ],
@@ -412,8 +412,8 @@
       "pr_url": "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory that plans tasks, orchestrates agents in isolated Git worktrees, and produces verified PRs.",
       "notes": "High authority repo (18k+ stars). PR pending merge in 'Coding Agents' category.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-2",
@@ -424,8 +424,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Run multiple coding agents (Claude Code, Gemini, Codex) safely in parallel worktrees.",
       "notes": "Targeting 'Git Utilities & Automation' section.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-3",
@@ -436,8 +436,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent development environment with automated verification gates.",
       "notes": "Curated AI for SE list.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-4",
@@ -448,8 +448,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous software factory implementing tasks through autonomous agents and verification gates.",
       "notes": "Curated Generative AI list.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-5",
@@ -460,8 +460,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent coding orchestration with isolated Git worktrees.",
       "notes": "Developer tools and coding agents section.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Approved"
+      "blurb_status": "Approved",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-6",
@@ -472,8 +472,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Issue-to-PR workflow automation with automated build and test gates.",
       "notes": "Ecosystem extension and coding agent tools.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-7",
@@ -484,8 +484,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Developer-first autonomous software factory orchestrating agents in worktrees.",
       "notes": "Developer tooling and infrastructure.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-8",
@@ -496,8 +496,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Automated issue triage, plan creation, and branch verification pipeline.",
       "notes": "Automation and CI/CD tools section.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-9",
@@ -508,8 +508,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Command-line interface for managing plans, running agents, and verifying worktrees.",
       "notes": "Development CLI utilities.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-10",
@@ -520,8 +520,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - High performance plan execution and agent orchestration runtime.",
       "notes": "Development tools and workflows.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-11",
@@ -532,8 +532,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Developer productivity suite for autonomous software engineering.",
       "notes": "Developer utilities on macOS.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-12",
@@ -544,8 +544,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Full-lifecycle software factory integrating Python linters and test suites.",
       "notes": "Development environments.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-13",
@@ -556,8 +556,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - The root awesome directory listing for autonomous AI software factories.",
       "notes": "Primary entry point for awesome list submission.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-14",
@@ -568,8 +568,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Slack notification hooks and human-in-the-loop review actions.",
       "notes": "Integrations and bots section.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-15",
@@ -580,8 +580,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Linux-compatible background daemon and CLI orchestration.",
       "notes": "Linux developer utilities.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-16",
@@ -592,8 +592,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Automated multi-language verification gates including Clippy, ESLint, and oxlint.",
       "notes": "Automated code review and static analysis.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-17",
@@ -604,8 +604,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Self-hosted autonomous software engineering factory with local SQLite and git.",
       "notes": "Self-hosted developer platforms.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-18",
@@ -616,8 +616,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Architecture for multi-agent coordination, immutable plans, and ephemeral worktrees.",
       "notes": "Architectural patterns for AI systems.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-19",
@@ -628,8 +628,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous issue resolution engine benchmarked on real-world repository challenges.",
       "notes": "SWE-bench agent implementations.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-20",
@@ -640,8 +640,8 @@
       "pr_url": null,
       "submission_blurb": "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Pre-commit and post-execution verification gates with screenshot capture.",
       "notes": "Testing and verification automation.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-21",
@@ -652,8 +652,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril is an open-source multi-agent software factory that automates issue-to-verified PR workflows.",
       "notes": "Listed on AlternativeTo Cursor and Cline pages.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Approved"
+      "blurb_status": "Approved",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-22",
@@ -664,8 +664,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril is an open-source alternative to Cursor and proprietary software factories, offering Git worktree isolation and multi-agent orchestration.",
       "notes": "Submit as open-source alternative to Cursor, Devin, and CodeRabbit.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-23",
@@ -676,8 +676,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: Turn GitHub issues into verified pull requests using isolated agent worktrees.",
       "notes": "Launch scheduled for Phase 1 campaign.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-24",
@@ -688,8 +688,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: Autonomous plan management and multi-agent orchestration engine.",
       "notes": "Developer tool discovery catalog.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-25",
@@ -700,8 +700,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril is an autonomous engineering software factory that writes code, runs tests, and opens PRs.",
       "notes": "Product Hunt upcoming launch.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-26",
@@ -712,8 +712,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril compares favorably to closed-source coding agents by offering self-hosted Git worktree isolation.",
       "notes": "SaaS directory alternative index.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-27",
@@ -724,8 +724,8 @@
       "pr_url": null,
       "submission_blurb": "What are the best open source coding agents? Ivy-Tendril features isolated worktrees and automated verification.",
       "notes": "Recommendation voting community.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-28",
@@ -736,8 +736,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril in Developer Tools: Autonomous agent orchestration and execution verification.",
       "notes": "Tech stack tracker and registry.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-29",
@@ -748,8 +748,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril Open Source Project: Multi-agent software factory for GitHub repositories.",
       "notes": "Open source directory index.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-30",
@@ -760,8 +760,8 @@
       "pr_url": null,
       "submission_blurb": "Best alternatives to Devin and Cursor: Ivy-Tendril provides local execution and verification gates.",
       "notes": "Software alternatives portal.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-31",
@@ -772,8 +772,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril - AI Coding Agent and Autonomous Software Factory.",
       "notes": "AI tool discovery platform.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-32",
@@ -784,8 +784,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: The largest open-source agentic software development system.",
       "notes": "Comprehensive AI tool encyclopedia.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-33",
@@ -796,8 +796,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril autonomous agent factory: verified evaluations on SWE-bench benchmark.",
       "notes": "SWE-bench official directory.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-34",
@@ -808,8 +808,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril connector for OpenHands: orchestrate OpenHands inside isolated git worktrees.",
       "notes": "OpenHands ecosystem partner directory.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-35",
@@ -820,8 +820,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril integration with CodeRabbit: automated PR reviews coupled with agent worktree fixes.",
       "notes": "Code review ecosystem catalog.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-36",
@@ -832,8 +832,8 @@
       "pr_url": null,
       "submission_blurb": "Tendril orchestration runner for Aider: coordinate multiple Aider sessions across parallel plans.",
       "notes": "Aider tools and extensions list.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-37",
@@ -844,8 +844,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril backend for Continue.dev: trigger autonomous background plans directly from IDE.",
       "notes": "Continue extension registry.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-38",
@@ -856,8 +856,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: The open-source, self-hosted alternative to Devin with full verification gates.",
       "notes": "Devin comparison tracker.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-39",
@@ -868,8 +868,8 @@
       "pr_url": null,
       "submission_blurb": "Task -> Plan -> Execution -> Verification -> PR: The Ivy-Tendril autonomous workflow pattern.",
       "notes": "Agentic design pattern repository.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-40",
@@ -880,8 +880,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril multi-agent system built for production code manipulation and tool execution.",
       "notes": "LangChain ecosystem integrations.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-41",
@@ -892,8 +892,8 @@
       "pr_url": null,
       "submission_blurb": "brew install ivy-tendril - Formula for installing Ivy-Tendril CLI across macOS and Linux.",
       "notes": "Homebrew official tap / core formula.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-42",
@@ -904,8 +904,8 @@
       "pr_url": null,
       "submission_blurb": "scoop install ivy-tendril - Windows package manager manifest for Ivy-Tendril CLI.",
       "notes": "Scoop extras bucket.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-43",
@@ -916,8 +916,8 @@
       "pr_url": null,
       "submission_blurb": "winget install Ivy.Tendril - Microsoft Winget submission for Windows developer workstations.",
       "notes": "Winget community repository.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-44",
@@ -928,8 +928,8 @@
       "pr_url": null,
       "submission_blurb": "yay -S ivy-tendril-bin - Arch User Repository PKGBUILD for Tendril binary distribution.",
       "notes": "Arch Linux AUR catalog.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-45",
@@ -940,8 +940,8 @@
       "pr_url": null,
       "submission_blurb": "cargo install tendril-cli - Rust crate distribution for high-performance agent orchestration.",
       "notes": "Rust package registry.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-46",
@@ -952,8 +952,8 @@
       "pr_url": null,
       "submission_blurb": "npx @ivy/tendril - Zero-install CLI runner for Ivy-Tendril plan execution.",
       "notes": "Node.js npm registry.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-47",
@@ -964,8 +964,8 @@
       "pr_url": null,
       "submission_blurb": "Show LocalLLaMA: Ivy-Tendril - How we solved agent workspace collisions using Git worktrees.",
       "notes": "Bi-weekly community tool showcase thread.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-48",
@@ -974,10 +974,10 @@
       "url": "https://news.ycombinator.com/show",
       "status": "Targeted",
       "pr_url": null,
-      "submission_blurb": "Show HN: Ivy-Tendril \u2013 Open-source autonomous software factory with verification gates.",
+      "submission_blurb": "Show HN: Ivy-Tendril – Open-source autonomous software factory with verification gates.",
       "notes": "Show HN submission tracking.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-49",
@@ -988,8 +988,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: An autonomous coding agent factory you can run on your local machine.",
       "notes": "Dev.to tool spotlight articles.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-50",
@@ -1000,8 +1000,8 @@
       "pr_url": null,
       "submission_blurb": "Building software factories with Ivy-Tendril: From GitHub issues to merged pull requests.",
       "notes": "Hashnode AI hacker publication.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-51",
@@ -1012,8 +1012,8 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril launch announcement: Parallel agent orchestration with zero git collisions.",
       "notes": "AI engineering influencer outreach list.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     },
     {
       "id": "list-52",
@@ -1024,11 +1024,79 @@
       "pr_url": null,
       "submission_blurb": "How we built an open source software factory: Ivy-Tendril product stack.",
       "notes": "Indie Hackers product directory.",
-      "updated_at": "2026-09-10T17:54:59.000000000Z",
-      "blurb_status": "Pending"
+      "blurb_status": "Pending",
+      "updated_at": "2026-09-10T17:54:59Z"
     }
   ],
   "tasks": [],
+  "video_demos": [
+    {
+      "id": "demo-1",
+      "feature": "Git Worktrees",
+      "target_platform": "LinkedIn",
+      "duration_seconds": 30,
+      "headline": "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)",
+      "body": "If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nHere is what we do differently in Ivy-Tendril:\nEvery agent gets its own ephemeral Git worktree.\n\n1️⃣ Agent A edits src/auth.ts in /tendril-task-1\n2️⃣ Agent B runs full test suite in /tendril-task-2\n3️⃣ Zero merge collisions. Zero index locks.\n\nWatch the 30-second demo below ⬇️\n\nCheck it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub",
+      "storyboard": "00:00 - 00:05: Split terminal showing git collision error in traditional setups.\n00:05 - 00:15: Tendril creates 2 isolated worktrees instantly in the background.\n00:15 - 00:25: Both agents work in parallel; tests pass without contention.\n00:25 - 00:30: Verification badge and pull request opened. Tendril GitHub star CTA.",
+      "status": "Pending",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "demo-2",
+      "feature": "Issue to Verified PR",
+      "target_platform": "LinkedIn",
+      "duration_seconds": 45,
+      "headline": "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡",
+      "body": "Chatbot coding demos stop at \"here is a snippet.\"\n\nEngineering teams do not need snippets. They need verified pull requests with passing test suites.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril spins up an agent in an isolated worktree\n3. The agent edits code AND runs your unit tests\n4. Only when the tests pass does it open the PR\n\nSee the autonomous loop in action in the video below ⬇️\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#GitHub #CodingAgents #DevOps #CICD #SoftwareTesting #OpenSource",
+      "storyboard": "00:00 - 00:06: Import GitHub issue #184 into Tendril.\n00:06 - 00:20: Agent formulates plan, identifies files, writes fix.\n00:20 - 00:35: Automated test runner executes: cargo test passes.\n00:35 - 00:45: PR created with diff breakdown and verification badge.",
+      "status": "Pending",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "demo-3",
+      "feature": "Multi-Agent Orchestration",
+      "target_platform": "LinkedIn",
+      "duration_seconds": 35,
+      "headline": "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?",
+      "body": "Single-agent coding is 2024. Multi-agent software factories are 2026.\n\nWith Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:\n- Claude Code refactors legacy services\n- Codex updates unit test coverage\n- Gemini drafts migration documentation\n\nAll isolated. All verified before git commit.\n\nCheck out the demo ⬇️\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#MultiAgent #ClaudeCode #Gemini #OpenCode #AIProgramming #DevTools",
+      "storyboard": "00:00 - 00:05: Tendril dashboard launching 3 agent tasks concurrently.\n00:05 - 00:20: Live terminal views showing Claude and Codex executing simultaneously.\n00:20 - 00:30: Individual worktree diffs consolidating into verified commits.\n00:30 - 00:35: Outro with Tendril architecture link.",
+      "status": "Pending",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "demo-4",
+      "feature": "Voice Control",
+      "target_platform": "LinkedIn",
+      "duration_seconds": 25,
+      "headline": "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️",
+      "body": "Typing 500-word prompt context in terminal windows slows down flow state.\n\nIvy-Tendril has built-in voice intelligence:\nSpeak your architectural intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nWatch this 25-second walkthrough ⬇️\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#VoiceAI #Productivity #DeveloperExperience #CodingTools #OpenSource",
+      "storyboard": "00:00 - 00:05: Developer speaking task instruction into mic.\n00:05 - 00:15: Real-time speech-to-plan transformation in Tendril UI.\n00:15 - 00:25: Agent executes task and opens diff review.",
+      "status": "Pending",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    },
+    {
+      "id": "demo-5",
+      "feature": "Tunneling & Preview",
+      "target_platform": "LinkedIn",
+      "duration_seconds": 20,
+      "headline": "Instant Live Previews for AI-Generated Web Features 🌐",
+      "body": "When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nSee how it works in 20 seconds ⬇️\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#WebDev #FullStack #Staging #DevTools #ProductDesign",
+      "storyboard": "00:00 - 00:05: Agent finishes web UI change.\n00:05 - 00:12: Click \"Tunnel\" -> instant public URL generated.\n00:12 - 00:20: Live interactive preview loaded on mobile and desktop.",
+      "status": "Pending",
+      "created_at": "2026-09-10T12:11:54.850877100Z",
+      "updated_at": "2026-09-10T12:11:54.850877100Z"
+    }
+  ],
+  "syndication_settings": {
+    "devto_api_key": null,
+    "hashnode_api_key": null,
+    "hashnode_publication_id": null,
+    "publish_as_draft": true
+  },
   "packages": [
     {
       "id": "pkg-homebrew",
@@ -1087,66 +1155,378 @@
       "updated_at": "2026-09-10T18:01:26.892304Z"
     }
   ],
-  "video_demos": [
+  "contributor_issues": [
     {
-      "id": "demo-1",
-      "feature": "Git Worktrees",
-      "target_platform": "LinkedIn",
-      "duration_seconds": 30,
-      "headline": "\ud83d\udea8 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)",
-      "body": "If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nHere is what we do differently in Ivy-Tendril:\nEvery agent gets its own ephemeral Git worktree.\n\n1\ufe0f\u20e3 Agent A edits src/auth.ts in /tendril-task-1\n2\ufe0f\u20e3 Agent B runs full test suite in /tendril-task-2\n3\ufe0f\u20e3 Zero merge collisions. Zero index locks.\n\nWatch the 30-second demo below \u2b07\ufe0f\n\nCheck it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub",
-      "storyboard": "00:00 - 00:05: Split terminal showing git collision error in traditional setups.\n00:05 - 00:15: Tendril creates 2 isolated worktrees instantly in the background.\n00:15 - 00:25: Both agents work in parallel; tests pass without contention.\n00:25 - 00:30: Verification badge and pull request opened. Tendril GitHub star CTA.",
-      "status": "Pending",
-      "created_at": "2026-09-10T12:11:54.850877100Z",
-      "updated_at": "2026-09-10T12:11:54.850877100Z"
+      "id": "cf-issue-1",
+      "title": "Add CLI shell completion for zsh",
+      "description": "Implement zsh completion generator in the CLI completions module to allow tab completion for commands and flags.",
+      "category": "CLI",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "src/cli/completions.rs",
+        "Cargo.toml"
+      ],
+      "reproduction_steps": [
+        "Run cargo run -- completion --help",
+        "Observe missing zsh completion script generator",
+        "Add clap_complete zsh target generation"
+      ],
+      "mentor": "@rorychatt",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
     },
     {
-      "id": "demo-2",
-      "feature": "Issue to Verified PR",
-      "target_platform": "LinkedIn",
-      "duration_seconds": 45,
-      "headline": "From GitHub Issue to Merged Pull Request in 15 Minutes Flat \u26a1",
-      "body": "Chatbot coding demos stop at \"here is a snippet.\"\n\nEngineering teams do not need snippets. They need verified pull requests with passing test suites.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril spins up an agent in an isolated worktree\n3. The agent edits code AND runs your unit tests\n4. Only when the tests pass does it open the PR\n\nSee the autonomous loop in action in the video below \u2b07\ufe0f\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#GitHub #CodingAgents #DevOps #CICD #SoftwareTesting #OpenSource",
-      "storyboard": "00:00 - 00:06: Import GitHub issue #184 into Tendril.\n00:06 - 00:20: Agent formulates plan, identifies files, writes fix.\n00:20 - 00:35: Automated test runner executes: cargo test passes.\n00:35 - 00:45: PR created with diff breakdown and verification badge.",
-      "status": "Pending",
-      "created_at": "2026-09-10T12:11:54.850877100Z",
-      "updated_at": "2026-09-10T12:11:54.850877100Z"
+      "id": "cf-issue-2",
+      "title": "Add loopback host check validator in server startup",
+      "description": "Ensure server socket binding restricts to 127.0.0.1 or localhost in dev mode to prevent sandbox EPERM errors.",
+      "category": "Backend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "backend/src/main.rs",
+        "backend/src/config.rs"
+      ],
+      "reproduction_steps": [
+        "Inspect server socket binding in main.rs",
+        "Ensure binding restricts to 127.0.0.1 or localhost",
+        "Log error if 0.0.0.0 is configured in sandboxed dev mode"
+      ],
+      "mentor": "@alex-spacecorps",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
     },
     {
-      "id": "demo-3",
-      "feature": "Multi-Agent Orchestration",
-      "target_platform": "LinkedIn",
-      "duration_seconds": 35,
-      "headline": "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?",
-      "body": "Single-agent coding is 2024. Multi-agent software factories are 2026.\n\nWith Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:\n- Claude Code refactors legacy services\n- Codex updates unit test coverage\n- Gemini drafts migration documentation\n\nAll isolated. All verified before git commit.\n\nCheck out the demo \u2b07\ufe0f\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#MultiAgent #ClaudeCode #Gemini #OpenCode #AIProgramming #DevTools",
-      "storyboard": "00:00 - 00:05: Tendril dashboard launching 3 agent tasks concurrently.\n00:05 - 00:20: Live terminal views showing Claude and Codex executing simultaneously.\n00:20 - 00:30: Individual worktree diffs consolidating into verified commits.\n00:30 - 00:35: Outro with Tendril architecture link.",
-      "status": "Pending",
-      "created_at": "2026-09-10T12:11:54.850877100Z",
-      "updated_at": "2026-09-10T12:11:54.850877100Z"
+      "id": "cf-issue-3",
+      "title": "Improve empty state message on Plan Review view",
+      "description": "Display an intuitive empty state illustration and quick action buttons when no items are pending review.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 20,
+      "affected_files": [
+        "frontend/src/views/ReviewQueue.tsx"
+      ],
+      "reproduction_steps": [
+        "Open Approval Deck with zero pending review items",
+        "Observe generic no items text",
+        "Add an illustration and quick action link to generate sample articles"
+      ],
+      "mentor": "@sarah-ui",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
     },
     {
-      "id": "demo-4",
-      "feature": "Voice Control",
-      "target_platform": "LinkedIn",
-      "duration_seconds": 25,
-      "headline": "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril \ud83c\udf99\ufe0f",
-      "body": "Typing 500-word prompt context in terminal windows slows down flow state.\n\nIvy-Tendril has built-in voice intelligence:\nSpeak your architectural intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nWatch this 25-second walkthrough \u2b07\ufe0f\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#VoiceAI #Productivity #DeveloperExperience #CodingTools #OpenSource",
-      "storyboard": "00:00 - 00:05: Developer speaking task instruction into mic.\n00:05 - 00:15: Real-time speech-to-plan transformation in Tendril UI.\n00:15 - 00:25: Agent executes task and opens diff review.",
-      "status": "Pending",
-      "created_at": "2026-09-10T12:11:54.850877100Z",
-      "updated_at": "2026-09-10T12:11:54.850877100Z"
+      "id": "cf-issue-4",
+      "title": "Add keyboard shortcut ? to open navigation hotkeys modal",
+      "description": "Add a global keydown handler for '?' to open a modal describing navigation and quick action hotkeys.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 20,
+      "affected_files": [
+        "frontend/src/components/Navigation.tsx",
+        "frontend/src/App.tsx"
+      ],
+      "reproduction_steps": [
+        "Press ? on keyboard in any view",
+        "No shortcut modal opens",
+        "Add global keydown listener and hotkey overview overlay"
+      ],
+      "mentor": "@sarah-ui",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
     },
     {
-      "id": "demo-5",
-      "feature": "Tunneling & Preview",
-      "target_platform": "LinkedIn",
-      "duration_seconds": 20,
-      "headline": "Instant Live Previews for AI-Generated Web Features \ud83c\udf10",
-      "body": "When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nSee how it works in 20 seconds \u2b07\ufe0f\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#WebDev #FullStack #Staging #DevTools #ProductDesign",
-      "storyboard": "00:00 - 00:05: Agent finishes web UI change.\n00:05 - 00:12: Click \"Tunnel\" -> instant public URL generated.\n00:12 - 00:20: Live interactive preview loaded on mobile and desktop.",
-      "status": "Pending",
-      "created_at": "2026-09-10T12:11:54.850877100Z",
-      "updated_at": "2026-09-10T12:11:54.850877100Z"
+      "id": "cf-issue-5",
+      "title": "Add copy-as-curl action to API error alerts",
+      "description": "Add a convenient Copy as cURL button to error banners and alerts in the terminal console.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "frontend/src/components/LiveTerminal.tsx"
+      ],
+      "reproduction_steps": [
+        "Trigger a failed API request or simulated error",
+        "Notice lack of copyable curl command",
+        "Render a Copy as cURL button using navigator.clipboard"
+      ],
+      "mentor": "@dev-elena",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-6",
+      "title": "Add format filter dropdown in ArticleEngine",
+      "description": "Allow users to filter generated articles by channel (Website, Dev.to, Medium, etc.) or angle.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 25,
+      "affected_files": [
+        "frontend/src/views/ArticleEngine.tsx"
+      ],
+      "reproduction_steps": [
+        "Navigate to 10x Content Engine",
+        "Articles list lacks quick filtering by channel or archetype",
+        "Add filter select dropdown above article grid"
+      ],
+      "mentor": "@sarah-ui",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-7",
+      "title": "Add badge markdown preview tab in PR Flywheel",
+      "description": "Provide a tab toggle showing the raw Markdown badge snippet alongside rendered preview.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 20,
+      "affected_files": [
+        "frontend/src/views/PrFlywheel.tsx"
+      ],
+      "reproduction_steps": [
+        "Open PR Flywheel view",
+        "Observe single preview mode for GitHub badges",
+        "Add raw Markdown and HTML tab toggle with syntax highlighting"
+      ],
+      "mentor": "@alex-spacecorps",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-8",
+      "title": "Normalize repository URL trailing slashes in database loader",
+      "description": "Strip trailing slashes from repository and listing URLs during database load to avoid duplicate comparisons.",
+      "category": "Backend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "backend/src/db/mod.rs"
+      ],
+      "reproduction_steps": [
+        "Add a listing or repo with trailing slash e.g. https://github.com/foo/bar/",
+        "Query comparisons fail due to trailing slash mismatch",
+        "Trim trailing slashes in normalization helper"
+      ],
+      "mentor": "@rorychatt",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-9",
+      "title": "Add test coverage for trend topic tie-in serialization",
+      "description": "Add comprehensive unit and integration tests verifying serde serialization for trend topics.",
+      "category": "Tests",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 20,
+      "affected_files": [
+        "backend/tests/trends_test.rs",
+        "backend/src/db/mod.rs"
+      ],
+      "reproduction_steps": [
+        "Inspect tests in backend/tests/trends_test.rs",
+        "Notice missing serde roundtrip test for direct, subtle, and none tie-in values",
+        "Add test validating JSON serialization"
+      ],
+      "mentor": "@dev-elena",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-10",
+      "title": "Add dark mode contrast test helper for buttons",
+      "description": "Add automated contrast ratio assertions to verify button accessibility compliance in dark mode.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 25,
+      "affected_files": [
+        "frontend/src/views/IssuesHub.tsx",
+        "frontend/src/index.css"
+      ],
+      "reproduction_steps": [
+        "Audit color contrast for low-emphasis action buttons",
+        "Notice some borders blend into dark slate background",
+        "Add high-contrast focus rings and test helper"
+      ],
+      "mentor": "@sarah-ui",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-11",
+      "title": "Add uptime and memory usage metrics to Agent Status response",
+      "description": "Extend GET /api/agent/status with process uptime and approximate memory consumption statistics.",
+      "category": "Backend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 30,
+      "affected_files": [
+        "backend/src/api/agent.rs"
+      ],
+      "reproduction_steps": [
+        "Invoke GET /api/agent/status",
+        "Response only contains is_available and agy_path",
+        "Add uptime_seconds and process memory metrics to payload"
+      ],
+      "mentor": "@rorychatt",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-12",
+      "title": "Add JSON export action to Direct Action Issues table",
+      "description": "Add a button to export all Direct Action issues as a downloadable formatted JSON file.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 20,
+      "affected_files": [
+        "frontend/src/views/IssuesHub.tsx"
+      ],
+      "reproduction_steps": [
+        "Navigate to Direct Action Issues",
+        "Notice no batch export button",
+        "Add Export JSON button that triggers browser download"
+      ],
+      "mentor": "@dev-elena",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-13",
+      "title": "Add validation error banner on empty listing PR blurb submit",
+      "description": "Display an explicit error alert when attempting to submit an empty listing PR blurb.",
+      "category": "Frontend",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "frontend/src/views/ListingBlitz.tsx"
+      ],
+      "reproduction_steps": [
+        "Open Listing Blitz submission modal",
+        "Submit with empty submission blurb",
+        "Show user-friendly inline alert rather than silent rejection"
+      ],
+      "mentor": "@sarah-ui",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-14",
+      "title": "Add dry-run flag to package manager manifest generator",
+      "description": "Support ?dry_run=true parameter on manifest generator routes to validate target schemas without state changes.",
+      "category": "Backend",
+      "difficulty": "Help Wanted",
+      "estimated_minutes": 25,
+      "affected_files": [
+        "backend/src/api/packages.rs"
+      ],
+      "reproduction_steps": [
+        "Call manifest generation API",
+        "Notice no validation-only dry-run option",
+        "Accept ?dry_run=true query flag and validate without side effects"
+      ],
+      "mentor": "@alex-spacecorps",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    },
+    {
+      "id": "cf-issue-15",
+      "title": "Add contributor guide link to bottom footer",
+      "description": "Add a direct link in the application footer pointing to the Contributor Flywheel onboarding guide.",
+      "category": "Documentation",
+      "difficulty": "Good First Issue",
+      "estimated_minutes": 15,
+      "affected_files": [
+        "frontend/src/App.tsx"
+      ],
+      "reproduction_steps": [
+        "Scroll to bottom of application",
+        "Notice absence of quick contributor guide link",
+        "Add link navigating directly to Contributor Flywheel view"
+      ],
+      "mentor": "@rorychatt",
+      "claimed": false,
+      "claimed_by": null,
+      "claimed_at": null,
+      "pr_url": null
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Rory Chatt",
+      "avatar_url": "https://github.com/rorychatt.png",
+      "profile_url": "https://github.com/rorychatt",
+      "contributions": [
+        "code",
+        "architecture",
+        "review"
+      ]
+    },
+    {
+      "name": "Alex Vance",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10001?v=4",
+      "profile_url": "https://github.com/alex-spacecorps",
+      "contributions": [
+        "code",
+        "backend",
+        "test"
+      ]
+    },
+    {
+      "name": "Sarah Jenkins",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10002?v=4",
+      "profile_url": "https://github.com/sarah-ui",
+      "contributions": [
+        "design",
+        "frontend",
+        "a11y"
+      ]
+    },
+    {
+      "name": "Elena Rostova",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10003?v=4",
+      "profile_url": "https://github.com/dev-elena",
+      "contributions": [
+        "code",
+        "doc",
+        "maintenance"
+      ]
+    },
+    {
+      "name": "Marcus Chen",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10004?v=4",
+      "profile_url": "https://github.com/marcus-cli",
+      "contributions": [
+        "cli",
+        "package",
+        "test"
+      ]
     }
   ]
 }

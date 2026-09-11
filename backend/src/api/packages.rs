@@ -8,6 +8,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReleaseAsset {
@@ -663,3 +664,229 @@ pub async fn update_package_status(
         (StatusCode::NOT_FOUND, Json(None))
     }
 }
+
+pub fn build_upstream_pr_commands(
+    target: &PackageManagerTarget,
+    _manifest: &PackageManifestResponse,
+    version: &str,
+) -> Vec<String> {
+    match target.target_key.as_str() {
+        "winget" => vec![
+            "gh repo fork microsoft/winget-pkgs --clone=false".to_string(),
+            format!("git checkout -b ivy-tendril-v{}", version),
+            format!("mkdir -p manifests/i/Ivy/Tendril/{}", version),
+            format!("git add manifests/i/Ivy/Tendril/{}/Ivy.Tendril.yaml", version),
+            format!("git commit -m \"New version: Ivy.Tendril version {}\"", version),
+            format!("git push origin ivy-tendril-v{}", version),
+            format!(
+                "gh pr create --repo microsoft/winget-pkgs --title \"New version: Ivy.Tendril version {}\" --body \"Automated update of Ivy-Tendril v{} with portable x64/arm64 binaries.\"",
+                version, version
+            ),
+        ],
+        "scoop" => vec![
+            "gh repo fork ScoopInstaller/Extras --clone=false".to_string(),
+            format!("git checkout -b tendril-v{}", version),
+            "mkdir -p bucket".to_string(),
+            "git add bucket/tendril.json".to_string(),
+            format!("git commit -m \"tendril: Update to version {}\"", version),
+            format!("git push origin tendril-v{}", version),
+            format!(
+                "gh pr create --repo ScoopInstaller/Extras --title \"tendril: Update to version {}\" --body \"Automated manifest update for Tendril v{}.\"",
+                version, version
+            ),
+        ],
+        "homebrew" => vec![
+            "gh repo fork ivy-interactive/homebrew-tap --clone=false".to_string(),
+            format!("git checkout -b tendril-v{}", version),
+            "mkdir -p Formula".to_string(),
+            "git add Formula/tendril.rb".to_string(),
+            format!("git commit -m \"tendril {}\"", version),
+            format!("git push origin tendril-v{}", version),
+            format!(
+                "gh pr create --repo ivy-interactive/homebrew-tap --title \"tendril {}\" --body \"Update tendril formula to v{} with dual macOS/Linux bottles.\"",
+                version, version
+            ),
+        ],
+        _ => vec![],
+    }
+}
+
+pub fn build_upstream_pr_agent_prompt(
+    target: &PackageManagerTarget,
+    manifest: &PackageManifestResponse,
+    version: &str,
+) -> String {
+    let commands = build_upstream_pr_commands(target, manifest, version);
+    let commands_str = commands.join("\n");
+    format!(
+        r#"You are an autonomous release engineer dispatching an upstream formula update.
+Target Registry: {}
+Upstream Repository: {}
+Package Identifier: {}
+Target Version: {}
+Manifest Filename: {}
+
+Instructions:
+1. Fork upstream repository `{}` if not already forked.
+2. Create a feature branch and stage the package manifest:
+```{}
+{}
+```
+3. Execute the following Git and GitHub CLI workflow commands:
+{}
+
+4. IMPORTANT: Once the Pull Request is created, output the final PR URL on a single line starting with:
+[PR_URL] <pr_url>
+"#,
+        target.name,
+        target.registry_repo,
+        target.package_id,
+        version,
+        manifest.filename,
+        target.registry_repo,
+        manifest.language,
+        manifest.content,
+        commands_str
+    )
+}
+
+pub fn extract_pr_url(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[PR_URL]") {
+            let url = trimmed.trim_start_matches("[PR_URL]").trim();
+            if !url.is_empty() {
+                return Some(url.to_string());
+            }
+        }
+        if let Some(idx) = line.find("https://github.com/") {
+            let sub = &line[idx..];
+            let end = sub
+                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ')' || c == ']' || c == '>')
+                .unwrap_or(sub.len());
+            let candidate = &sub[..end];
+            let parts: Vec<&str> = candidate.split('/').collect();
+            if parts.len() >= 7
+                && parts[0] == "https:"
+                && parts[2] == "github.com"
+                && parts[5] == "pull"
+                && parts[6].chars().all(|c| c.is_ascii_digit())
+            {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    None
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DispatchPackagePrRequest {
+    pub version: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DispatchPackagePrResponse {
+    pub task_id: String,
+    pub message: String,
+    pub target_key: String,
+    pub upstream_repo: String,
+    pub commands: Vec<String>,
+}
+
+pub async fn dispatch_package_pr(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<DispatchPackagePrRequest>,
+) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
+    let state = ctx.state.read().await;
+    let target = match state.packages.iter().find(|p| p.id == id || p.target_key == id) {
+        Some(t) => t.clone(),
+        None => return (StatusCode::NOT_FOUND, Json(None)),
+    };
+    let release = state
+        .latest_release
+        .clone()
+        .unwrap_or_else(ReleaseInfo::default_fallback);
+    drop(state);
+
+    let manifest = match generate_manifest_content(&target.target_key, &release) {
+        Some(m) => m,
+        None => return (StatusCode::BAD_REQUEST, Json(None)),
+    };
+
+    let version = payload.version.as_deref().unwrap_or("0.8.4");
+    let commands = build_upstream_pr_commands(&target, &manifest, version);
+    let prompt = build_upstream_pr_agent_prompt(&target, &manifest, version);
+
+    let task_id = format!("task-pkg-pr-{}", Uuid::new_v4().simple());
+    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
+    let runner = ctx.task_manager.runner().clone();
+
+    let target_id = target.id.clone();
+    let target_key = target.target_key.clone();
+    let ctx_clone = ctx.clone();
+    let tx_clone = tx.clone();
+
+    tokio::spawn(async move {
+        let exec_result = runner.execute(&prompt, tx_clone.clone()).await;
+        if let Ok(output) = exec_result {
+            if let Some(found_url) = extract_pr_url(&output) {
+                let mut state = ctx_clone.state.write().await;
+                if let Some(pkg) = state.packages.iter_mut().find(|p| p.id == target_id || p.target_key == target_key) {
+                    pkg.status = "PR Submitted".to_string();
+                    pkg.pr_url = Some(found_url.clone());
+                    pkg.updated_at = Utc::now();
+                    let _ = state.save(&ctx_clone.data_file);
+                }
+                let _ = tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", found_url));
+            }
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(Some(DispatchPackagePrResponse {
+            task_id,
+            message: format!("Dispatched upstream PR runner for {}", target.name),
+            target_key: target.target_key,
+            upstream_repo: target.registry_repo,
+            commands,
+        })),
+    )
+}
+
+pub async fn get_package_dispatch_commands(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
+    let state = ctx.state.read().await;
+    let target = match state.packages.iter().find(|p| p.id == id || p.target_key == id) {
+        Some(t) => t.clone(),
+        None => return (StatusCode::NOT_FOUND, Json(None)),
+    };
+    let release = state
+        .latest_release
+        .clone()
+        .unwrap_or_else(ReleaseInfo::default_fallback);
+    drop(state);
+
+    let manifest = match generate_manifest_content(&target.target_key, &release) {
+        Some(m) => m,
+        None => return (StatusCode::BAD_REQUEST, Json(None)),
+    };
+
+    let commands = build_upstream_pr_commands(&target, &manifest, "0.8.4");
+
+    (
+        StatusCode::OK,
+        Json(Some(DispatchPackagePrResponse {
+            task_id: format!("preview-{}", target.id),
+            message: format!("Generated upstream PR commands for {}", target.name),
+            target_key: target.target_key,
+            upstream_repo: target.registry_repo,
+            commands,
+        })),
+    )
+}
+

@@ -14,11 +14,20 @@ export interface GrowthIssue {
   updated_at: string;
 }
 
+export interface EngagementMetrics {
+  reactions: number;
+  comments: number;
+  views: number;
+  last_synced_at?: string;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
   target_path?: string;
   status: "Success" | "Copied" | string;
+  external_id?: string;
+  engagement?: EngagementMetrics;
 }
 
 export interface Article {
@@ -37,6 +46,7 @@ export interface Article {
   slug?: string;
   image_path?: string;
   exports?: ExportRecord[];
+  engagement?: EngagementMetrics;
 }
 
 export interface ExportIvyWebRequest {
@@ -180,6 +190,14 @@ export interface PackageManifestResponse {
   fetched_at?: string;
 }
 
+export interface DispatchPackagePrResponse {
+  task_id: string;
+  message: string;
+  target_key: string;
+  upstream_repo: string;
+  commands: string[];
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;
@@ -195,7 +213,43 @@ export type ActiveTab =
   | "packages"
   | "agent"
   | "review"
-  | "flywheel";
+  | "flywheel"
+  | "contributors";
+
+export interface ContributorIssue {
+  id: string;
+  title: string;
+  description: string;
+  category: "Documentation" | "CLI" | "Frontend" | "Backend" | "Tests" | string;
+  difficulty: "Good First Issue" | "Help Wanted" | string;
+  estimated_minutes: number;
+  affected_files: string[];
+  reproduction_steps: string[];
+  mentor: string;
+  claimed: boolean;
+  claimed_by?: string;
+  claimed_at?: string;
+  pr_url?: string;
+}
+
+export interface ContributorRecord {
+  name: string;
+  avatar_url: string;
+  profile_url: string;
+  contributions: string[];
+}
+
+export interface ContributingGuideResponse {
+  content: string;
+  filename: string;
+}
+
+export interface AllContributorsResponse {
+  contributors: ContributorRecord[];
+  markdown_table: string;
+  html_grid: string;
+  badge_markdown: string;
+}
 
 export interface SyndicationSettings {
   devto_api_key?: string;

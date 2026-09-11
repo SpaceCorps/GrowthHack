@@ -15,6 +15,7 @@ import {
   Laptop,
   X,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 
 interface PackageManagerBlitzProps {
@@ -23,11 +24,13 @@ interface PackageManagerBlitzProps {
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
   ) => Promise<void> | void;
+  onDispatchPackagePr?: (id: string, version?: string) => Promise<string | void>;
 }
 
 export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   packages,
   onUpdatePackageStatus,
+  onDispatchPackagePr,
 }) => {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copiedManifest, setCopiedManifest] = useState<boolean>(false);
@@ -40,6 +43,54 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const [manifestCache, setManifestCache] = useState<Record<string, PackageManifestResponse>>({});
   const [isLoadingManifest, setIsLoadingManifest] = useState<boolean>(false);
   const [isRefreshingRelease, setIsRefreshingRelease] = useState<boolean>(false);
+
+  const [dispatchTarget, setDispatchTarget] = useState<PackageManagerTarget | null>(null);
+  const [dispatchVersion, setDispatchVersion] = useState<string>("0.8.4");
+  const [copiedCommands, setCopiedCommands] = useState<boolean>(false);
+  const [isLaunching, setIsLaunching] = useState<boolean>(false);
+
+  const getPreviewCommands = (target: PackageManagerTarget, version: string): string[] => {
+    switch (target.target_key) {
+      case "winget":
+        return [
+          "gh repo fork microsoft/winget-pkgs --clone=false",
+          `git checkout -b ivy-tendril-v${version}`,
+          `mkdir -p manifests/i/Ivy/Tendril/${version}`,
+          `git add manifests/i/Ivy/Tendril/${version}/Ivy.Tendril.yaml`,
+          `git commit -m "New version: Ivy.Tendril version ${version}"`,
+          `git push origin ivy-tendril-v${version}`,
+          `gh pr create --repo microsoft/winget-pkgs --title "New version: Ivy.Tendril version ${version}" --body "Automated update of Ivy-Tendril v${version} with portable x64/arm64 binaries."`,
+        ];
+      case "scoop":
+        return [
+          "gh repo fork ScoopInstaller/Extras --clone=false",
+          `git checkout -b tendril-v${version}`,
+          "mkdir -p bucket",
+          "git add bucket/tendril.json",
+          `git commit -m "tendril: Update to version ${version}"`,
+          `git push origin tendril-v${version}`,
+          `gh pr create --repo ScoopInstaller/Extras --title "tendril: Update to version ${version}" --body "Automated manifest update for Tendril v${version}."`,
+        ];
+      case "homebrew":
+        return [
+          "gh repo fork ivy-interactive/homebrew-tap --clone=false",
+          `git checkout -b tendril-v${version}`,
+          "mkdir -p Formula",
+          "git add Formula/tendril.rb",
+          `git commit -m "tendril ${version}"`,
+          `git push origin tendril-v${version}`,
+          `gh pr create --repo ivy-interactive/homebrew-tap --title "tendril ${version}" --body "Update tendril formula to v${version} with dual macOS/Linux bottles."`,
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const handleOpenDispatch = (pkg: PackageManagerTarget) => {
+    setDispatchTarget(pkg);
+    setDispatchVersion("0.8.4");
+    setCopiedCommands(false);
+  };
 
   // Manifest content cache/fallback
   const defaultManifests: Record<string, PackageManifestResponse> = {
@@ -636,14 +687,27 @@ Installers:
                     )}
                   </td>
                   <td className="py-3.5 text-right font-sans">
-                    <button
-                      onClick={() => handleOpenEdit(pkg)}
-                      data-testid={`edit-status-${pkg.id}`}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                      title="Update status"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end space-x-2">
+                      {["winget", "scoop", "homebrew"].includes(pkg.target_key) && (
+                        <button
+                          onClick={() => handleOpenDispatch(pkg)}
+                          data-testid={`dispatch-pr-${pkg.id}`}
+                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-medium text-[11px] flex items-center gap-1.5 shadow-sm transition-all"
+                          title="Submit formula update via Antigravity runner"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-300" />
+                          <span>Dispatch Upstream PR</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleOpenEdit(pkg)}
+                        data-testid={`edit-status-${pkg.id}`}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                        title="Update status"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -651,6 +715,149 @@ Installers:
           </table>
         </div>
       </div>
+
+      {/* Dispatch Upstream PR Modal */}
+      {dispatchTarget && (
+        <div
+          data-testid="dispatch-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200"
+        >
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-indigo-500/30">
+                  <GitPullRequest className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Dispatch Upstream PR: {dispatchTarget.name}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Automated GitHub CLI fork, staging, branch push, and PR submission.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDispatchTarget(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-1">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    Upstream Repository
+                  </span>
+                  <p className="text-xs font-mono text-cyan-300 flex items-center gap-1">
+                    <span>{dispatchTarget.registry_repo}</span>
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-1">
+                  <span className="text-[11px] font-medium text-slate-400">Package Identifier</span>
+                  <p className="text-xs font-mono text-indigo-300 font-bold">
+                    {dispatchTarget.package_id}
+                  </p>
+                </div>
+              </div>
+
+              {/* Version input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Target Version</span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    Matches Ivy-Tendril release tag
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={dispatchVersion}
+                  onChange={(e) => setDispatchVersion(e.target.value)}
+                  placeholder="0.8.4"
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-lg text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Command preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">
+                    GitHub CLI Command Sequence
+                  </label>
+                  <button
+                    onClick={() => {
+                      const text = getPreviewCommands(dispatchTarget, dispatchVersion).join("\n");
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(text);
+                        setCopiedCommands(true);
+                        setTimeout(() => setCopiedCommands(false), 2000);
+                      }
+                    }}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                  >
+                    {copiedCommands ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-mono">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Commands</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 font-mono text-[11px] max-h-48 overflow-y-auto space-y-1">
+                  {getPreviewCommands(dispatchTarget, dispatchVersion).map((cmd, idx) => (
+                    <div key={idx} className="text-slate-300">
+                      <span className="text-slate-600 select-none mr-2">$</span>
+                      <span
+                        className={cmd.startsWith("gh pr") ? "text-emerald-300 font-semibold" : ""}
+                      >
+                        {cmd}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-end space-x-3">
+              <button
+                onClick={() => setDispatchTarget(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                data-testid="confirm-dispatch-btn"
+                disabled={isLaunching}
+                onClick={async () => {
+                  if (onDispatchPackagePr && dispatchTarget) {
+                    setIsLaunching(true);
+                    try {
+                      await onDispatchPackagePr(dispatchTarget.id, dispatchVersion);
+                    } finally {
+                      setIsLaunching(false);
+                      setDispatchTarget(null);
+                    }
+                  }
+                }}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Launch Antigravity Runner</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manifest Inspection Drawer / Modal */}
       {showManifestDrawer && (
