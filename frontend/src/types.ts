@@ -164,6 +164,21 @@ export interface PackageManagerTarget {
   updated_at: string;
 }
 
+export interface ReleaseAsset {
+  name: string;
+  browser_download_url: string;
+  digest?: string;
+  sha256?: string;
+}
+
+export interface ReleaseInfo {
+  tag_name: string;
+  version: string;
+  assets: ReleaseAsset[];
+  published_at?: string;
+  fetched_at: string;
+}
+
 export interface PackageManifestResponse {
   target_key: string;
   filename: string;
@@ -171,6 +186,8 @@ export interface PackageManifestResponse {
   content: string;
   install_command: string;
   instructions: string;
+  release_tag?: string;
+  fetched_at?: string;
 }
 
 export interface DispatchPackagePrResponse {

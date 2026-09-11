@@ -128,6 +128,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
+        .route("/api/packages/refresh-release", post(packages::refresh_release))
         .route("/api/packages/{id}/status", put(packages::update_package_status))
         .route("/api/packages/{id}/dispatch", post(packages::dispatch_package_pr))
         .route("/api/packages/{id}/commands", get(packages::get_package_dispatch_commands))

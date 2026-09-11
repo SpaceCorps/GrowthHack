@@ -70,6 +70,22 @@ describe("PackageManagerBlitz View", () => {
       writable: true,
       configurable: true,
     });
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      const target = url.split("/")[3] || "homebrew";
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          target_key: target,
+          filename: `${target}.manifest`,
+          language: "json",
+          content: `Mock content for ${target}`,
+          install_command: `install ${target}`,
+          instructions: `Instructions for ${target}`,
+          release_tag: "v0.8.4",
+          fetched_at: "2026-09-10T12:00:00Z",
+        }),
+      });
+    });
   });
 
   afterEach(() => {
@@ -182,6 +198,78 @@ describe("PackageManagerBlitz View", () => {
         status: "Merged",
       }),
     );
+  });
+
+  it("loads dynamic manifest and displays live release badge on drawer open", async () => {
+    const mockManifestResponse = {
+      target_key: "homebrew",
+      filename: "tendril.rb",
+      language: "ruby",
+      content: "# Live dynamic formula content v1.2.3",
+      install_command: "brew install ivy-interactive/tap/tendril",
+      instructions: "Dynamic tap instructions",
+      release_tag: "v1.2.3",
+      fetched_at: "2026-09-10T12:00:00Z",
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockManifestResponse,
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    // Click inspect button for homebrew
+    const inspectBtn = screen.getByTestId("inspect-manifest-homebrew");
+    fireEvent.click(inspectBtn);
+
+    // Verify fetch was called with /api/packages/homebrew/manifest
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/packages/homebrew/manifest");
+
+    // Verify release status pill shows dynamic release tag
+    const releasePill = await screen.findByTestId("release-status-pill");
+    expect(releasePill.textContent).toContain("Release: v1.2.3 (Dynamic)");
+
+    // Verify code content updated from fetch
+    expect(await screen.findByText("# Live dynamic formula content v1.2.3")).toBeDefined();
+  });
+
+  it("triggers manifest reload with updated release tag on refresh button click", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      const tag = url.includes("refresh=true") ? "v1.3.0" : "v1.2.0";
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          target_key: "homebrew",
+          filename: "tendril.rb",
+          language: "ruby",
+          content: `# Formula content ${tag}`,
+          install_command: "brew install ivy-interactive/tap/tendril",
+          instructions: "Dynamic tap instructions",
+          release_tag: tag,
+          fetched_at: "2026-09-10T12:00:00Z",
+        }),
+      });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    // Open drawer
+    const inspectBtn = screen.getByTestId("inspect-manifest-homebrew");
+    fireEvent.click(inspectBtn);
+
+    expect(await screen.findByText("Release: v1.2.0 (Dynamic)")).toBeDefined();
+
+    // Click Refresh from GitHub button
+    const refreshBtn = screen.getByTestId("refresh-github-btn");
+    fireEvent.click(refreshBtn);
+
+    // Verify refresh URL was requested
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/packages/homebrew/manifest?refresh=true");
+
+    // Verify release tag updated to v1.3.0
+    expect(await screen.findByText("Release: v1.3.0 (Dynamic)")).toBeDefined();
+    expect(await screen.findByText("# Formula content v1.3.0")).toBeDefined();
   });
 
   it("renders dispatch PR action button for package targets", () => {
