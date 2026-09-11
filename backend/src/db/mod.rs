@@ -293,9 +293,42 @@ pub struct ContributorIssue {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContributorRecord {
     pub name: String,
+    #[serde(default)]
+    pub login: Option<String>,
     pub avatar_url: String,
     pub profile_url: String,
     pub contributions: Vec<String>,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub verified_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub pr_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AllContributorsEntry {
+    pub login: String,
+    pub name: String,
+    pub avatar_url: String,
+    pub profile: String,
+    pub contributions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AllContributorsConfig {
+    pub project_name: String,
+    pub project_owner: String,
+    pub repo_type: String,
+    pub repo_host: String,
+    pub files: Vec<String>,
+    pub image_size: u32,
+    pub commit: bool,
+    pub commit_convention: String,
+    pub contributors: Vec<AllContributorsEntry>,
+    pub contributors_per_line: u32,
+    pub link_to_usage: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -372,6 +405,27 @@ impl GrowthState {
                     if state.contributors.is_empty() {
                         state.contributors = Self::seed_contributors();
                         let _ = state.save(path);
+                    } else {
+                        let mut modified = false;
+                        for c in &mut state.contributors {
+                            if c.login.is_none() {
+                                let login = if let Some(pos) = c.profile_url.rfind('/') {
+                                    c.profile_url[pos + 1..].trim().trim_start_matches('@').to_string()
+                                } else {
+                                    c.name.to_lowercase().replace(' ', "-")
+                                };
+                                c.login = Some(login);
+                                modified = true;
+                            }
+                            if !c.verified && c.verified_at.is_none() {
+                                c.verified = true;
+                                c.verified_at = Some(Utc::now());
+                                modified = true;
+                            }
+                        }
+                        if modified {
+                            let _ = state.save(path);
+                        }
                     }
                     return state;
                 }
@@ -2443,9 +2497,11 @@ steps:
     }
 
     pub fn seed_contributors() -> Vec<ContributorRecord> {
+        let now = Utc::now();
         vec![
             ContributorRecord {
                 name: "Rory Chatt".to_string(),
+                login: Some("rorychatt".to_string()),
                 avatar_url: "https://github.com/rorychatt.png".to_string(),
                 profile_url: "https://github.com/rorychatt".to_string(),
                 contributions: vec![
@@ -2453,9 +2509,13 @@ steps:
                     "architecture".to_string(),
                     "review".to_string(),
                 ],
+                verified: true,
+                verified_at: Some(now),
+                pr_url: None,
             },
             ContributorRecord {
                 name: "Alex Vance".to_string(),
+                login: Some("alex-spacecorps".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
                 profile_url: "https://github.com/alex-spacecorps".to_string(),
                 contributions: vec![
@@ -2463,9 +2523,13 @@ steps:
                     "backend".to_string(),
                     "test".to_string(),
                 ],
+                verified: true,
+                verified_at: Some(now),
+                pr_url: None,
             },
             ContributorRecord {
                 name: "Sarah Jenkins".to_string(),
+                login: Some("sarah-ui".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
                 profile_url: "https://github.com/sarah-ui".to_string(),
                 contributions: vec![
@@ -2473,9 +2537,13 @@ steps:
                     "frontend".to_string(),
                     "a11y".to_string(),
                 ],
+                verified: true,
+                verified_at: Some(now),
+                pr_url: None,
             },
             ContributorRecord {
                 name: "Elena Rostova".to_string(),
+                login: Some("dev-elena".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
                 profile_url: "https://github.com/dev-elena".to_string(),
                 contributions: vec![
@@ -2483,13 +2551,78 @@ steps:
                     "doc".to_string(),
                     "maintenance".to_string(),
                 ],
+                verified: true,
+                verified_at: Some(now),
+                pr_url: None,
             },
             ContributorRecord {
                 name: "Marcus Chen".to_string(),
+                login: Some("marcus-cli".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10004?v=4".to_string(),
                 profile_url: "https://github.com/marcus-cli".to_string(),
                 contributions: vec!["cli".to_string(), "package".to_string(), "test".to_string()],
+                verified: true,
+                verified_at: Some(now),
+                pr_url: None,
             },
         ]
+    }
+
+    pub fn generate_all_contributorsrc(&self) -> AllContributorsConfig {
+        let verified_list: Vec<&ContributorRecord> = self.contributors.iter().filter(|c| c.verified).collect();
+        let target_list: Vec<&ContributorRecord> = if verified_list.is_empty() {
+            self.contributors.iter().collect()
+        } else {
+            verified_list
+        };
+
+        let mut entries = Vec::new();
+        for c in target_list {
+            let login = if let Some(l) = &c.login {
+                l.trim().trim_start_matches('@').to_string()
+            } else if let Some(pos) = c.profile_url.rfind('/') {
+                c.profile_url[pos + 1..].trim().trim_start_matches('@').to_string()
+            } else {
+                c.name.to_lowercase().replace(' ', "-")
+            };
+
+            let avatar_url = if c.avatar_url.trim().is_empty() {
+                format!("https://avatars.githubusercontent.com/{}?v=4", login)
+            } else {
+                c.avatar_url.clone()
+            };
+
+            let profile = if c.profile_url.trim().is_empty() {
+                format!("https://github.com/{}", login)
+            } else {
+                c.profile_url.clone()
+            };
+
+            entries.push(AllContributorsEntry {
+                login,
+                name: c.name.clone(),
+                avatar_url,
+                profile,
+                contributions: if c.contributions.is_empty() {
+                    vec!["code".to_string()]
+                } else {
+                    c.contributions.clone()
+                },
+            });
+        }
+
+        AllContributorsConfig {
+            project_name: "GrowthHack".to_string(),
+            project_owner: "SpaceCorps".to_string(),
+            repo_type: "github".to_string(),
+            repo_host: "https://github.com".to_string(),
+            files: vec!["README.md".to_string()],
+            image_size: 100,
+            commit: false,
+            commit_convention: "none".to_string(),
+            contributors: entries,
+            contributors_per_line: 7,
+            link_to_usage: true,
+        }
     }
 }

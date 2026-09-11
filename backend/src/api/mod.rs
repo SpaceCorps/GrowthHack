@@ -231,6 +231,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/contributors/all-contributors",
             get(contributors::get_all_contributors),
         )
+        .route(
+            "/api/contributors/all-contributorsrc",
+            get(contributors::get_all_contributorsrc),
+        )
+        .route(
+            "/api/contributors/verify",
+            post(contributors::verify_contributor),
+        )
+        .route(
+            "/api/contributors/generate-pr",
+            post(contributors::generate_all_contributors_pr),
+        )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
