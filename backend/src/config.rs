@@ -32,6 +32,14 @@ pub fn resolve_frontend_dist_dir(
     env_var: Option<String>,
     current_exe: Option<&Path>,
 ) -> Option<PathBuf> {
+    resolve_frontend_dist_dir_from(env_var, None, current_exe)
+}
+
+pub fn resolve_frontend_dist_dir_from(
+    env_var: Option<String>,
+    cwd: Option<&Path>,
+    current_exe: Option<&Path>,
+) -> Option<PathBuf> {
     if let Some(custom) = env_var {
         let trimmed = custom.trim();
         if !trimmed.is_empty() {
@@ -47,10 +55,15 @@ pub fn resolve_frontend_dist_dir(
         }
     }
 
-    let mut candidates = vec![
-        PathBuf::from("frontend/dist"),
-        PathBuf::from("../frontend/dist"),
-    ];
+    let mut candidates = Vec::new();
+
+    if let Some(base_cwd) = cwd {
+        candidates.push(base_cwd.join("frontend/dist"));
+        candidates.push(base_cwd.join("../frontend/dist"));
+    } else {
+        candidates.push(PathBuf::from("frontend/dist"));
+        candidates.push(PathBuf::from("../frontend/dist"));
+    }
 
     if let Some(exe) = current_exe {
         if let Some(exe_dir) = exe.parent() {
@@ -421,7 +434,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&dist_dir);
         let _ = std::fs::write(&exe_path, b"dummy binary");
 
-        let resolved = resolve_frontend_dist_dir(None, Some(&exe_path));
+        let resolved = resolve_frontend_dist_dir_from(None, Some(&temp_dir), Some(&exe_path));
         assert_eq!(resolved, Some(dist_dir));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -436,10 +449,10 @@ mod tests {
         let _ = std::fs::create_dir_all(&exe_dir);
 
         let custom_nonexistent = Some(temp_dir.join("nonexistent_dist").to_string_lossy().to_string());
-        let resolved = resolve_frontend_dist_dir(custom_nonexistent, Some(&exe_path));
+        let resolved = resolve_frontend_dist_dir_from(custom_nonexistent, Some(&temp_dir), Some(&exe_path));
         assert!(resolved.is_none());
 
-        let resolved_none = resolve_frontend_dist_dir(None, Some(&exe_path));
+        let resolved_none = resolve_frontend_dist_dir_from(None, Some(&temp_dir), Some(&exe_path));
         assert!(resolved_none.is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
