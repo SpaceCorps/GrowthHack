@@ -567,7 +567,7 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
             onClick={handleSyncAllPrs}
             disabled={isSyncingAllPrs}
             data-testid="sync-all-prs-btn"
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold transition-all shadow-md shadow-emerald-950 disabled:opacity-50"
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-bold transition-all shadow-md shadow-emerald-950/20 disabled:opacity-50"
           >
             {isSyncingAllPrs ? (
               <RefreshCw className="w-4 h-4 animate-spin" />

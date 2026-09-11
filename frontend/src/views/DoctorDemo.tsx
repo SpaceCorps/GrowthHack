@@ -707,9 +707,9 @@ export const DoctorDemo: React.FC = () => {
             <button
               onClick={startDemo}
               disabled={startingDemo || demoState.status === "Running"}
-              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-emerald-500/20 disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-sm font-bold transition-all shadow-md hover:shadow-emerald-500/20 disabled:opacity-50"
             >
-              <Play className="w-4 h-4 fill-white" />
+              <Play className="w-4 h-4 fill-current" />
               {demoState.status === "Running"
                 ? "Simulating..."
                 : demoState.status === "Completed"
