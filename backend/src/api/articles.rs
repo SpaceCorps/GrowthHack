@@ -449,8 +449,6 @@ pub async fn generate_article(
         payload.extra_context.as_deref(),
     );
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
     let art_id_clone = article_id.clone();
@@ -458,51 +456,46 @@ pub async fn generate_article(
     let channel = payload.channel.clone();
     let angle = payload.angle.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(content) => {
-                let mut state = state_arc.write().await;
-                let title = content
-                    .lines()
-                    .find(|l| l.starts_with("# "))
-                    .map(|l| l.trim_start_matches("# ").trim().to_string())
-                    .unwrap_or_else(|| format!("Deep Dive: {} ({})", feature, angle));
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            let mut state = state_arc.write().await;
+            let title = content
+                .lines()
+                .find(|l| l.starts_with("# "))
+                .map(|l| l.trim_start_matches("# ").trim().to_string())
+                .unwrap_or_else(|| format!("Deep Dive: {} ({})", feature, angle));
 
-                let summary = format!(
-                    "Deep-dive article exploring {} with a {} perspective for {}.",
-                    feature, angle, channel
-                );
+            let summary = format!(
+                "Deep-dive article exploring {} with a {} perspective for {}.",
+                feature, angle, channel
+            );
 
-                let slug = slugify(&title);
-                let article = Article {
-                    id: art_id_clone,
-                    title,
-                    feature,
-                    channel,
-                    angle,
-                    summary,
-                    content,
-                    backlinks,
-                    outbound_citations,
-                    status: "Draft".to_string(),
-                    created_at: Utc::now(),
-                    published_at: None,
-                    slug: Some(slug),
-                    exports: Vec::new(),
-                    engagement: None,
-                    engagement_snapshots: Vec::new(),
-                    engagement_badges: Vec::new(),
-                    milestone_alerts: Vec::new(),
-                };
-                state.articles.insert(0, article);
-                let _ = state.save(&data_file);
-                let _ = tx.send("[SYSTEM] Article saved to drafts library.".to_string());
-            }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
-            }
-        }
-    });
+            let slug = slugify(&title);
+            let article = Article {
+                id: art_id_clone,
+                title,
+                feature,
+                channel,
+                angle,
+                summary,
+                content,
+                backlinks,
+                outbound_citations,
+                status: "Draft".to_string(),
+                created_at: Utc::now(),
+                published_at: None,
+                slug: Some(slug),
+                exports: Vec::new(),
+                engagement: None,
+                engagement_snapshots: Vec::new(),
+                engagement_badges: Vec::new(),
+                milestone_alerts: Vec::new(),
+            };
+            state.articles.insert(0, article);
+            let _ = state.save(&data_file);
+            let _ = tx.send("[SYSTEM] Article saved to drafts library.".to_string());
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
@@ -523,8 +516,6 @@ pub async fn generate_spotlight(
 
     let prompt = build_project_spotlight_prompt(&payload);
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
     let art_id_clone = article_id.clone();
@@ -533,53 +524,48 @@ pub async fn generate_spotlight(
     let channel = payload.target_channel.clone();
     let tagline = payload.tagline.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(content) => {
-                let mut state = state_arc.write().await;
-                let title = content
-                    .lines()
-                    .find(|l| l.starts_with("# "))
-                    .map(|l| l.trim_start_matches("# ").trim().to_string())
-                    .unwrap_or_else(|| format!("Project Spotlight: {}", project_name));
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            let mut state = state_arc.write().await;
+            let title = content
+                .lines()
+                .find(|l| l.starts_with("# "))
+                .map(|l| l.trim_start_matches("# ").trim().to_string())
+                .unwrap_or_else(|| format!("Project Spotlight: {}", project_name));
 
-                let summary = format!(
-                    "Stanislav Beliaev style open-source project spotlight on {} ({}).",
-                    project_name, tagline
-                );
+            let summary = format!(
+                "Stanislav Beliaev style open-source project spotlight on {} ({}).",
+                project_name, tagline
+            );
 
-                let article = Article {
-                    id: art_id_clone,
-                    title,
-                    feature: "Open Source Spotlight".to_string(),
-                    channel,
-                    angle: "Project Spotlight".to_string(),
-                    summary,
-                    content,
-                    backlinks: vec![
-                        "https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
-                        repo_url.clone(),
-                    ],
-                    outbound_citations: vec![repo_url],
-                    status: "Draft".to_string(),
-                    created_at: Utc::now(),
-                    published_at: None,
-                    slug: None,
-                    exports: Vec::new(),
-                    engagement: None,
-                    engagement_snapshots: Vec::new(),
-                    engagement_badges: Vec::new(),
-                    milestone_alerts: Vec::new(),
-                };
-                state.articles.insert(0, article);
-                let _ = state.save(&data_file);
-                let _ = tx.send("[SYSTEM] Project spotlight saved to drafts library.".to_string());
-            }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
-            }
-        }
-    });
+            let article = Article {
+                id: art_id_clone,
+                title,
+                feature: "Open Source Spotlight".to_string(),
+                channel,
+                angle: "Project Spotlight".to_string(),
+                summary,
+                content,
+                backlinks: vec![
+                    "https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
+                    repo_url.clone(),
+                ],
+                outbound_citations: vec![repo_url],
+                status: "Draft".to_string(),
+                created_at: Utc::now(),
+                published_at: None,
+                slug: None,
+                exports: Vec::new(),
+                engagement: None,
+                engagement_snapshots: Vec::new(),
+                engagement_badges: Vec::new(),
+                milestone_alerts: Vec::new(),
+            };
+            state.articles.insert(0, article);
+            let _ = state.save(&data_file);
+            let _ = tx.send("[SYSTEM] Project spotlight saved to drafts library.".to_string());
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
