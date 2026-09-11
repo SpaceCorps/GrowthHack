@@ -1,10 +1,5 @@
 use crate::api::issues::AppContext;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use base64::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -335,8 +330,16 @@ impl GitHubClient {
         repo: &str,
         number: u64,
     ) -> Result<PullRequestDetails, String> {
-        let url = format!("{}/repos/{}/{}/pulls/{}", self.base_url, owner, repo, number);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let url = format!(
+            "{}/repos/{}/{}/pulls/{}",
+            self.base_url, owner, repo, number
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -345,12 +348,19 @@ impl GitHubClient {
                 owner, repo, number, status, body
             ));
         }
-        resp.json::<PullRequestDetails>().await.map_err(|e| e.to_string())
+        resp.json::<PullRequestDetails>()
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn get_authenticated_user(&self) -> Result<GitHubUser, String> {
         let url = format!("{}/user", self.base_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -361,31 +371,79 @@ impl GitHubClient {
 
     pub async fn get_repo_info(&self, owner: &str, repo: &str) -> Result<RepoInfo, String> {
         let url = format!("{}/repos/{}/{}", self.base_url, owner, repo);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("GET /repos/{}/{} failed with status {}: {}", owner, repo, status, body));
+            return Err(format!(
+                "GET /repos/{}/{} failed with status {}: {}",
+                owner, repo, status, body
+            ));
         }
         resp.json::<RepoInfo>().await.map_err(|e| e.to_string())
     }
 
-    pub async fn get_branch_sha(&self, owner: &str, repo: &str, branch: &str) -> Result<String, String> {
-        let url = format!("{}/repos/{}/{}/git/ref/heads/{}", self.base_url, owner, repo, branch);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+    pub async fn get_branch_sha(
+        &self,
+        owner: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<String, String> {
+        let url = format!(
+            "{}/repos/{}/{}/git/ref/heads/{}",
+            self.base_url, owner, repo, branch
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("GET branch ref failed with status {}: {}", status, body));
+            return Err(format!(
+                "GET branch ref failed with status {}: {}",
+                status, body
+            ));
         }
         let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        if let Some(sha) = val.get("object").and_then(|o| o.get("sha")).and_then(|s| s.as_str()) {
+        if let Some(sha) = val
+            .get("object")
+            .and_then(|o| o.get("sha"))
+            .and_then(|s| s.as_str())
+        {
             return Ok(sha.to_string());
         }
         if let Some(sha) = val.get("sha").and_then(|s| s.as_str()) {
             return Ok(sha.to_string());
         }
         Err("Commit SHA not found in ref response".to_string())
+    }
+
+    pub async fn sync_fork(&self, user: &str, repo: &str, branch: &str) -> Result<String, String> {
+        let url = format!("{}/repos/{}/{}/merge-upstream", self.base_url, user, repo);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({ "branch": branch }))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(format!(
+                "POST /repos/{}/{}/merge-upstream failed ({}): {}",
+                user, repo, status, body
+            ));
+        }
+        Ok(body)
     }
 
     pub async fn ensure_fork(&self, owner: &str, repo: &str) -> Result<String, String> {
@@ -397,12 +455,20 @@ impl GitHubClient {
         }
 
         let fork_url = format!("{}/repos/{}/{}/forks", self.base_url, owner, repo);
-        let resp = self.client.post(&fork_url).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .post(&fork_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() && resp.status().as_u16() != 202 {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             if !body.contains("already exists") {
-                return Err(format!("POST /repos/{}/{}/forks failed ({}): {}", owner, repo, status, body));
+                return Err(format!(
+                    "POST /repos/{}/{}/forks failed ({}): {}",
+                    owner, repo, status, body
+                ));
             }
         }
 
@@ -414,6 +480,13 @@ impl GitHubClient {
         while start.elapsed() < total_timeout {
             if let Ok(res) = self.client.get(&check_url).send().await {
                 if res.status().is_success() {
+                    // Existing fork detected: sync its default branch with upstream before handing
+                    // it back, so callers never branch off a stale HEAD.
+                    if let Ok(repo_info) = self.get_repo_info(owner, repo).await {
+                        let _ = self
+                            .sync_fork(&user_login, repo, &repo_info.default_branch)
+                            .await;
+                    }
                     return Ok(user_login);
                 }
             }
@@ -424,13 +497,25 @@ impl GitHubClient {
         Ok(user_login)
     }
 
-    pub async fn create_branch(&self, user: &str, repo: &str, branch: &str, base_sha: &str) -> Result<(), String> {
+    pub async fn create_branch(
+        &self,
+        user: &str,
+        repo: &str,
+        branch: &str,
+        base_sha: &str,
+    ) -> Result<(), String> {
         let url = format!("{}/repos/{}/{}/git/refs", self.base_url, user, repo);
         let body = serde_json::json!({
             "ref": format!("refs/heads/{}", branch),
             "sha": base_sha
         });
-        let resp = self.client.post(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -441,20 +526,47 @@ impl GitHubClient {
         Ok(())
     }
 
-    pub async fn get_file_content(&self, owner: &str, repo: &str, path: &str, ref_name: &str) -> Result<(String, String), String> {
-        let url = format!("{}/repos/{}/{}/contents/{}?ref={}", self.base_url, owner, repo, path, ref_name);
-        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+    pub async fn get_file_content(
+        &self,
+        owner: &str,
+        repo: &str,
+        path: &str,
+        ref_name: &str,
+    ) -> Result<(String, String), String> {
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}?ref={}",
+            self.base_url, owner, repo, path, ref_name
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(format!("GET file content failed ({}): {}", status, body));
         }
         let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-        let sha = val.get("sha").and_then(|s| s.as_str()).ok_or("Missing sha in content response")?.to_string();
-        let encoded_content = val.get("content").and_then(|s| s.as_str()).ok_or("Missing content in response")?;
-        let clean_content: String = encoded_content.chars().filter(|c| !c.is_whitespace()).collect();
-        let decoded_bytes = BASE64_STANDARD.decode(clean_content).map_err(|e| format!("Base64 decode error: {}", e))?;
-        let content_str = String::from_utf8(decoded_bytes).map_err(|e| format!("UTF-8 decode error: {}", e))?;
+        let sha = val
+            .get("sha")
+            .and_then(|s| s.as_str())
+            .ok_or("Missing sha in content response")?
+            .to_string();
+        let encoded_content = val
+            .get("content")
+            .and_then(|s| s.as_str())
+            .ok_or("Missing content in response")?;
+        let clean_content: String = encoded_content
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let decoded_bytes = BASE64_STANDARD
+            .decode(clean_content)
+            .map_err(|e| format!("Base64 decode error: {}", e))?;
+        let content_str =
+            String::from_utf8(decoded_bytes).map_err(|e| format!("UTF-8 decode error: {}", e))?;
         Ok((content_str, sha))
     }
 
@@ -469,7 +581,10 @@ impl GitHubClient {
         content: &str,
         sha: &str,
     ) -> Result<(), String> {
-        let url = format!("{}/repos/{}/{}/contents/{}", self.base_url, user, repo, path);
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}",
+            self.base_url, user, repo, path
+        );
         let encoded = BASE64_STANDARD.encode(content.as_bytes());
         let body = serde_json::json!({
             "message": message,
@@ -477,11 +592,20 @@ impl GitHubClient {
             "sha": sha,
             "branch": branch
         });
-        let resp = self.client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .put(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(format!("PUT /contents/{} failed ({}): {}", path, status, text));
+            return Err(format!(
+                "PUT /contents/{} failed ({}): {}",
+                path, status, text
+            ));
         }
         Ok(())
     }
@@ -500,7 +624,10 @@ impl GitHubClient {
             Err(_) => None,
         };
 
-        let url = format!("{}/repos/{}/{}/contents/{}", self.base_url, user, repo, path);
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}",
+            self.base_url, user, repo, path
+        );
         let encoded = BASE64_STANDARD.encode(content.as_bytes());
         let mut body = serde_json::json!({
             "message": message,
@@ -511,11 +638,20 @@ impl GitHubClient {
             body["sha"] = serde_json::json!(sha);
         }
 
-        let resp = self.client.put(&url).json(&body).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .put(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(format!("PUT /contents/{} failed ({}): {}", path, status, text));
+            return Err(format!(
+                "PUT /contents/{} failed ({}): {}",
+                path, status, text
+            ));
         }
         Ok(())
     }
@@ -540,13 +676,21 @@ impl GitHubClient {
             "maintainer_can_modify": true,
             "draft": draft
         });
-        let resp = self.client.post(&url).json(&payload).send().await.map_err(|e| e.to_string())?;
+        let resp = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
             return Err(format!("POST /pulls failed ({}): {}", status, text));
         }
-        resp.json::<PullRequestResponse>().await.map_err(|e| e.to_string())
+        resp.json::<PullRequestResponse>()
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn add_issue_assignees(
@@ -775,13 +919,16 @@ impl GitHubClient {
                         for event in arr {
                             if let Some(source) = event.get("source").and_then(|s| s.get("issue")) {
                                 if source.get("pull_request").is_some() {
-                                    if let Some(html_url) = source.get("html_url").and_then(|h| h.as_str()) {
+                                    if let Some(html_url) =
+                                        source.get("html_url").and_then(|h| h.as_str())
+                                    {
                                         return Ok(Some(html_url.to_string()));
                                     }
                                 }
                             }
                             if let Some(pr) = event.get("pull_request") {
-                                if let Some(html_url) = pr.get("html_url").and_then(|h| h.as_str()) {
+                                if let Some(html_url) = pr.get("html_url").and_then(|h| h.as_str())
+                                {
                                     return Ok(Some(html_url.to_string()));
                                 }
                             }

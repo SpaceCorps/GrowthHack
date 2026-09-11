@@ -452,4 +452,164 @@ describe("PackageManagerBlitz View", () => {
     expect(onDispatch).toHaveBeenCalledTimes(1);
     expect(onDispatch).toHaveBeenCalledWith("pkg-scoop", "1.5.0", "v1.5.0");
   });
+
+  it("displays fork synchronized badge when fork-status returns is_synchronized: true", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            account: "testuser",
+            message: "GitHub CLI is authenticated as @testuser.",
+          }),
+        });
+      }
+      if (url.includes("/fork-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            target_key: "scoop",
+            upstream_repo: "ScoopInstaller/Extras",
+            fork_repo: "testuser/Extras",
+            fork_exists: true,
+            is_synchronized: true,
+            behind_by: 0,
+            ahead_by: 0,
+            status: "synchronized",
+            message: "Fork is synchronized with upstream.",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const dispatchBtn = screen.getByTestId("dispatch-pr-pkg-scoop");
+    fireEvent.click(dispatchBtn);
+
+    const badge = await screen.findByTestId("fork-status-synchronized");
+    expect(badge.textContent).toContain("Fork Synchronized");
+    expect(badge.textContent).toContain("testuser/Extras");
+    expect(badge.textContent).toContain("ScoopInstaller/Extras");
+
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn") as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(false);
+  });
+
+  it("displays out-of-sync warning with commit count and sync button when fork is behind", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            account: "testuser",
+            message: "GitHub CLI is authenticated as @testuser.",
+          }),
+        });
+      }
+      if (url.includes("/fork-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            target_key: "homebrew",
+            upstream_repo: "ivy-interactive/homebrew-tap",
+            fork_repo: "testuser/homebrew-tap",
+            fork_exists: true,
+            is_synchronized: false,
+            behind_by: 23,
+            ahead_by: 0,
+            status: "behind",
+            message: "Fork is 23 commits behind upstream. Synchronize fork before dispatching.",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const dispatchBtn = screen.getByTestId("dispatch-pr-pkg-homebrew");
+    fireEvent.click(dispatchBtn);
+
+    const warning = await screen.findByTestId("fork-status-warning");
+    expect(within(warning).getByText("Upstream Fork Out of Sync")).toBeDefined();
+    expect(warning.textContent).toContain("23 commits behind");
+    expect(warning.textContent).toContain("ivy-interactive/homebrew-tap");
+    expect(screen.getByTestId("sync-fork-now-btn")).toBeDefined();
+
+    // Confirm button disabled until skip checkbox is toggled
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn") as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+
+    const skipCheckbox = screen.getByTestId("skip-sync-checkbox") as HTMLInputElement;
+    fireEvent.click(skipCheckbox);
+    expect(skipCheckbox.checked).toBe(true);
+    expect(confirmBtn.disabled).toBe(false);
+  });
+
+  it("clicking Sync Fork Now triggers the sync API call and refreshes fork status", async () => {
+    let forkStatusCallCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            account: "testuser",
+            message: "GitHub CLI is authenticated as @testuser.",
+          }),
+        });
+      }
+      if (url.includes("/sync-fork")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, message: "Fork synchronized." }),
+        });
+      }
+      if (url.includes("/fork-status")) {
+        forkStatusCallCount += 1;
+        const synced = forkStatusCallCount > 1;
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            target_key: "homebrew",
+            upstream_repo: "ivy-interactive/homebrew-tap",
+            fork_repo: "testuser/homebrew-tap",
+            fork_exists: true,
+            is_synchronized: synced,
+            behind_by: synced ? 0 : 5,
+            ahead_by: 0,
+            status: synced ? "synchronized" : "behind",
+            message: synced ? "Fork is synchronized with upstream." : "Fork is 5 commits behind.",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const dispatchBtn = screen.getByTestId("dispatch-pr-pkg-homebrew");
+    fireEvent.click(dispatchBtn);
+
+    await screen.findByTestId("fork-status-warning");
+
+    const syncBtn = screen.getByTestId("sync-fork-now-btn");
+    fireEvent.click(syncBtn);
+
+    expect(
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.some(
+        (call) =>
+          typeof call[0] === "string" &&
+          call[0].includes("/api/packages/pkg-homebrew/sync-fork") &&
+          call[1]?.method === "POST",
+      ),
+    ).toBe(true);
+
+    await screen.findByTestId("fork-status-synchronized");
+    expect(screen.queryByTestId("fork-status-warning")).toBeNull();
+  });
 });

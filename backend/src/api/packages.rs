@@ -166,12 +166,22 @@ impl ReleaseInfo {
         self.resolve_missing_checksums_with_client(&client).await
     }
 
-    pub async fn resolve_missing_checksums_with_client(&mut self, client: &reqwest::Client) -> Result<(), String> {
+    pub async fn resolve_missing_checksums_with_client(
+        &mut self,
+        client: &reqwest::Client,
+    ) -> Result<(), String> {
         // 1. Companion file inspection (checksums.txt, SHA256SUMS, hashes.txt, etc.)
-        let companion_asset = self.assets.iter().find(|a| {
-            let lower = a.name.to_lowercase();
-            lower.contains("checksum") || lower.contains("sha256") || lower.contains("hashes") || lower.ends_with(".sha256")
-        }).cloned();
+        let companion_asset = self
+            .assets
+            .iter()
+            .find(|a| {
+                let lower = a.name.to_lowercase();
+                lower.contains("checksum")
+                    || lower.contains("sha256")
+                    || lower.contains("hashes")
+                    || lower.ends_with(".sha256")
+            })
+            .cloned();
 
         if let Some(comp) = companion_asset {
             if let Ok(resp) = client.get(&comp.browser_download_url).send().await {
@@ -181,7 +191,10 @@ impl ReleaseInfo {
                         for asset in self.assets.iter_mut() {
                             if asset.sha256.is_none() {
                                 for (fname, hash) in &parsed {
-                                    if asset.name == *fname || fname.contains(&asset.name) || asset.name.contains(fname) {
+                                    if asset.name == *fname
+                                        || fname.contains(&asset.name)
+                                        || asset.name.contains(fname)
+                                    {
                                         asset.sha256 = Some(hash.clone());
                                         asset.digest = Some(format!("sha256:{}", hash));
                                         break;
@@ -196,14 +209,18 @@ impl ReleaseInfo {
 
         // 2. Direct binary hashing for assets that still don't have sha256
         let platforms = [
-            "darwin-arm64", "darwin-x64",
-            "linux-arm64", "linux-x64",
-            "windows-x64", "windows-arm64",
+            "darwin-arm64",
+            "darwin-x64",
+            "linux-arm64",
+            "linux-x64",
+            "windows-x64",
+            "windows-arm64",
         ];
 
         for asset in self.assets.iter_mut() {
             let matches_platform = platforms.iter().any(|p| asset.name.contains(p));
-            if matches_platform && asset.sha256.is_none() && !asset.browser_download_url.is_empty() {
+            if matches_platform && asset.sha256.is_none() && !asset.browser_download_url.is_empty()
+            {
                 match compute_asset_sha256(client, &asset.browser_download_url).await {
                     Ok(hash) => {
                         asset.sha256 = Some(hash.clone());
@@ -241,12 +258,21 @@ impl ReleaseInfo {
             if let Some(t) = tag {
                 if t != "latest" {
                     let alt_url = if t.starts_with('v') {
-                        format!("https://api.github.com/repos/{}/releases/tags/{}", repo_to_use, t.trim_start_matches('v'))
+                        format!(
+                            "https://api.github.com/repos/{}/releases/tags/{}",
+                            repo_to_use,
+                            t.trim_start_matches('v')
+                        )
                     } else {
-                        format!("https://api.github.com/repos/{}/releases/tags/{}", repo_to_use, t)
+                        format!(
+                            "https://api.github.com/repos/{}/releases/tags/{}",
+                            repo_to_use, t
+                        )
                     };
                     let mut alt_req = client.get(&alt_url);
-                    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+                    if let Ok(token) =
+                        std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN"))
+                    {
                         if !token.is_empty() {
                             alt_req = alt_req.header("Authorization", format!("Bearer {}", token));
                         }
@@ -325,8 +351,15 @@ pub fn compute_sha256_bytes(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub async fn compute_asset_sha256(client: &reqwest::Client, download_url: &str) -> Result<String, String> {
-    let resp = client.get(download_url).send().await.map_err(|e| e.to_string())?;
+pub async fn compute_asset_sha256(
+    client: &reqwest::Client,
+    download_url: &str,
+) -> Result<String, String> {
+    let resp = client
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("Download failed with status {}", resp.status()));
     }
@@ -748,15 +781,26 @@ pub async fn get_manifest(
                 fresh
             }
             Err(err) => {
-                tracing::warn!("Failed to fetch GitHub release for tag {:?}: {}", tag_param, err);
+                tracing::warn!(
+                    "Failed to fetch GitHub release for tag {:?}: {}",
+                    tag_param,
+                    err
+                );
                 let state = ctx.state.read().await;
                 state
                     .find_cached_release(tag_param)
                     .cloned()
                     .unwrap_or_else(|| {
-                        let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                        let mut fallback = state
+                            .latest_release
+                            .clone()
+                            .unwrap_or_else(ReleaseInfo::default_fallback);
                         if let Some(t) = tag_param {
-                            fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                            fallback.tag_name = if t.starts_with('v') {
+                                t.to_string()
+                            } else {
+                                format!("v{}", t)
+                            };
                             fallback.version = t.trim_start_matches('v').to_string();
                         }
                         fallback
@@ -769,9 +813,16 @@ pub async fn get_manifest(
             .find_cached_release(tag_param)
             .cloned()
             .unwrap_or_else(|| {
-                let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                let mut fallback = state
+                    .latest_release
+                    .clone()
+                    .unwrap_or_else(ReleaseInfo::default_fallback);
                 if let Some(t) = tag_param {
-                    fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                    fallback.tag_name = if t.starts_with('v') {
+                        t.to_string()
+                    } else {
+                        format!("v{}", t)
+                    };
                     fallback.version = t.trim_start_matches('v').to_string();
                 }
                 fallback
@@ -812,9 +863,16 @@ pub async fn refresh_release(
                 .find_cached_release(tag_param)
                 .cloned()
                 .unwrap_or_else(|| {
-                    let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                    let mut fallback = state
+                        .latest_release
+                        .clone()
+                        .unwrap_or_else(ReleaseInfo::default_fallback);
                     if let Some(t) = tag_param {
-                        fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                        fallback.tag_name = if t.starts_with('v') {
+                            t.to_string()
+                        } else {
+                            format!("v{}", t)
+                        };
                         fallback.version = t.trim_start_matches('v').to_string();
                     }
                     fallback
@@ -861,6 +919,7 @@ pub fn build_upstream_pr_commands(
     match target.target_key.as_str() {
         "winget" => vec![
             "gh repo fork microsoft/winget-pkgs --clone=false".to_string(),
+            "gh repo sync microsoft/winget-pkgs".to_string(),
             format!("git checkout -b ivy-tendril-v{}", version),
             format!("mkdir -p manifests/i/Ivy/Tendril/{}", version),
             format!("git add manifests/i/Ivy/Tendril/{}/Ivy.Tendril.yaml", version),
@@ -873,6 +932,7 @@ pub fn build_upstream_pr_commands(
         ],
         "scoop" => vec![
             "gh repo fork ScoopInstaller/Extras --clone=false".to_string(),
+            "gh repo sync ScoopInstaller/Extras".to_string(),
             format!("git checkout -b tendril-v{}", version),
             "mkdir -p bucket".to_string(),
             "git add bucket/tendril.json".to_string(),
@@ -885,6 +945,7 @@ pub fn build_upstream_pr_commands(
         ],
         "homebrew" => vec![
             "gh repo fork ivy-interactive/homebrew-tap --clone=false".to_string(),
+            "gh repo sync ivy-interactive/homebrew-tap".to_string(),
             format!("git checkout -b tendril-v{}", version),
             "mkdir -p Formula".to_string(),
             "git add Formula/tendril.rb".to_string(),
@@ -916,14 +977,15 @@ Manifest Filename: {}
 
 Instructions:
 1. Fork upstream repository `{}` if not already forked.
-2. Create a feature branch and stage the package manifest:
+2. Synchronize existing fork with upstream repository default branch before creating feature branch.
+3. Create a feature branch and stage the package manifest:
 ```{}
 {}
 ```
-3. Execute the following Git and GitHub CLI workflow commands:
+4. Execute the following Git and GitHub CLI workflow commands:
 {}
 
-4. IMPORTANT: Once the Pull Request is created, output the final PR URL on a single line starting with:
+5. IMPORTANT: Once the Pull Request is created, output the final PR URL on a single line starting with:
 [PR_URL] <pr_url>
 "#,
         target.name,
@@ -1102,6 +1164,323 @@ pub async fn get_gh_auth_status() -> (StatusCode, Json<GhAuthStatus>) {
     (StatusCode::OK, Json(status))
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForkSyncStatus {
+    pub target_key: String,
+    pub upstream_repo: String,
+    pub fork_repo: Option<String>,
+    pub fork_exists: bool,
+    pub is_synchronized: bool,
+    pub behind_by: usize,
+    pub ahead_by: usize,
+    pub status: String,
+    pub message: String,
+}
+
+fn fork_repo_name(upstream_repo: &str) -> &str {
+    upstream_repo.rsplit('/').next().unwrap_or(upstream_repo)
+}
+
+fn synchronized_status(
+    target_key: &str,
+    upstream_repo: &str,
+    fork_repo: Option<String>,
+) -> ForkSyncStatus {
+    ForkSyncStatus {
+        target_key: target_key.to_string(),
+        upstream_repo: upstream_repo.to_string(),
+        fork_repo,
+        fork_exists: true,
+        is_synchronized: true,
+        behind_by: 0,
+        ahead_by: 0,
+        status: "synchronized".to_string(),
+        message: "Fork is synchronized with upstream.".to_string(),
+    }
+}
+
+fn no_fork_status(target_key: &str, upstream_repo: &str) -> ForkSyncStatus {
+    ForkSyncStatus {
+        target_key: target_key.to_string(),
+        upstream_repo: upstream_repo.to_string(),
+        fork_repo: None,
+        fork_exists: false,
+        is_synchronized: true,
+        behind_by: 0,
+        ahead_by: 0,
+        status: "no_fork".to_string(),
+        message: "No existing fork detected. A clean fork will be created from upstream HEAD."
+            .to_string(),
+    }
+}
+
+fn behind_status(
+    target_key: &str,
+    upstream_repo: &str,
+    fork_repo: Option<String>,
+    behind_by: usize,
+    ahead_by: usize,
+) -> ForkSyncStatus {
+    ForkSyncStatus {
+        target_key: target_key.to_string(),
+        upstream_repo: upstream_repo.to_string(),
+        fork_repo,
+        fork_exists: true,
+        is_synchronized: false,
+        behind_by,
+        ahead_by,
+        status: "behind".to_string(),
+        message: format!(
+            "Fork is {} commits behind upstream. Synchronize fork before dispatching.",
+            behind_by
+        ),
+    }
+}
+
+fn parse_fork_sync_override(
+    override_val: &str,
+    target_key: &str,
+    upstream_repo: &str,
+    account: Option<&str>,
+) -> ForkSyncStatus {
+    let fork_repo = account.map(|a| format!("{}/{}", a, fork_repo_name(upstream_repo)));
+
+    if override_val.eq_ignore_ascii_case("no_fork") {
+        return no_fork_status(target_key, upstream_repo);
+    }
+    if override_val.eq_ignore_ascii_case("diverged") {
+        return ForkSyncStatus {
+            target_key: target_key.to_string(),
+            upstream_repo: upstream_repo.to_string(),
+            fork_repo,
+            fork_exists: true,
+            is_synchronized: false,
+            behind_by: 0,
+            ahead_by: 0,
+            status: "diverged".to_string(),
+            message: "Fork has diverged from upstream. Manual review required before syncing."
+                .to_string(),
+        };
+    }
+    if let Some(n_str) = override_val.strip_prefix("behind:") {
+        let behind_by = n_str.trim().parse::<usize>().unwrap_or(1);
+        return behind_status(target_key, upstream_repo, fork_repo, behind_by, 0);
+    }
+    // "synchronized" and any other unrecognized override value default to synchronized so a typo
+    // in a test override never silently blocks dispatch.
+    synchronized_status(target_key, upstream_repo, fork_repo)
+}
+
+fn parse_compare_counts(json_text: &str) -> (usize, usize) {
+    let value: serde_json::Value = match serde_json::from_str(json_text) {
+        Ok(v) => v,
+        Err(_) => return (0, 0),
+    };
+    let behind_by = value.get("behind_by").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let ahead_by = value.get("ahead_by").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    (behind_by, ahead_by)
+}
+
+async fn gh_repo_default_branch(repo: &str) -> Option<String> {
+    let output = tokio::process::Command::new("gh")
+        .args(["api", &format!("/repos/{}", repo)])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+    value
+        .get("default_branch")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+pub async fn check_fork_sync_status(
+    target: &PackageManagerTarget,
+    account: Option<&str>,
+) -> ForkSyncStatus {
+    let upstream_repo = target.registry_repo.clone();
+
+    if let Ok(override_val) = std::env::var("GH_FORK_SYNC_OVERRIDE") {
+        return parse_fork_sync_override(
+            &override_val,
+            &target.target_key,
+            &upstream_repo,
+            account,
+        );
+    }
+
+    let account = match account {
+        Some(a) => a,
+        None => {
+            // Without a known authenticated account we cannot look up a personal fork; treat this
+            // the same as "no fork" so dispatch is never blocked by an auth problem the auth-status
+            // check above is already responsible for surfacing.
+            return no_fork_status(&target.target_key, &upstream_repo);
+        }
+    };
+
+    let fork_repo = format!("{}/{}", account, fork_repo_name(&upstream_repo));
+
+    let fork_view = tokio::process::Command::new("gh")
+        .args(["api", &format!("/repos/{}", fork_repo)])
+        .output()
+        .await;
+    let fork_exists = matches!(&fork_view, Ok(o) if o.status.success());
+
+    if !fork_exists {
+        return no_fork_status(&target.target_key, &upstream_repo);
+    }
+
+    let default_branch = gh_repo_default_branch(&upstream_repo)
+        .await
+        .unwrap_or_else(|| "main".to_string());
+
+    let compare_output = tokio::process::Command::new("gh")
+        .args([
+            "api",
+            &format!(
+                "/repos/{}/compare/{}:{}...{}",
+                upstream_repo, account, default_branch, default_branch
+            ),
+        ])
+        .output()
+        .await;
+
+    match compare_output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let (behind_by, ahead_by) = parse_compare_counts(&stdout);
+            if behind_by == 0 {
+                synchronized_status(&target.target_key, &upstream_repo, Some(fork_repo))
+            } else {
+                behind_status(
+                    &target.target_key,
+                    &upstream_repo,
+                    Some(fork_repo),
+                    behind_by,
+                    ahead_by,
+                )
+            }
+        }
+        _ => ForkSyncStatus {
+            target_key: target.target_key.clone(),
+            upstream_repo,
+            fork_repo: Some(fork_repo),
+            fork_exists: true,
+            is_synchronized: true,
+            behind_by: 0,
+            ahead_by: 0,
+            status: "unknown".to_string(),
+            message: "Unable to determine fork synchronization status.".to_string(),
+        },
+    }
+}
+
+pub async fn sync_fork_repo(upstream_repo: &str) -> Result<String, String> {
+    if let Ok(override_val) = std::env::var("GH_FORK_SYNC_ACTION_OVERRIDE") {
+        if override_val.eq_ignore_ascii_case("fail") {
+            return Err(format!(
+                "Simulated failure syncing fork of {} via GH_FORK_SYNC_ACTION_OVERRIDE.",
+                upstream_repo
+            ));
+        }
+        return Ok(format!("Fork synchronized with {}.", upstream_repo));
+    }
+
+    let output = tokio::process::Command::new("gh")
+        .args(["repo", "sync", upstream_repo])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute 'gh repo sync {}': {}", upstream_repo, e))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim().is_empty() {
+            Ok(format!("Fork synchronized with {}.", upstream_repo))
+        } else {
+            Ok(stdout.trim().to_string())
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "'gh repo sync {}' failed: {}",
+            upstream_repo,
+            stderr.trim()
+        ))
+    }
+}
+
+pub async fn get_package_fork_status(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<Option<ForkSyncStatus>>) {
+    let state = ctx.state.read().await;
+    let target = match state
+        .packages
+        .iter()
+        .find(|p| p.id == id || p.target_key == id)
+    {
+        Some(t) => t.clone(),
+        None => return (StatusCode::NOT_FOUND, Json(None)),
+    };
+    drop(state);
+
+    let auth_status = check_gh_auth_status().await;
+    let status = check_fork_sync_status(&target, auth_status.account.as_deref()).await;
+    (StatusCode::OK, Json(Some(status)))
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SyncPackageForkResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+pub async fn sync_package_fork(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<SyncPackageForkResponse>) {
+    let state = ctx.state.read().await;
+    let target = match state
+        .packages
+        .iter()
+        .find(|p| p.id == id || p.target_key == id)
+    {
+        Some(t) => t.clone(),
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(SyncPackageForkResponse {
+                    success: false,
+                    message: "Package target not found.".to_string(),
+                }),
+            )
+        }
+    };
+    drop(state);
+
+    match sync_fork_repo(&target.registry_repo).await {
+        Ok(message) => (
+            StatusCode::OK,
+            Json(SyncPackageForkResponse {
+                success: true,
+                message,
+            }),
+        ),
+        Err(message) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(SyncPackageForkResponse {
+                success: false,
+                message,
+            }),
+        ),
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct DispatchPackagePrRequest {
     pub version: Option<String>,
@@ -1109,6 +1488,8 @@ pub struct DispatchPackagePrRequest {
     pub notes: Option<String>,
     #[serde(default)]
     pub skip_auth_check: Option<bool>,
+    #[serde(default)]
+    pub skip_sync_check: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1139,9 +1520,16 @@ pub async fn dispatch_package_pr(
         .find_cached_release(tag_param)
         .cloned()
         .unwrap_or_else(|| {
-            let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+            let mut fallback = state
+                .latest_release
+                .clone()
+                .unwrap_or_else(ReleaseInfo::default_fallback);
             if let Some(t) = tag_param {
-                fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                fallback.tag_name = if t.starts_with('v') {
+                    t.to_string()
+                } else {
+                    format!("v{}", t)
+                };
                 fallback.version = t.trim_start_matches('v').to_string();
             }
             fallback
@@ -1168,6 +1556,23 @@ pub async fn dispatch_package_pr(
                 Json(Some(DispatchPackagePrResponse {
                     task_id: String::new(),
                     message: auth_status.message,
+                    target_key: target.target_key,
+                    upstream_repo: target.registry_repo,
+                    commands,
+                })),
+            );
+        }
+    }
+
+    if payload.skip_sync_check != Some(true) && !is_test_bypass {
+        let auth_status = check_gh_auth_status().await;
+        let sync_status = check_fork_sync_status(&target, auth_status.account.as_deref()).await;
+        if sync_status.fork_exists && !sync_status.is_synchronized {
+            return (
+                StatusCode::PRECONDITION_FAILED,
+                Json(Some(DispatchPackagePrResponse {
+                    task_id: String::new(),
+                    message: sync_status.message,
                     target_key: target.target_key,
                     upstream_repo: target.registry_repo,
                     commands,
@@ -1238,9 +1643,16 @@ pub async fn get_package_dispatch_commands(
         .find_cached_release(tag_param)
         .cloned()
         .unwrap_or_else(|| {
-            let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+            let mut fallback = state
+                .latest_release
+                .clone()
+                .unwrap_or_else(ReleaseInfo::default_fallback);
             if let Some(t) = tag_param {
-                fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                fallback.tag_name = if t.starts_with('v') {
+                    t.to_string()
+                } else {
+                    format!("v{}", t)
+                };
                 fallback.version = t.trim_start_matches('v').to_string();
             }
             fallback

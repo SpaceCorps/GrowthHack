@@ -1,5 +1,10 @@
 import React, { useState } from "react";
-import type { PackageManagerTarget, PackageManifestResponse, GhAuthStatus } from "../types";
+import type {
+  PackageManagerTarget,
+  PackageManifestResponse,
+  GhAuthStatus,
+  ForkSyncStatus,
+} from "../types";
 import {
   Package,
   Terminal,
@@ -18,6 +23,7 @@ import {
   Sparkles,
   AlertTriangle,
   CheckCircle2,
+  GitFork,
 } from "lucide-react";
 
 interface PackageManagerBlitzProps {
@@ -31,6 +37,7 @@ interface PackageManagerBlitzProps {
     version?: string,
     tagOrSkipAuth?: string | boolean,
     skipAuthCheck?: boolean,
+    skipSyncCheck?: boolean,
   ) => Promise<string | void>;
 }
 
@@ -61,8 +68,27 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(false);
   const [skipAuthOverride, setSkipAuthOverride] = useState<boolean>(false);
   const [copiedLoginCmd, setCopiedLoginCmd] = useState<boolean>(false);
+  const [forkStatus, setForkStatus] = useState<ForkSyncStatus | null>(null);
+  const [isCheckingFork, setIsCheckingFork] = useState<boolean>(false);
+  const [isSyncingFork, setIsSyncingFork] = useState<boolean>(false);
+  const [skipSyncOverride, setSkipSyncOverride] = useState<boolean>(false);
 
-  const fetchGhAuthStatus = async () => {
+  const fetchForkStatus = async (pkg: PackageManagerTarget) => {
+    setIsCheckingFork(true);
+    try {
+      const res = await fetch(`/api/packages/${pkg.id}/fork-status`);
+      if (res.ok) {
+        const data: ForkSyncStatus = await res.json();
+        setForkStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to check fork sync status:", err);
+    } finally {
+      setIsCheckingFork(false);
+    }
+  };
+
+  const fetchGhAuthStatus = async (pkg: PackageManagerTarget) => {
     setIsCheckingAuth(true);
     try {
       const res = await fetch("/api/packages/gh-auth-status");
@@ -75,6 +101,20 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
     } finally {
       setIsCheckingAuth(false);
     }
+    fetchForkStatus(pkg);
+  };
+
+  const handleSyncForkNow = async () => {
+    if (!dispatchTarget) return;
+    setIsSyncingFork(true);
+    try {
+      await fetch(`/api/packages/${dispatchTarget.id}/sync-fork`, { method: "POST" });
+    } catch (err) {
+      console.error("Failed to sync fork:", err);
+    } finally {
+      setIsSyncingFork(false);
+    }
+    fetchForkStatus(dispatchTarget);
   };
 
   const getPreviewCommands = (target: PackageManagerTarget, version: string): string[] => {
@@ -82,6 +122,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
       case "winget":
         return [
           "gh repo fork microsoft/winget-pkgs --clone=false",
+          "gh repo sync microsoft/winget-pkgs",
           `git checkout -b ivy-tendril-v${version}`,
           `mkdir -p manifests/i/Ivy/Tendril/${version}`,
           `git add manifests/i/Ivy/Tendril/${version}/Ivy.Tendril.yaml`,
@@ -92,6 +133,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
       case "scoop":
         return [
           "gh repo fork ScoopInstaller/Extras --clone=false",
+          "gh repo sync ScoopInstaller/Extras",
           `git checkout -b tendril-v${version}`,
           "mkdir -p bucket",
           "git add bucket/tendril.json",
@@ -102,6 +144,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
       case "homebrew":
         return [
           "gh repo fork ivy-interactive/homebrew-tap --clone=false",
+          "gh repo sync ivy-interactive/homebrew-tap",
           `git checkout -b tendril-v${version}`,
           "mkdir -p Formula",
           "git add Formula/tendril.rb",
@@ -120,8 +163,10 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
     setDispatchTag(selectedTag || "");
     setCopiedCommands(false);
     setSkipAuthOverride(false);
+    setSkipSyncOverride(false);
     setAuthStatus(null);
-    fetchGhAuthStatus();
+    setForkStatus(null);
+    fetchGhAuthStatus(pkg);
   };
 
   // Manifest content cache/fallback
@@ -870,7 +915,7 @@ Installers:
                   </div>
                   <button
                     type="button"
-                    onClick={fetchGhAuthStatus}
+                    onClick={() => dispatchTarget && fetchGhAuthStatus(dispatchTarget)}
                     disabled={isCheckingAuth}
                     data-testid="recheck-gh-auth-btn"
                     className="text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-mono transition-colors disabled:opacity-50"
@@ -894,7 +939,7 @@ Installers:
                     </div>
                     <button
                       type="button"
-                      onClick={fetchGhAuthStatus}
+                      onClick={() => dispatchTarget && fetchGhAuthStatus(dispatchTarget)}
                       disabled={isCheckingAuth}
                       data-testid="recheck-gh-auth-btn"
                       className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono transition-colors disabled:opacity-50"
@@ -936,6 +981,83 @@ Installers:
                       className="rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
                     />
                     <span>Proceed anyway (skip authentication pre-flight check)</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Fork Synchronization Pre-Flight Feedback Card */}
+              {isCheckingFork && !forkStatus && (
+                <div
+                  data-testid="fork-status-loading"
+                  className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center space-x-2 text-xs text-slate-400 font-mono"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                  <span>Verifying upstream fork synchronization status...</span>
+                </div>
+              )}
+
+              {forkStatus && forkStatus.status === "no_fork" && (
+                <div
+                  data-testid="fork-status-no-fork"
+                  className="p-3 bg-slate-800/40 border border-slate-700 rounded-xl flex items-center space-x-2 text-xs text-slate-300 font-mono"
+                >
+                  <GitFork className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>
+                    No existing fork detected. A clean fork will be cloned from upstream HEAD.
+                  </span>
+                </div>
+              )}
+
+              {forkStatus && forkStatus.status === "synchronized" && (
+                <div
+                  data-testid="fork-status-synchronized"
+                  className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-2 text-emerald-300 text-xs font-mono">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      Fork Synchronized:{" "}
+                      <strong className="text-white font-semibold">@{forkStatus.fork_repo}</strong>{" "}
+                      is up to date with {forkStatus.upstream_repo}.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {forkStatus && forkStatus.status === "behind" && (
+                <div
+                  data-testid="fork-status-warning"
+                  className="p-3.5 bg-amber-950/40 border border-amber-800/80 rounded-xl space-y-2.5 text-xs text-amber-200"
+                >
+                  <div className="flex items-center space-x-2 font-bold text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Upstream Fork Out of Sync</span>
+                  </div>
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                    Your fork @{forkStatus.fork_repo} is {forkStatus.behind_by} commits behind{" "}
+                    {forkStatus.upstream_repo}. Stale forks can cause manifest merge conflicts.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSyncForkNow}
+                    disabled={isSyncingFork}
+                    data-testid="sync-fork-now-btn"
+                    className="flex items-center justify-between w-full bg-slate-950 px-2.5 py-1.5 rounded-lg border border-amber-900/60 font-mono text-[11px] text-amber-300 hover:text-amber-200 transition-colors disabled:opacity-50"
+                  >
+                    <span className="flex items-center gap-1">
+                      <RefreshCw className={`w-3 h-3 ${isSyncingFork ? "animate-spin" : ""}`} />
+                      <span>{isSyncingFork ? "Syncing..." : "Sync Fork Now"}</span>
+                    </span>
+                  </button>
+                  <label className="flex items-center space-x-2 pt-1 text-[11px] text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      data-testid="skip-sync-checkbox"
+                      checked={skipSyncOverride}
+                      onChange={(e) => setSkipSyncOverride(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    <span>Proceed anyway (skip fork synchronization check)</span>
                   </label>
                 </div>
               )}
@@ -997,7 +1119,9 @@ Installers:
                 data-testid="confirm-dispatch-btn"
                 disabled={
                   isLaunching ||
-                  (authStatus !== null && !authStatus.authenticated && !skipAuthOverride)
+                  isSyncingFork ||
+                  (authStatus !== null && !authStatus.authenticated && !skipAuthOverride) ||
+                  (forkStatus?.fork_exists && !forkStatus?.is_synchronized && !skipSyncOverride)
                 }
                 onClick={async () => {
                   if (dispatchTarget) {
@@ -1007,11 +1131,27 @@ Installers:
                         const tagToPass =
                           dispatchTag && dispatchTag.trim() ? dispatchTag.trim() : undefined;
                         if (tagToPass) {
-                          if (skipAuthOverride) {
+                          if (skipAuthOverride && skipSyncOverride) {
                             await onDispatchPackagePr(
                               dispatchTarget.id,
                               dispatchVersion,
                               tagToPass,
+                              true,
+                              true,
+                            );
+                          } else if (skipAuthOverride) {
+                            await onDispatchPackagePr(
+                              dispatchTarget.id,
+                              dispatchVersion,
+                              tagToPass,
+                              true,
+                            );
+                          } else if (skipSyncOverride) {
+                            await onDispatchPackagePr(
+                              dispatchTarget.id,
+                              dispatchVersion,
+                              tagToPass,
+                              false,
                               true,
                             );
                           } else {
@@ -1021,8 +1161,24 @@ Installers:
                               tagToPass,
                             );
                           }
+                        } else if (skipAuthOverride && skipSyncOverride) {
+                          await onDispatchPackagePr(
+                            dispatchTarget.id,
+                            dispatchVersion,
+                            true,
+                            undefined,
+                            true,
+                          );
                         } else if (skipAuthOverride) {
                           await onDispatchPackagePr(dispatchTarget.id, dispatchVersion, true);
+                        } else if (skipSyncOverride) {
+                          await onDispatchPackagePr(
+                            dispatchTarget.id,
+                            dispatchVersion,
+                            false,
+                            undefined,
+                            true,
+                          );
                         } else {
                           await onDispatchPackagePr(dispatchTarget.id, dispatchVersion);
                         }

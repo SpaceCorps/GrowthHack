@@ -179,7 +179,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/batch-submit-pr",
             post(listings::batch_submit_listing_prs),
         )
-        .route("/api/listings/sync-prs", post(listings::sync_all_listing_prs))
+        .route(
+            "/api/listings/sync-prs",
+            post(listings::sync_all_listing_prs),
+        )
         .route(
             "/api/listings/{id}/sync-pr",
             post(listings::check_single_listing_pr),
@@ -213,6 +216,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route(
             "/api/packages/{id}/commands",
             get(packages::get_package_dispatch_commands),
+        )
+        .route(
+            "/api/packages/{id}/fork-status",
+            get(packages::get_package_fork_status),
+        )
+        .route(
+            "/api/packages/{id}/sync-fork",
+            post(packages::sync_package_fork),
         )
         // PR Badges and Workflows Flywheel
         .route("/api/badges/generate", post(badges::generate_badge))
@@ -298,10 +309,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/demo/scenarios",
             get(demo::list_scenarios).post(demo::create_scenario),
         )
-        .route(
-            "/api/demo/scenarios/reset",
-            post(demo::reset_scenarios),
-        )
+        .route("/api/demo/scenarios/reset", post(demo::reset_scenarios))
         .route(
             "/api/demo/scenarios/{id}",
             get(demo::get_scenario)
@@ -320,8 +328,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
         .route("/api/launch/show-hn", put(launch::update_show_hn))
         .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
-        .route("/api/launch/checklist/{id}", put(launch::toggle_syndication_checklist))
-        .route("/api/launch/timeline/{phase_id}/tasks/{task_id}", put(launch::toggle_timeline_task))
+        .route(
+            "/api/launch/checklist/{id}",
+            put(launch::toggle_syndication_checklist),
+        )
+        .route(
+            "/api/launch/timeline/{phase_id}/tasks/{task_id}",
+            put(launch::toggle_timeline_task),
+        )
         .route("/api/launch/reset", post(launch::reset_launch_campaign))
         // Interactive Browser Web Playground (tendril.run)
         .route("/api/playground/scenarios", get(playground::list_scenarios))
@@ -330,7 +344,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(playground::import_issue),
         )
         .route("/api/playground/tree", get(playground::get_tree))
-        .route("/api/playground/file-content", get(playground::get_file_content))
+        .route(
+            "/api/playground/file-content",
+            get(playground::get_file_content),
+        )
         .route("/api/playground/status", get(playground::get_status))
         .route("/api/playground/start", post(playground::start_simulation))
         .route("/api/playground/reset", post(playground::reset_simulation))
