@@ -15,5 +15,6 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local Data (optional to keep or gitignore)
-# growth_data.json
+# Local Data
+growth_data.json
+**/growth_data.json
