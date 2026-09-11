@@ -30,6 +30,7 @@ fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::new(growthhack_backend::api::MetricsSyncDebouncer::default()),
     });
 
     (ctx, data_file)
@@ -98,12 +99,20 @@ async fn test_import_custom_issue() {
 
     assert_eq!(scenario["title"], "Add Prometheus metrics endpoint");
     assert!(scenario["id"].as_str().unwrap().starts_with("custom-"));
-    assert!(scenario["diff"].as_str().unwrap().contains("Add Prometheus metrics endpoint"));
+    assert!(scenario["diff"]
+        .as_str()
+        .unwrap()
+        .contains("Add Prometheus metrics endpoint"));
 
     // Verify imported count in persisted metrics
     let disk_content = std::fs::read_to_string(&data_file).unwrap();
     let disk_state: Value = serde_json::from_str(&disk_content).unwrap();
-    assert!(disk_state["playground_metrics"]["issues_imported"].as_u64().unwrap() >= 1);
+    assert!(
+        disk_state["playground_metrics"]["issues_imported"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
 
     let _ = std::fs::remove_file(data_file);
 }
@@ -222,7 +231,10 @@ async fn test_simulation_lifecycle() {
     assert_eq!(diff_res.status(), StatusCode::OK);
     let diff_body = to_bytes(diff_res.into_body(), usize::MAX).await.unwrap();
     let diff_data: Value = serde_json::from_slice(&diff_body).unwrap();
-    assert!(diff_data["diff"].as_str().unwrap().contains("HealthResponse"));
+    assert!(diff_data["diff"]
+        .as_str()
+        .unwrap()
+        .contains("HealthResponse"));
 
     let _ = std::fs::remove_file(data_file);
 }
@@ -294,8 +306,14 @@ async fn test_banner_embed_generator() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let banner: Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(banner["markdown_snippet"].as_str().unwrap().contains("[![Try Tendril"));
-    assert!(banner["html_snippet"].as_str().unwrap().contains("<a href=\"https://tendril.run/playground\""));
+    assert!(banner["markdown_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("[![Try Tendril"));
+    assert!(banner["html_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("<a href=\"https://tendril.run/playground\""));
     assert!(banner["raw_svg"].as_str().unwrap().contains("<svg"));
 
     let _ = std::fs::remove_file(data_file);
