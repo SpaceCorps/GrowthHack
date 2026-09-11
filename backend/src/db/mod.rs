@@ -331,6 +331,96 @@ pub struct AllContributorsConfig {
     pub link_to_usage: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AuthenticityAnalysis {
+    pub score: u32,
+    pub rating: String,
+    pub suggestions: Vec<String>,
+    pub keyword_matches: Vec<String>,
+    pub penalty_reasons: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ShowHnState {
+    pub title: String,
+    pub url: String,
+    pub maker_comment: String,
+    pub authenticity_score: u32,
+    #[serde(default)]
+    pub score_breakdown: Option<AuthenticityAnalysis>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProductHuntAssetSpec {
+    pub name: String,
+    pub dimensions: String,
+    pub requirement: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProductHuntChecklistItem {
+    pub id: String,
+    pub task: String,
+    pub completed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProductHuntKit {
+    pub taglines: Vec<String>,
+    pub selected_tagline: String,
+    pub first_comment: String,
+    pub asset_specs: Vec<ProductHuntAssetSpec>,
+    pub checklist: Vec<ProductHuntChecklistItem>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct BetaTester {
+    pub id: String,
+    pub name: String,
+    pub handle: String,
+    pub platform: String, // "GitHub", "X", "HN", "Discord"
+    pub specialty: String,
+    pub outreach_status: String, // "Identified", "Contacted", "Committed", "Feedback Received", "Active on Launch Day"
+    pub notes: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct SyndicationChecklistItem {
+    pub id: String,
+    pub platform: String, // "Reddit", "Twitter/X", "TLDR", "Console.dev", "Changelog"
+    pub title: String,
+    pub instructions: String,
+    pub blurb: String,
+    pub completed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TimelineTask {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub completed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TimelinePhase {
+    pub id: String,
+    pub phase: String,
+    pub timing: String,
+    pub tasks: Vec<TimelineTask>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct LaunchCampaignState {
+    pub show_hn: ShowHnState,
+    pub product_hunt: ProductHuntKit,
+    pub beta_testers: Vec<BetaTester>,
+    pub syndication_checklist: Vec<SyndicationChecklistItem>,
+    pub timeline: Vec<TimelinePhase>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PlaygroundMetrics {
     pub total_sessions: u32,
@@ -366,6 +456,8 @@ pub struct GrowthState {
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
     #[serde(default)]
+    pub launch_campaign: Option<LaunchCampaignState>,
+    #[serde(default)]
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
@@ -392,6 +484,14 @@ impl GrowthState {
                     }
                     if !state.issues.iter().any(|i| i.number == 11) {
                         state.issues.push(Self::seed_issue_11(Utc::now()));
+                        let _ = state.save(path);
+                    }
+                    if !state.issues.iter().any(|i| i.number == 12) {
+                        state.issues.push(Self::seed_issue_12(Utc::now()));
+                        let _ = state.save(path);
+                    }
+                    if state.launch_campaign.is_none() {
+                        state.launch_campaign = Some(Self::seed_launch_campaign(Utc::now()));
                         let _ = state.save(path);
                     }
                     if !state.issues.iter().any(|i| i.number == 16) {
@@ -646,6 +746,7 @@ impl GrowthState {
                 updated_at: now,
             },
             Self::seed_issue_11(now),
+            Self::seed_issue_12(now),
             Self::seed_issue_16(now),
         ];
 
@@ -834,6 +935,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
+            launch_campaign: Some(Self::seed_launch_campaign(now)),
             global_engagement_snapshots: Vec::new(),
         }
     }
@@ -2566,6 +2668,527 @@ steps:
                 pr_url: None,
             },
         ]
+    }
+
+    pub fn seed_issue_12(now: DateTime<Utc>) -> GrowthIssue {
+        GrowthIssue {
+            id: "issue-12".to_string(),
+            number: 12,
+            title: "Coordinated 'Show HN' & Product Hunt Launch Campaign".to_string(),
+            category: "Launch Orchestrator".to_string(),
+            status: "In Progress".to_string(),
+            priority: "Critical".to_string(),
+            description: "Coordinate a synchronized 48-hour launch blitz across Hacker News, Product Hunt, Reddit, and developer newsletters. Includes authenticity score evaluator, maker comment generator, Product Hunt asset kit, 20-person beta tester mobilization tracker, and cross-channel countdown.".to_string(),
+            direct_actions: vec![
+                "Optimize Show HN title and technical maker comment for HN community norms with authenticity scoring".to_string(),
+                "Generate Product Hunt collateral with 60-char tagline, maker first comment, and asset specifications".to_string(),
+                "Mobilize 20 technical beta testers for early launch hour engagement and feedback".to_string(),
+                "Execute 7-phase 48-hour syndication blitz across Reddit (r/programming), Twitter/X threads, and newsletters".to_string(),
+            ],
+            routine_schedule: None,
+            run_count: 1,
+            last_run_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn seed_launch_campaign(now: DateTime<Utc>) -> LaunchCampaignState {
+        let show_hn = ShowHnState {
+            title: "Show HN: Ivy-Tendril – Autonomous coding agents in isolated Git worktrees with verification gates".to_string(),
+            url: "https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
+            maker_comment: "Hi HN! We built Ivy-Tendril because running autonomous coding agents directly in shared working copies triggers merge collisions, git index locks, and context drift.\n\nTendril provisions an ephemeral, isolated Git worktree for every agent task, runs strict verification test gates (build, clippy, unit tests) before creating pull requests, and orchestrates Claude Code, Codex, and Gemini CLI in parallel.\n\nEverything is open source Rust (Axum/Tokio) and React 19. Would love your brutal feedback on our worktree isolation architecture and benchmark reproducible results!\n\nRepo: https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
+            authenticity_score: 92,
+            score_breakdown: Some(AuthenticityAnalysis {
+                score: 92,
+                rating: "Authentic & Technical (High HN Alignment)".to_string(),
+                suggestions: vec![
+                    "Strong technical grounding with isolated worktrees and verification gates".to_string(),
+                    "Clear architectural problem statement with no hype buzzwords".to_string(),
+                ],
+                keyword_matches: vec![
+                    "isolated git worktrees".to_string(),
+                    "verification gates".to_string(),
+                    "Rust".to_string(),
+                    "Axum".to_string(),
+                    "open source".to_string(),
+                    "architecture".to_string(),
+                    "benchmarks".to_string(),
+                ],
+                penalty_reasons: vec![],
+            }),
+        };
+
+        let product_hunt = ProductHuntKit {
+            taglines: vec![
+                "Autonomous coding agents in isolated Git worktrees".to_string(),
+                "Run multi-agent software factories with verification gates".to_string(),
+                "Zero-conflict AI coding agents for production engineering".to_string(),
+            ],
+            selected_tagline: "Autonomous coding agents in isolated Git worktrees".to_string(),
+            first_comment: "Hey Product Hunt! 👋 We built Ivy-Tendril to solve the single biggest headache with autonomous coding agents: workspace collision and unverified code changes. Tendril gives every agent an isolated Git worktree and runs strict verification gates before git commit. Excited to hear your thoughts and see what you build!".to_string(),
+            asset_specs: vec![
+                ProductHuntAssetSpec {
+                    name: "Gallery Images".to_string(),
+                    dimensions: "1270x760".to_string(),
+                    requirement: "3-5 high-resolution screenshots showing multi-worktree terminal, verification gates, and diff review".to_string(),
+                    status: "Ready".to_string(),
+                },
+                ProductHuntAssetSpec {
+                    name: "Thumbnail".to_string(),
+                    dimensions: "240x240".to_string(),
+                    requirement: "Animated GIF or clean SVG icon with high contrast on dark mode".to_string(),
+                    status: "Ready".to_string(),
+                },
+                ProductHuntAssetSpec {
+                    name: "Demo Video".to_string(),
+                    dimensions: "1920x1080 (16:9)".to_string(),
+                    requirement: "90s uncut demo video showing issue intake, worktree provisioning, passing tests, and verified PR".to_string(),
+                    status: "In Progress".to_string(),
+                },
+            ],
+            checklist: vec![
+                ProductHuntChecklistItem {
+                    id: "ph-1".to_string(),
+                    task: "Schedule launch for 00:01 AM PST (Hunter timezone sync)".to_string(),
+                    completed: false,
+                },
+                ProductHuntChecklistItem {
+                    id: "ph-2".to_string(),
+                    task: "Verify hunter account permissions and notification settings".to_string(),
+                    completed: true,
+                },
+                ProductHuntChecklistItem {
+                    id: "ph-3".to_string(),
+                    task: "Upload 1270x760 gallery images and 240x240 icon".to_string(),
+                    completed: true,
+                },
+                ProductHuntChecklistItem {
+                    id: "ph-4".to_string(),
+                    task: "Review maker comment and prepare first-hour replies".to_string(),
+                    completed: false,
+                },
+                ProductHuntChecklistItem {
+                    id: "ph-5".to_string(),
+                    task: "Embed Product Hunt badge in Ivy-Tendril README.md".to_string(),
+                    completed: false,
+                },
+            ],
+        };
+
+        let beta_testers = vec![
+            BetaTester {
+                id: "tester-1".to_string(),
+                name: "Sarah Lin".to_string(),
+                handle: "@slin-dev".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "Rust & Distributed Systems".to_string(),
+                outreach_status: "Committed".to_string(),
+                notes: "Excited about worktree isolation and Axum backend.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-2".to_string(),
+                name: "David K.".to_string(),
+                handle: "@dk_hacker".to_string(),
+                platform: "HN".to_string(),
+                specialty: "DevOps & CI/CD".to_string(),
+                outreach_status: "Committed".to_string(),
+                notes: "Runs 40+ repo monorepos, wants to test CLI.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-3".to_string(),
+                name: "Elena Rostova".to_string(),
+                handle: "@elena_code".to_string(),
+                platform: "X".to_string(),
+                specialty: "AI Engineering & SWE-bench".to_string(),
+                outreach_status: "Active on Launch Day".to_string(),
+                notes: "Pre-tested benchmark matrix, will comment at T-0.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-4".to_string(),
+                name: "Marcus Vance".to_string(),
+                handle: "@marcus_cli".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "Terminal CLI Tools".to_string(),
+                outreach_status: "Committed".to_string(),
+                notes: "Reviewed zsh completions and doctor command.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-5".to_string(),
+                name: "Alex Chen".to_string(),
+                handle: "@achen_ai".to_string(),
+                platform: "Discord".to_string(),
+                specialty: "Multi-Agent Architectures".to_string(),
+                outreach_status: "Feedback Received".to_string(),
+                notes: "Tested parallel Claude Code execution, loved it.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-6".to_string(),
+                name: "Priya Sharma".to_string(),
+                handle: "@priya_systems".to_string(),
+                platform: "HN".to_string(),
+                specialty: "Compiler & Systems Engineering".to_string(),
+                outreach_status: "Contacted".to_string(),
+                notes: "Messaged on HN about Rust worktree performance.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-7".to_string(),
+                name: "Liam O'Connor".to_string(),
+                handle: "@liam_rust".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "Rust Maintainer".to_string(),
+                outreach_status: "Committed".to_string(),
+                notes: "Agreed to test cargo integration and clippy gates.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-8".to_string(),
+                name: "Chloe Bennett".to_string(),
+                handle: "@chloeb_oss".to_string(),
+                platform: "X".to_string(),
+                specialty: "Developer Relations & Tooling".to_string(),
+                outreach_status: "Active on Launch Day".to_string(),
+                notes: "Preparing tweet quote for launch day.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-9".to_string(),
+                name: "Kenji Sato".to_string(),
+                handle: "@kenji_tokyo".to_string(),
+                platform: "Discord".to_string(),
+                specialty: "Fullstack TypeScript/React".to_string(),
+                outreach_status: "Feedback Received".to_string(),
+                notes: "Tested Vite+ React 19 UI ergonomics.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-10".to_string(),
+                name: "Tomasz Kowalski".to_string(),
+                handle: "@tomasz_dev".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "Linux Kernel & Git Internals".to_string(),
+                outreach_status: "Contacted".to_string(),
+                notes: "Sent technical architectural overview of worktree locking.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-11".to_string(),
+                name: "Maya Patel".to_string(),
+                handle: "@mayap_ai".to_string(),
+                platform: "HN".to_string(),
+                specialty: "LLM Evaluation & Agents".to_string(),
+                outreach_status: "Identified".to_string(),
+                notes: "Prominent commenter on recent r/LocalLLaMA thread.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-12".to_string(),
+                name: "Felix Weber".to_string(),
+                handle: "@felix_infra".to_string(),
+                platform: "Discord".to_string(),
+                specialty: "Cloud Native & Docker".to_string(),
+                outreach_status: "Contacted".to_string(),
+                notes: "Interested in zero-install npx / container flows.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-13".to_string(),
+                name: "Nadia Al-Mansoor".to_string(),
+                handle: "@nadia_codes".to_string(),
+                platform: "X".to_string(),
+                specialty: "Open Source Advocate".to_string(),
+                outreach_status: "Committed".to_string(),
+                notes: "Requested early access link for her dev group.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-14".to_string(),
+                name: "Samir Gupta".to_string(),
+                handle: "@samirg_dev".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "DevTools Creator".to_string(),
+                outreach_status: "Feedback Received".to_string(),
+                notes: "Provided feedback on verification gate error output.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-15".to_string(),
+                name: "Zoe Martin".to_string(),
+                handle: "@zoemartin".to_string(),
+                platform: "HN".to_string(),
+                specialty: "Hacker News Veteran (10k+ karma)".to_string(),
+                outreach_status: "Contacted".to_string(),
+                notes: "Reached out regarding authentic maker comment style.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-16".to_string(),
+                name: "Daniel Rivera".to_string(),
+                handle: "@drivera_io".to_string(),
+                platform: "Discord".to_string(),
+                specialty: "Web & Frontend Performance".to_string(),
+                outreach_status: "Identified".to_string(),
+                notes: "Lead frontend architect, potential case study.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-17".to_string(),
+                name: "Ananya Roy".to_string(),
+                handle: "@ananya_eng".to_string(),
+                platform: "GitHub".to_string(),
+                specialty: "Open Source Contributor".to_string(),
+                outreach_status: "Active on Launch Day".to_string(),
+                notes: "Will reproduce zero-config demo during launch.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-18".to_string(),
+                name: "Lucas Dubois".to_string(),
+                handle: "@lucas_dubois".to_string(),
+                platform: "X".to_string(),
+                specialty: "Tech Lead & Angel Investor".to_string(),
+                outreach_status: "Identified".to_string(),
+                notes: "Follows AI agent tooling closely on Twitter.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-19".to_string(),
+                name: "Vikram Malhotra".to_string(),
+                handle: "@vikram_m".to_string(),
+                platform: "HN".to_string(),
+                specialty: "Software Reliability & SRE".to_string(),
+                outreach_status: "Identified".to_string(),
+                notes: "Discusses agent rollback and testing strategies on HN.".to_string(),
+                updated_at: now,
+            },
+            BetaTester {
+                id: "tester-20".to_string(),
+                name: "Jessica Taylor".to_string(),
+                handle: "@jtaylor_sec".to_string(),
+                platform: "Discord".to_string(),
+                specialty: "AppSec & Sandbox Security".to_string(),
+                outreach_status: "Contacted".to_string(),
+                notes: "Inquired about worktree permissions and sandboxing.".to_string(),
+                updated_at: now,
+            },
+        ];
+
+        let syndication_checklist = vec![
+            SyndicationChecklistItem {
+                id: "syn-reddit".to_string(),
+                platform: "Reddit".to_string(),
+                title: "r/programming Technical Deep-Dive".to_string(),
+                instructions: "Adhere to r/programming self-promotion rules. Focus on Git worktree mechanics and zero-cost sandboxing. Zero marketing hype.".to_string(),
+                blurb: "We open-sourced Ivy-Tendril to solve agent workspace collision using Git worktrees. Here is an architectural breakdown of why concurrent LLM agents corrupt repositories and how isolated worktrees provide clean verification boundaries.".to_string(),
+                completed: false,
+            },
+            SyndicationChecklistItem {
+                id: "syn-twitter".to_string(),
+                platform: "Twitter/X".to_string(),
+                title: "10-Tweet Technical Launch Thread".to_string(),
+                instructions: "Hook with video demo of multi-agent worktree collisions, quote benchmark numbers, tag relevant OSS maintainers, link GitHub repo at end.".to_string(),
+                blurb: "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it) 🧵👇\n1/10 Most coding agent demos stop at chat. When you run 3 agents concurrently on a codebase, shared state becomes catastrophic...".to_string(),
+                completed: false,
+            },
+            SyndicationChecklistItem {
+                id: "syn-tldr".to_string(),
+                platform: "TLDR".to_string(),
+                title: "TLDR Web Dev & Founders Blurb".to_string(),
+                instructions: "Submit 50-word crisp technical summary to TLDR Dev editor with GitHub stars link and key value proposition.".to_string(),
+                blurb: "Ivy-Tendril (GitHub: Ivy-Interactive/Ivy-Tendril) is an open-source Rust orchestration platform that runs autonomous AI coding agents in isolated Git worktrees with automated verification test gates.".to_string(),
+                completed: false,
+            },
+            SyndicationChecklistItem {
+                id: "syn-console".to_string(),
+                platform: "Console.dev".to_string(),
+                title: "Console.dev Developer Tool Submission".to_string(),
+                instructions: "Submit tool interview responses focusing on developer ergonomics, CLI architecture, and local execution.".to_string(),
+                blurb: "Tendril: Git worktree orchestrator for CLI coding agents. Built in Rust Axum with local React 19 UI. Bridges issue intake directly to verified pull requests.".to_string(),
+                completed: false,
+            },
+            SyndicationChecklistItem {
+                id: "syn-changelog".to_string(),
+                platform: "Changelog".to_string(),
+                title: "Changelog News & Podcast Pitch".to_string(),
+                instructions: "Submit news item to changelog.com/news with focus on open source software factory patterns.".to_string(),
+                blurb: "Ivy-Tendril open-sources its multi-agent worktree engine for Claude Code, Codex, and Gemini CLI with reproducible test gates.".to_string(),
+                completed: false,
+            },
+        ];
+
+        let timeline = vec![
+            TimelinePhase {
+                id: "phase-t48".to_string(),
+                phase: "T-48h Preparation".to_string(),
+                timing: "48 hours before launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-t48-1".to_string(),
+                        title: "Run tendril doctor on all target platforms (macOS, Linux, Windows)".to_string(),
+                        description: "Ensure zero onboarding friction for new developers across all major operating systems.".to_string(),
+                        completed: true,
+                    },
+                    TimelineTask {
+                        id: "task-t48-2".to_string(),
+                        title: "Tag release candidate and publish npm/cargo/brew packages".to_string(),
+                        description: "Verify one-line install commands execute without error.".to_string(),
+                        completed: true,
+                    },
+                    TimelineTask {
+                        id: "task-t48-3".to_string(),
+                        title: "Warm up 20 technical beta testers via personalized DMs".to_string(),
+                        description: "Confirm launch hour availability and provide early access build.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-t24".to_string(),
+                phase: "T-24h Asset Freeze".to_string(),
+                timing: "24 hours before launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-t24-1".to_string(),
+                        title: "Freeze repository main branch and verify CI green".to_string(),
+                        description: "No breaking changes permitted 24 hours prior to launch.".to_string(),
+                        completed: true,
+                    },
+                    TimelineTask {
+                        id: "task-t24-2".to_string(),
+                        title: "Finalize Show HN title, maker comment, and repo README".to_string(),
+                        description: "Pass authenticity score analyzer with score >= 85.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-t24-3".to_string(),
+                        title: "Pre-render and test demo video playback across mobile and desktop".to_string(),
+                        description: "Ensure fast loading on low-bandwidth connections.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-t0".to_string(),
+                phase: "T-0h Launch Zero".to_string(),
+                timing: "Launch hour (00:01 PST / 08:00 UTC)".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-t0-1".to_string(),
+                        title: "Submit Product Hunt listing at 00:01 AM PST".to_string(),
+                        description: "Publish with selected tagline and post maker first comment.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-t0-2".to_string(),
+                        title: "Submit Show HN post at 06:30 AM PST".to_string(),
+                        description: "Post title and immediate in-depth technical comment.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-t0-3".to_string(),
+                        title: "Notify committed beta testers in private Discord/Slack".to_string(),
+                        description: "Request genuine technical feedback and discussion on HN/PH.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-tp2".to_string(),
+                phase: "T+2h Early Discussions".to_string(),
+                timing: "First 2 hours post-launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-tp2-1".to_string(),
+                        title: "Monitor Show HN new queue and reply to every comment within 5 mins".to_string(),
+                        description: "Answer technical architecture questions thoroughly with repo links.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-tp2-2".to_string(),
+                        title: "Respond to Product Hunt reviews and Hunter feedback".to_string(),
+                        description: "Thank early supporters and log feature suggestions.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-tp6".to_string(),
+                phase: "T+6h Cross-Channel Blitz".to_string(),
+                timing: "6 hours post-launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-tp6-1".to_string(),
+                        title: "Post technical write-up to Reddit r/programming".to_string(),
+                        description: "Focus on Git worktree architecture and multi-agent coordination.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-tp6-2".to_string(),
+                        title: "Publish 10-tweet Twitter/X launch thread with video demo".to_string(),
+                        description: "Engage with retweets and quote tweets.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-tp6-3".to_string(),
+                        title: "Dispatch blurbs to TLDR, Console.dev, and Changelog".to_string(),
+                        description: "Send press blurbs to dev newsletters.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-tp24".to_string(),
+                phase: "T+24h Momentum".to_string(),
+                timing: "24 hours post-launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-tp24-1".to_string(),
+                        title: "Analyze traffic spikes, GitHub stars, and issue creations".to_string(),
+                        description: "Review server logs and conversion rates.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-tp24-2".to_string(),
+                        title: "Publish Day 1 reflections and roadmap on GitHub Discussions".to_string(),
+                        description: "Share transparent metrics and announce top community requests.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+            TimelinePhase {
+                id: "phase-tp48".to_string(),
+                phase: "T+48h Retrospective".to_string(),
+                timing: "48 hours post-launch".to_string(),
+                tasks: vec![
+                    TimelineTask {
+                        id: "task-tp48-1".to_string(),
+                        title: "Compile final launch metrics and GitHub star velocity".to_string(),
+                        description: "Document conversion rates, top referral channels, and retention.".to_string(),
+                        completed: false,
+                    },
+                    TimelineTask {
+                        id: "task-tp48-2".to_string(),
+                        title: "Send personal thank-you notes to all active beta testers".to_string(),
+                        description: "Invite top engaged testers to Contributor Flywheel mentorship.".to_string(),
+                        completed: false,
+                    },
+                ],
+            },
+        ];
+
+        LaunchCampaignState {
+            show_hn,
+            product_hunt,
+            beta_testers,
+            syndication_checklist,
+            timeline,
+        }
     }
 
     pub fn generate_all_contributorsrc(&self) -> AllContributorsConfig {

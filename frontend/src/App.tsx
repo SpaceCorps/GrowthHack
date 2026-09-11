@@ -12,6 +12,7 @@ import type {
   RunRecipeResponse,
   TrendTopic,
   VideoDemo,
+  LaunchCampaignState,
 } from "./types";
 import { Navigation } from "./components/Navigation";
 import { LiveTerminal } from "./components/LiveTerminal";
@@ -28,6 +29,7 @@ import { PrFlywheel } from "./views/PrFlywheel";
 import { RecipeHub } from "./views/RecipeHub";
 import { ContributorFlywheel } from "./views/ContributorFlywheel";
 import { DoctorDemo } from "./views/DoctorDemo";
+import { LaunchCampaign } from "./views/LaunchCampaign";
 import { Playground } from "./views/Playground";
 
 export const App: React.FC = () => {
@@ -51,6 +53,7 @@ export const App: React.FC = () => {
       "review",
       "flywheel",
       "doctor",
+      "launch",
       "playground",
     ];
     if (validTabs.includes(hash)) return hash;
@@ -80,6 +83,7 @@ export const App: React.FC = () => {
   >(undefined);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
+  const [launchCampaign, setLaunchCampaign] = useState<LaunchCampaignState | null>(null);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -106,6 +110,7 @@ export const App: React.FC = () => {
         resGithub,
         resRecipes,
         resContributors,
+        resLaunch,
       ] = await Promise.all([
         fetch("/api/issues").then((r) => r.json()),
         fetch("/api/articles").then((r) => r.json()),
@@ -119,6 +124,9 @@ export const App: React.FC = () => {
           .catch(() => undefined),
         fetch("/api/recipes").then((r) => r.json()),
         fetch("/api/contributors/issues").then((r) => r.json()),
+        fetch("/api/launch/overview")
+          .then((r) => r.json())
+          .catch(() => null),
       ]);
       setIssues(resIssues);
       setArticles(resArticles);
@@ -132,6 +140,9 @@ export const App: React.FC = () => {
       }
       setRecipes(resRecipes);
       setContributorIssues(resContributors);
+      if (resLaunch) {
+        setLaunchCampaign(resLaunch);
+      }
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -162,6 +173,7 @@ export const App: React.FC = () => {
         "review",
         "flywheel",
         "doctor",
+        "launch",
         "playground",
       ];
       if (validTabs.includes(hash)) {
@@ -965,6 +977,9 @@ export const App: React.FC = () => {
   };
 
   const pendingReviewCount = reviewItems.filter((it) => it.status === "Pending").length;
+  const remainingLaunchChecklist = launchCampaign
+    ? launchCampaign.syndication_checklist.filter((i) => !i.completed).length
+    : undefined;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -980,6 +995,7 @@ export const App: React.FC = () => {
         reviewCount={pendingReviewCount}
         recipesCount={recipes.length}
         contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
+        launchCount={remainingLaunchChecklist}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1056,6 +1072,13 @@ export const App: React.FC = () => {
         {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
 
         {activeTab === "flywheel" && <PrFlywheel />}
+
+        {activeTab === "launch" && (
+          <LaunchCampaign
+            initialCampaign={launchCampaign || undefined}
+            onCampaignUpdated={fetchAll}
+          />
+        )}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />

@@ -35,6 +35,9 @@ export interface EngagementVelocity {
   views_delta_24h: number;
   reactions_delta_24h: number;
   comments_delta_24h: number;
+  views_24h?: number;
+  reactions_24h?: number;
+  comments_24h?: number;
   trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
 }
 
@@ -272,6 +275,7 @@ export type ActiveTab =
   | "contributors"
   | "recipes"
   | "doctor"
+  | "launch"
   | "playground";
 
 export interface DiagnosticCheck {
@@ -491,6 +495,105 @@ export interface SyndicationStatusResponse {
   webhook_secret_configured: boolean;
   webhook_secret_preview?: string;
   publish_as_draft: boolean;
+}
+
+export interface AuthenticityAnalysis {
+  score: number;
+  rating: string;
+  suggestions: string[];
+  keyword_matches: string[];
+  penalty_reasons: string[];
+}
+
+export interface ShowHnState {
+  title: string;
+  url: string;
+  maker_comment: string;
+  authenticity_score: number;
+  score_breakdown?: AuthenticityAnalysis;
+}
+
+export interface ProductHuntAssetSpec {
+  name: string;
+  dimensions: string;
+  requirement: string;
+  status: string;
+}
+
+export interface ProductHuntChecklistItem {
+  id: string;
+  task: string;
+  completed: boolean;
+}
+
+export interface ProductHuntKit {
+  taglines: string[];
+  selected_tagline: string;
+  first_comment: string;
+  asset_specs: ProductHuntAssetSpec[];
+  checklist: ProductHuntChecklistItem[];
+}
+
+export interface BetaTester {
+  id: string;
+  name: string;
+  handle: string;
+  platform: "GitHub" | "X" | "HN" | "Discord" | string;
+  specialty: string;
+  outreach_status:
+    | "Identified"
+    | "Contacted"
+    | "Committed"
+    | "Feedback Received"
+    | "Active on Launch Day"
+    | string;
+  notes: string;
+  updated_at: string;
+}
+
+export interface SyndicationChecklistItem {
+  id: string;
+  platform: "Reddit" | "Twitter/X" | "TLDR" | "Console.dev" | "Changelog" | string;
+  title: string;
+  instructions: string;
+  blurb: string;
+  completed: boolean;
+}
+
+export interface TimelineTask {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+}
+
+export interface TimelinePhase {
+  id: string;
+  phase: string;
+  timing: string;
+  tasks: TimelineTask[];
+}
+
+export interface LaunchCampaignState {
+  show_hn: ShowHnState;
+  product_hunt: ProductHuntKit;
+  beta_testers: BetaTester[];
+  syndication_checklist: SyndicationChecklistItem[];
+  timeline: TimelinePhase[];
+}
+
+export interface AnalyzeShowHnRequest {
+  title: string;
+  maker_comment: string;
+}
+
+export interface UpdateBetaTesterRequest {
+  outreach_status?: string;
+  handle?: string;
+  notes?: string;
+  name?: string;
+  platform?: string;
+  specialty?: string;
 }
 
 export interface WorktreeFileNode {
