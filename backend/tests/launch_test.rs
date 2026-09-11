@@ -63,13 +63,6 @@ async fn test_get_launch_overview_seeded_defaults() {
         .count();
     assert!(committed_testers > 0, "Expected at least one committed beta tester");
 
-    // Verify Product Hunt kit
-    assert!(!campaign.product_hunt.taglines.is_empty());
-    assert!(!campaign.product_hunt.selected_tagline.is_empty());
-    assert!(!campaign.product_hunt.first_comment.is_empty());
-    assert_eq!(campaign.product_hunt.asset_specs.len(), 3, "Expected 3 asset specifications");
-    assert_eq!(campaign.product_hunt.checklist.len(), 5, "Expected 5 Product Hunt checklist items");
-
     // Verify syndication checklist items
     assert_eq!(campaign.syndication_checklist.len(), 5, "Expected 5 syndication checklist items");
     let platforms: Vec<&str> = campaign

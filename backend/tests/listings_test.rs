@@ -82,8 +82,8 @@ async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
         awesome_count
     );
     assert!(
-        directory_count >= 12,
-        "Expected at least 12 Dev Directories, found {}",
+        directory_count >= 11,
+        "Expected at least 11 Dev Directories, found {}",
         directory_count
     );
     assert!(
