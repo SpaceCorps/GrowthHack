@@ -18,10 +18,12 @@ pub struct ListRecipesQuery {
     pub search: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RunRecipeRequest {
     #[serde(default)]
     pub parameters: HashMap<String, String>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -56,7 +58,10 @@ pub struct ErrorResponse {
 pub fn resolve_cli_snippet(recipe: &Recipe, overrides: &HashMap<String, String>) -> String {
     let mut snippet = recipe.cli_snippet.clone();
     if snippet.trim().is_empty() {
-        snippet = format!("curl -s -X POST http://localhost:4200/api/recipes/{}/run", recipe.slug);
+        snippet = format!(
+            "curl -s -X POST http://localhost:4200/api/recipes/{}/run",
+            recipe.slug
+        );
     }
 
     let mut applied_keys = Vec::new();
@@ -85,12 +90,18 @@ pub fn resolve_cli_snippet(recipe: &Recipe, overrides: &HashMap<String, String>)
             if let Some(end) = snippet[json_start..].rfind('\'') {
                 let json_str = &snippet[json_start..json_start + end];
                 if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    if let Some(params) = val.get_mut("parameters").and_then(|p| p.as_object_mut()) {
+                    if let Some(params) = val.get_mut("parameters").and_then(|p| p.as_object_mut())
+                    {
                         for (k, v) in &unapplied {
                             params.insert((*k).clone(), serde_json::Value::String((*v).clone()));
                         }
                         if let Ok(new_json) = serde_json::to_string(&val) {
-                            snippet = format!("{}'{}'{}", &snippet[..start + 3], new_json, &snippet[json_start + end + 1..]);
+                            snippet = format!(
+                                "{}'{}'{}",
+                                &snippet[..start + 3],
+                                new_json,
+                                &snippet[json_start + end + 1..]
+                            );
                             return snippet;
                         }
                     }
@@ -182,7 +193,11 @@ pub async fn run_recipe(
     Json(payload): Json<RunRecipeRequest>,
 ) -> impl IntoResponse {
     let mut state = ctx.state.write().await;
-    let recipe_opt = state.recipes.iter().find(|r| r.id == id || r.slug == id).cloned();
+    let recipe_opt = state
+        .recipes
+        .iter()
+        .find(|r| r.id == id || r.slug == id)
+        .cloned();
 
     if recipe_opt.is_none() {
         return (
@@ -220,7 +235,10 @@ pub async fn run_recipe(
     let _ = state.save(&ctx.data_file);
     drop(state);
 
-    ctx.task_manager.spawn_task(&task_id, prompt).await;
+    let timeout_override = payload.timeout_secs.map(std::time::Duration::from_secs);
+    ctx.task_manager
+        .spawn_task_with_timeout(&task_id, prompt, timeout_override)
+        .await;
 
     (
         StatusCode::ACCEPTED,
@@ -256,11 +274,15 @@ pub async fn submit_recipe(
     }
 
     let slug_trimmed = payload.slug.trim();
-    if !slug_trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !slug_trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "Recipe slug must contain only alphanumeric characters and hyphens".to_string(),
+                error: "Recipe slug must contain only alphanumeric characters and hyphens"
+                    .to_string(),
             }),
         ));
     }
@@ -304,7 +326,11 @@ pub async fn submit_recipe(
     }
 
     let mut state = ctx.state.write().await;
-    if state.recipes.iter().any(|r| r.slug.eq_ignore_ascii_case(slug_trimmed)) {
+    if state
+        .recipes
+        .iter()
+        .any(|r| r.slug.eq_ignore_ascii_case(slug_trimmed))
+    {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -320,7 +346,10 @@ pub async fn submit_recipe(
         .unwrap_or_else(|| "Community Contributor".to_string());
 
     let cli_snippet = payload.cli_snippet.unwrap_or_else(|| {
-        format!("curl -s -X POST http://localhost:4200/api/recipes/{}/run", slug_trimmed)
+        format!(
+            "curl -s -X POST http://localhost:4200/api/recipes/{}/run",
+            slug_trimmed
+        )
     });
 
     let new_recipe = Recipe {
