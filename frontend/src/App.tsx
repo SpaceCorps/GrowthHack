@@ -810,6 +810,15 @@ export const App: React.FC = () => {
         } catch (err) {
           console.error("Publish video demo error:", err);
         }
+      } else if (it.type === "listing_blurb") {
+        try {
+          await fetch(`/api/listings/${it.rawId}/submit-pr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (err) {
+          console.error("Batch publish PR submission error for listing:", err);
+        }
       }
     }
     setReviewItems((prev) =>
