@@ -131,3 +131,46 @@ async fn test_task_manager_spawn_task_with_callback_invokes_on_success() {
 
     let _ = std::fs::remove_file(mock_path);
 }
+
+#[tokio::test]
+async fn test_task_manager_concurrent_tasks() {
+    let mock_path = create_mock_agy_script();
+    let runner = AgentRunner::new(mock_path.clone());
+    let task_manager = std::sync::Arc::new(TaskManager::new(runner));
+
+    let count = 5;
+    let mut handles = Vec::new();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<usize>(count);
+
+    for i in 0..count {
+        let tm = task_manager.clone();
+        let task_id = format!("task-concurrent-{}", i);
+        let tx_clone = tx.clone();
+
+        let handle = tm
+            .spawn_task_with_callback(
+                &task_id,
+                format!("Prompt {}", i),
+                move |_content, _task_tx| async move {
+                    let _ = tx_clone.send(i).await;
+                },
+            )
+            .await;
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        let res = handle.await;
+        assert!(res.is_ok(), "Concurrent task join handle failed");
+    }
+
+    let mut completed = Vec::new();
+    for _ in 0..count {
+        if let Some(idx) = rx.recv().await {
+            completed.push(idx);
+        }
+    }
+    assert_eq!(completed.len(), count);
+
+    let _ = std::fs::remove_file(mock_path);
+}
