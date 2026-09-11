@@ -1,3 +1,4 @@
+use crate::api::issues::AppContext;
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -6,7 +7,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::api::issues::AppContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +39,10 @@ pub struct GenerateBadgeResponse {
 pub struct WorkflowTemplatesResponse {
     pub action_yml: String,
     pub workflow_yml: String,
+    #[serde(default)]
+    pub companion_workflow_yml: Option<String>,
+    #[serde(default)]
+    pub fork_guide_md: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,14 +104,31 @@ runs:
         EOF
 
         MARKER="<!-- tendril-flywheel-badge -->"
-        EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+        mkdir -p tendril-attribution
+        echo "${PR_NUMBER}" > tendril-attribution/pr_number.txt
+        cp comment.md tendril-attribution/comment.md
+
+        if ! EXISTING_COMMENT_OUTPUT=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>&1); then
+          if echo "$EXISTING_COMMENT_OUTPUT" | grep -iqE "Resource not accessible|403|HttpError"; then
+            echo "::warning title=Fork PR Read-Only Permissions::GITHUB_TOKEN is read-only on fork pull_request runs. PR comment attribution was skipped. Use the companion workflow_run pattern (tendril-comment.yml) for open-source fork commenting."
+            exit 0
+          fi
+          echo "::warning title=GitHub API Error::Failed to fetch comments: $EXISTING_COMMENT_OUTPUT"
+          exit 0
+        fi
+
+        EXISTING_COMMENT_ID=$(echo "$EXISTING_COMMENT_OUTPUT" | head -n 1)
 
         if [ -n "$EXISTING_COMMENT_ID" ]; then
           echo "Updating existing PR comment ID: $EXISTING_COMMENT_ID"
-          gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md
+          if ! PATCH_OUTPUT=$(gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md 2>&1); then
+            echo "::warning title=Comment Update Failed::Unable to update PR comment: $PATCH_OUTPUT"
+          fi
         else
           echo "Creating new PR comment on PR #$PR_NUMBER"
-          gh pr comment "${PR_NUMBER}" --body-file comment.md
+          if ! POST_OUTPUT=$(gh pr comment "${PR_NUMBER}" --body-file comment.md 2>&1); then
+            echo "::warning title=Comment Creation Failed::Unable to create PR comment: $POST_OUTPUT"
+          fi
         fi
 "#;
 
@@ -163,13 +184,123 @@ jobs:
           verification-mode: "all"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save Verification Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p tendril-attribution
+          echo "${{ github.event.pull_request.number }}" > tendril-attribution/pr_number.txt
+
+      - name: Upload Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tendril-verification-summary
+          path: tendril-attribution/
+          retention-days: 1
+"#;
+
+pub const COMPANION_WORKFLOW_YML_TEMPLATE: &str = r#"name: Tendril Fork PR Comment
+
+on:
+  workflow_run:
+    workflows: ["Tendril Verification & PR Flywheel"]
+    types: [completed]
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download Verification Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tendril-verification-summary
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: tendril-attribution/
+        continue-on-error: true
+
+      - name: Upsert PR Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f "tendril-attribution/pr_number.txt" ]; then
+            echo "No PR attribution metadata artifact found. Skipping fork comment."
+            exit 0
+          fi
+          PR_NUMBER=$(cat tendril-attribution/pr_number.txt)
+          MARKER="<!-- tendril-flywheel-badge -->"
+          EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            echo "Updating comment $EXISTING_COMMENT_ID on PR #$PR_NUMBER"
+            gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@tendril-attribution/comment.md
+          else
+            echo "Creating new comment on PR #$PR_NUMBER"
+            gh pr comment "${PR_NUMBER}" --body-file tendril-attribution/comment.md
+          fi
+"#;
+
+pub const FORK_PERMISSIONS_GUIDE_MD: &str = r#"# GitHub Actions Fork Security & PR Permissions Guide
+
+When open-source contributors submit pull requests from external repository forks, GitHub enforces strict security boundaries to prevent malicious code from accessing repository secrets or modifying repository contents.
+
+---
+
+## 1. Why Fork Pull Request Tokens are Read-Only
+
+Under the standard `pull_request` event trigger:
+- The execution context runs code from the contributor fork branch.
+- GitHub automatically assigns a read-only `GITHUB_TOKEN` (even if your workflow YAML declares `permissions: { pull-requests: write }`).
+- Repository secrets and write tokens are withheld.
+- Calls to `gh pr comment` or the GitHub Issues Comments API fail with `HTTP 403: Resource not accessible by integration`.
+
+This behavior is intentional by GitHub security design to protect open-source repositories against arbitrary code execution attacks.
+
+---
+
+## 2. Two Solutions for Tendril Attribution & Verification
+
+### Option A: Single Workflow with Graceful Fallback (Default)
+In `action.yml`, the token error check detects HTTP 403 / `Resource not accessible` responses from `gh api` and logs an informational warning notice (`::warning`) rather than failing the overall verification job:
+- **Internal PRs (branches within repo):** The verification comment and badge are upserted immediately.
+- **Fork PRs (external contributors):** The verification passes cleanly; comment creation is skipped without breaking CI.
+
+### Option B: Companion `workflow_run` Pattern (Recommended for Open Source)
+To guarantee that verification summary comments are posted on fork pull requests without sacrificing repository security:
+1. The primary verification workflow (`tendril-verify.yml`) runs on `pull_request` in untrusted fork context and uploads the attribution summary as a build artifact.
+2. The companion workflow (`tendril-comment.yml`) triggers on `workflow_run` after the primary workflow completes successfully.
+3. Because `workflow_run` executes in the context of the base default branch (not the fork branch), it safely receives write permissions (`pull-requests: write`), downloads the artifact, and posts the comment on the contributor PR.
+
+---
+
+## 3. GitHub Repository Configuration Checklist
+
+1. **Workflow Permissions**:
+   Navigate to **Settings > Actions > General > Workflow permissions**.
+   Ensure **Read repository contents and packages permissions** (or **Read and write permissions**) is selected according to your team policy.
+2. **Fork Pull Request Workflows**:
+   Under **Fork pull request workflows from outside collaborators**, choose **Require approval for first-time contributors** (recommended) or your preferred approval model.
+3. **Artifact Retention**:
+   Attribution artifacts are lightweight text files. Keep retention set to `1` day in `tendril-verify.yml` to minimize artifact storage.
 "#;
 
 pub fn generate_badge_markdown(req: &GenerateBadgeRequest) -> (String, Option<String>, u32) {
     let agents = req.agents_count.unwrap_or(3);
     let tests = req.tests_passed.unwrap_or(12);
     let plan_id_str = req.plan_id.as_deref().unwrap_or("00291");
-    let plan_title_str = req.plan_title.as_deref().unwrap_or("Built with Tendril PR Flywheel");
+    let plan_title_str = req
+        .plan_title
+        .as_deref()
+        .unwrap_or("Built with Tendril PR Flywheel");
     let tokens_saved_str = req
         .tokens_saved
         .map(|t| t.to_string())
@@ -192,7 +323,8 @@ pub fn generate_badge_markdown(req: &GenerateBadgeRequest) -> (String, Option<St
             let diff_link = if let Some(url) = &req.worktree_diff_url {
                 format!("[Inspect Worktree Diff]({})", url)
             } else {
-                "[Inspect Worktree Diff](https://github.com/Ivy-Interactive/Ivy-Tendril)".to_string()
+                "[Inspect Worktree Diff](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+                    .to_string()
             };
 
             let markdown = format!(
@@ -275,7 +407,10 @@ pub async fn render_svg_badge(Query(query): Query<SvgQuery>) -> impl IntoRespons
 
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, "image/svg+xml".parse().unwrap());
-    headers.insert(header::CACHE_CONTROL, "public, max-age=3600".parse().unwrap());
+    headers.insert(
+        header::CACHE_CONTROL,
+        "public, max-age=3600".parse().unwrap(),
+    );
 
     (StatusCode::OK, headers, svg_content)
 }
@@ -286,6 +421,8 @@ pub async fn get_workflow_templates() -> impl IntoResponse {
         Json(WorkflowTemplatesResponse {
             action_yml: ACTION_YML_TEMPLATE.to_string(),
             workflow_yml: WORKFLOW_YML_TEMPLATE.to_string(),
+            companion_workflow_yml: Some(COMPANION_WORKFLOW_YML_TEMPLATE.to_string()),
+            fork_guide_md: Some(FORK_PERMISSIONS_GUIDE_MD.to_string()),
         }),
     )
 }
