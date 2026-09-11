@@ -408,6 +408,12 @@ export interface ContributorIssue {
   github_sync_message?: string;
 }
 
+export interface GitHubUserSummary {
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
 export interface ContributorRecord {
   name: string;
   login?: string;
