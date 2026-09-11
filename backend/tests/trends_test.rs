@@ -240,11 +240,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         backlinks: vec!["https://github.com/Ivy-Interactive/Ivy-Tendril".to_string()],
         outbound_citations: vec![trend.url.clone()],
         status: "Ready".to_string(),
-        created_at: chrono::Utc::now(),
-        published_at: None,
-        slug: None,
-        exports: vec![],
-        engagement: None,
+        ..growthhack_backend::db::Article::default_for_test()
     };
     state.articles.insert(0, article_direct);
 
@@ -260,11 +256,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         backlinks: vec!["https://github.com/Ivy-Interactive/Ivy-Tendril".to_string()],
         outbound_citations: vec![trend.url.clone()],
         status: "Ready".to_string(),
-        created_at: chrono::Utc::now(),
-        published_at: None,
-        slug: None,
-        exports: vec![],
-        engagement: None,
+        ..growthhack_backend::db::Article::default_for_test()
     };
     state.articles.insert(0, article_subtle);
 
@@ -280,11 +272,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         backlinks: vec![],
         outbound_citations: vec![trend.url.clone()],
         status: "Ready".to_string(),
-        created_at: chrono::Utc::now(),
-        published_at: None,
-        slug: None,
-        exports: vec![],
-        engagement: None,
+        ..growthhack_backend::db::Article::default_for_test()
     };
     state.articles.insert(0, article_none);
 
