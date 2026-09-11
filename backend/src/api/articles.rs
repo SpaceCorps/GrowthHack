@@ -2832,80 +2832,93 @@ pub fn seed_article_metrics(
         last_synced_at: Some(now),
     });
 
-    for export in &mut article.exports {
-        if let Some(ch_metrics) = channels.get(&export.channel) {
-            export.engagement = Some(EngagementMetrics {
-                reactions: ch_metrics.reactions,
-                comments: ch_metrics.comments,
-                views: ch_metrics.views,
-                last_synced_at: Some(now),
-            });
+    if req.reset_badges.unwrap_or(false) && views == 0 && reactions == 0 && comments == 0 {
+        for export in &mut article.exports {
+            export.engagement = None;
+        }
+    } else {
+        for export in &mut article.exports {
+            if let Some(ch_metrics) = channels.get(&export.channel) {
+                export.engagement = Some(EngagementMetrics {
+                    reactions: ch_metrics.reactions,
+                    comments: ch_metrics.comments,
+                    views: ch_metrics.views,
+                    last_synced_at: Some(now),
+                });
+            }
         }
     }
 
-    let history_days = req.generate_history_days.unwrap_or(7);
-    if history_days > 0 {
-        let steps: Vec<(chrono::Duration, f64)> = if history_days >= 7 {
-            vec![
-                (chrono::Duration::days(history_days as i64), 0.10),
-                (chrono::Duration::days((history_days as i64 * 4) / 7), 0.25),
-                (chrono::Duration::days((history_days as i64 * 2) / 7), 0.50),
-                (chrono::Duration::hours(26), 0.65),
-                (chrono::Duration::hours(6), 0.85),
-                (chrono::Duration::zero(), 1.0),
-            ]
-        } else if history_days >= 2 {
-            vec![
-                (chrono::Duration::days(history_days as i64), 0.25),
-                (chrono::Duration::hours(26), 0.65),
-                (chrono::Duration::hours(6), 0.85),
-                (chrono::Duration::zero(), 1.0),
-            ]
-        } else {
-            vec![
-                (chrono::Duration::hours(26), 0.65),
-                (chrono::Duration::hours(6), 0.85),
-                (chrono::Duration::zero(), 1.0),
-            ]
-        };
+    let skip_snapshot = views == 0
+        && reactions == 0
+        && comments == 0
+        && req.generate_history_days.unwrap_or(0) == 0;
 
-        for (offset, frac) in steps {
-            let ts = now - offset;
-            let v = (views as f64 * frac).round() as u32;
-            let r = (reactions as f64 * frac).round() as u32;
-            let c = (comments as f64 * frac).round() as u32;
-            let mut step_channels = std::collections::HashMap::new();
-            for (ch_name, ch_m) in &channels {
-                step_channels.insert(
-                    ch_name.clone(),
-                    ChannelMetrics {
-                        views: (ch_m.views as f64 * frac).round() as u32,
-                        reactions: (ch_m.reactions as f64 * frac).round() as u32,
-                        comments: (ch_m.comments as f64 * frac).round() as u32,
-                    },
+    if !skip_snapshot {
+        let history_days = req.generate_history_days.unwrap_or(7);
+        if history_days > 0 {
+            let steps: Vec<(chrono::Duration, f64)> = if history_days >= 7 {
+                vec![
+                    (chrono::Duration::days(history_days as i64), 0.10),
+                    (chrono::Duration::days((history_days as i64 * 4) / 7), 0.25),
+                    (chrono::Duration::days((history_days as i64 * 2) / 7), 0.50),
+                    (chrono::Duration::hours(26), 0.65),
+                    (chrono::Duration::hours(6), 0.85),
+                    (chrono::Duration::zero(), 1.0),
+                ]
+            } else if history_days >= 2 {
+                vec![
+                    (chrono::Duration::days(history_days as i64), 0.25),
+                    (chrono::Duration::hours(26), 0.65),
+                    (chrono::Duration::hours(6), 0.85),
+                    (chrono::Duration::zero(), 1.0),
+                ]
+            } else {
+                vec![
+                    (chrono::Duration::hours(26), 0.65),
+                    (chrono::Duration::hours(6), 0.85),
+                    (chrono::Duration::zero(), 1.0),
+                ]
+            };
+
+            for (offset, frac) in steps {
+                let ts = now - offset;
+                let v = (views as f64 * frac).round() as u32;
+                let r = (reactions as f64 * frac).round() as u32;
+                let c = (comments as f64 * frac).round() as u32;
+                let mut step_channels = std::collections::HashMap::new();
+                for (ch_name, ch_m) in &channels {
+                    step_channels.insert(
+                        ch_name.clone(),
+                        ChannelMetrics {
+                            views: (ch_m.views as f64 * frac).round() as u32,
+                            reactions: (ch_m.reactions as f64 * frac).round() as u32,
+                            comments: (ch_m.comments as f64 * frac).round() as u32,
+                        },
+                    );
+                }
+                record_engagement_snapshot(
+                    &mut article.engagement_snapshots,
+                    ts,
+                    v,
+                    r,
+                    c,
+                    step_channels,
+                    MAX_ARTICLE_SNAPSHOTS,
                 );
             }
+            article.engagement_snapshots.sort_by_key(|s| s.timestamp);
+        } else {
             record_engagement_snapshot(
                 &mut article.engagement_snapshots,
-                ts,
-                v,
-                r,
-                c,
-                step_channels,
+                now,
+                views,
+                reactions,
+                comments,
+                channels.clone(),
                 MAX_ARTICLE_SNAPSHOTS,
             );
         }
-        article.engagement_snapshots.sort_by_key(|s| s.timestamp);
-    } else {
-        record_engagement_snapshot(
-            &mut article.engagement_snapshots,
-            now,
-            views,
-            reactions,
-            comments,
-            channels.clone(),
-            MAX_ARTICLE_SNAPSHOTS,
-        );
     }
 
     let new_alerts = evaluate_article_milestones(article, now);
@@ -5268,5 +5281,113 @@ mod tests {
         assert_eq!(json["success"], true);
         assert_eq!(json["seeded_count"], 2);
         assert!(json["new_alerts_count"].as_u64().unwrap() >= 12);
+    }
+
+    #[tokio::test]
+    async fn test_seed_engagement_reset_to_zero() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+
+        let article = Article {
+            id: "art-seed-reset".to_string(),
+            title: "Test Reset Seed".to_string(),
+            created_at: now,
+            exports: vec![ExportRecord {
+                channel: "Dev.to".to_string(),
+                exported_at: now,
+                target_path: None,
+                status: "Success".to_string(),
+                external_id: None,
+                engagement: Some(EngagementMetrics {
+                    views: 500,
+                    reactions: 30,
+                    comments: 5,
+                    last_synced_at: Some(now),
+                }),
+            }],
+            engagement: Some(EngagementMetrics {
+                views: 1200,
+                reactions: 60,
+                comments: 15,
+                last_synced_at: Some(now),
+            }),
+            engagement_badges: vec!["100+ Views".to_string(), "25+ Reactions".to_string()],
+            milestone_alerts: vec![EngagementMilestoneAlert {
+                id: "alert-prev-1".to_string(),
+                article_id: "art-seed-reset".to_string(),
+                article_title: "Test Reset Seed".to_string(),
+                milestone_type: "views".to_string(),
+                threshold: 100,
+                message: "Reached 100 views".to_string(),
+                badge_awarded: "100+ Views".to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            }],
+            engagement_snapshots: vec![EngagementSnapshot {
+                timestamp: now,
+                views: 1200,
+                reactions: 60,
+                comments: 15,
+                channels: std::collections::HashMap::new(),
+            }],
+            ..Article::default_for_test()
+        };
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.push(article);
+        }
+
+        let req = SeedEngagementRequest {
+            views: Some(0),
+            reactions: Some(0),
+            comments: Some(0),
+            channels: Some(std::collections::HashMap::new()),
+            generate_history_days: Some(0),
+            reset_badges: Some(true),
+        };
+
+        let resp = seed_article_engagement(
+            Path("art-seed-reset".to_string()),
+            State(ctx.clone()),
+            Some(Json(req)),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["article"]["engagement"]["views"], 0);
+        assert_eq!(json["article"]["engagement"]["reactions"], 0);
+        assert_eq!(json["article"]["engagement"]["comments"], 0);
+
+        let badges: Vec<String> =
+            serde_json::from_value(json["article"]["engagement_badges"].clone()).unwrap();
+        assert!(badges.is_empty());
+
+        let alerts: Vec<serde_json::Value> =
+            serde_json::from_value(json["article"]["milestone_alerts"].clone()).unwrap();
+        assert!(alerts.is_empty());
+
+        let snapshots: Vec<serde_json::Value> =
+            serde_json::from_value(json["article"]["engagement_snapshots"].clone()).unwrap();
+        assert!(snapshots.is_empty());
+
+        assert_eq!(json["velocity"]["views_per_day"], 0.0);
+        assert_eq!(json["velocity"]["reactions_per_day"], 0.0);
+        assert_eq!(json["velocity"]["comments_per_day"], 0.0);
+        assert_eq!(json["velocity"]["views_delta_24h"], 0);
+        assert_eq!(json["velocity"]["reactions_delta_24h"], 0);
+        assert_eq!(json["velocity"]["comments_delta_24h"], 0);
+        assert_eq!(json["velocity"]["trend"], "Flat");
+
+        let state = ctx.state.read().await;
+        let saved_art = state.articles.iter().find(|a| a.id == "art-seed-reset").unwrap();
+        assert!(saved_art.engagement_badges.is_empty());
+        assert!(saved_art.milestone_alerts.is_empty());
+        assert!(saved_art.engagement_snapshots.is_empty());
+        assert!(saved_art.exports[0].engagement.is_none());
     }
 }
