@@ -215,7 +215,59 @@ export type ActiveTab =
   | "review"
   | "flywheel"
   | "contributors"
-  | "recipes";
+  | "recipes"
+  | "doctor";
+
+export interface DiagnosticCheck {
+  id: string;
+  name: string;
+  category: "git" | "agent" | "keys" | "ports" | string;
+  status: "Pass" | "Warning" | "Fail";
+  message: string;
+  remediation_command?: string;
+  can_auto_fix: boolean;
+}
+
+export interface DiagnosticSummary {
+  total: number;
+  passed: number;
+  warnings: number;
+  failures: number;
+  ready_for_execution: boolean;
+}
+
+export interface DiagnosticReport {
+  timestamp: string;
+  checks: DiagnosticCheck[];
+  summary: DiagnosticSummary;
+}
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  description: string;
+  target_branch: string;
+  estimated_duration_sec: number;
+}
+
+export interface DemoRunState {
+  id: string;
+  status: "Idle" | "Running" | "Completed" | "Failed" | string;
+  current_step: number;
+  step_progress_pct: number;
+  logs: string[];
+  diff_preview?: string;
+  pr_summary?: string;
+  elapsed_seconds: number;
+}
+
+export interface OnboardingMetrics {
+  first_run_completed: boolean;
+  demo_completed_count: number;
+  diagnostic_runs_count: number;
+  time_to_first_pr_seconds?: number;
+  github_starred: boolean;
+}
 
 export interface RecipeParameter {
   name: string;

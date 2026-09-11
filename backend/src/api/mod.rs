@@ -3,7 +3,9 @@ pub mod articles;
 pub mod badges;
 pub mod banner;
 pub mod contributors;
+pub mod demo;
 pub mod demos;
+pub mod doctor;
 pub mod issues;
 pub mod listings;
 pub mod packages;
@@ -165,5 +167,16 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
         .route("/api/agent/stream/{task_id}", get(agent::stream_agent_logs))
+        // Tendril Doctor Diagnostic Engine
+        .route("/api/doctor/diagnose", get(doctor::diagnose).post(doctor::diagnose))
+        .route("/api/doctor/fix", post(doctor::fix_diagnostics))
+        // Zero-Config Demo Simulator
+        .route("/api/demo/scenarios", get(demo::list_scenarios))
+        .route("/api/demo/status", get(demo::get_status))
+        .route("/api/demo/start", post(demo::start_demo))
+        .route("/api/demo/reset", post(demo::reset_demo))
+        .route("/api/demo/diff", get(demo::get_diff))
+        .route("/api/demo/metrics", get(demo::get_metrics))
+        .route("/api/demo/star-click", post(demo::record_star_click))
         .with_state(ctx)
 }

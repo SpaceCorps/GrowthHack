@@ -168,6 +168,15 @@ pub struct PackageManagerTarget {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct OnboardingMetrics {
+    pub first_run_completed: bool,
+    pub demo_completed_count: u32,
+    pub diagnostic_runs_count: u32,
+    pub time_to_first_pr_seconds: Option<f64>,
+    pub github_starred: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RecipeParameter {
     pub name: String,
@@ -246,6 +255,8 @@ pub struct GrowthState {
     #[serde(default)]
     pub recipes: Vec<Recipe>,
     #[serde(default)]
+    pub onboarding_metrics: OnboardingMetrics,
+    #[serde(default)]
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
@@ -270,6 +281,10 @@ impl GrowthState {
                     }
                     if state.recipes.is_empty() {
                         state.recipes = Self::seed_recipes(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if !state.issues.iter().any(|i| i.number == 11) {
+                        state.issues.push(Self::seed_issue_11(Utc::now()));
                         let _ = state.save(path);
                     }
                     if state.contributor_issues.is_empty() {
@@ -498,6 +513,7 @@ impl GrowthState {
                 created_at: now,
                 updated_at: now,
             },
+            Self::seed_issue_11(now),
         ];
 
         let articles = vec![
@@ -740,8 +756,32 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             packages,
             latest_release: None,
             recipes,
+            onboarding_metrics: OnboardingMetrics::default(),
             contributor_issues,
             contributors,
+        }
+    }
+
+    pub fn seed_issue_11(now: DateTime<Utc>) -> GrowthIssue {
+        GrowthIssue {
+            id: "issue-11".to_string(),
+            number: 11,
+            title: "tendril doctor & Replayable Zero-Config Demo Mode".to_string(),
+            category: "Developer Experience".to_string(),
+            status: "In Progress".to_string(),
+            priority: "Critical".to_string(),
+            description: "Eliminate onboarding dropoff with an interactive diagnostic checklist (git, agent CLIs, API keys, ports) and a replayable, simulated 4-step workflow stepper completing a verifiable PR in under 60 seconds.".to_string(),
+            direct_actions: vec![
+                "Build system diagnostic engine verifying git worktrees, agent CLIs, API keys, and loopback ports".to_string(),
+                "Implement 1-click remediation command copying for quick developer fix execution".to_string(),
+                "Create replayable zero-config demo simulator modeling intake, isolated worktree, verification gates, and PR diff".to_string(),
+                "Add celebration modal with GitHub star call-to-action on successful first-run completion".to_string(),
+            ],
+            routine_schedule: None,
+            run_count: 1,
+            last_run_at: Some(now),
+            created_at: now,
+            updated_at: now,
         }
     }
 
