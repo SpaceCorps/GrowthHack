@@ -52,6 +52,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let pr_poll_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1800));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic PR merge status check for submitted listings...");
+            if let Err(e) = api::listings::sync_listing_pr_statuses_internal(&pr_poll_ctx).await {
+                tracing::warn!("Periodic listing PR status check warning: {}", e);
+            }
+        }
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -60,18 +72,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = api::router(ctx);
 
     // Serve built frontend if available
-    let possible_paths = [
-        std::path::PathBuf::from("frontend/dist"),
-        std::path::PathBuf::from("../frontend/dist"),
-    ];
-
-    for dist in &possible_paths {
-        if dist.exists() {
-            tracing::info!("Serving frontend assets from: {:?}", dist);
-            let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
-            app = app.fallback_service(serve_dir);
-            break;
-        }
+    if let Some(dist) = &config.frontend_dist_dir {
+        tracing::info!("Serving frontend assets from: {:?}", dist);
+        let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
+        app = app.fallback_service(serve_dir);
+    } else {
+        tracing::info!("Frontend distribution assets not found; static asset serving is disabled");
     }
 
     let app = app.layer(cors).layer(TraceLayer::new_for_http());

@@ -260,6 +260,11 @@ export interface PackageManifestResponse {
   fetched_at?: string;
 }
 
+export interface ManifestQueryParams {
+  refresh?: boolean;
+  tag?: string;
+}
+
 export interface DispatchPackagePrResponse {
   task_id: string;
   message: string;
@@ -293,6 +298,7 @@ export type ActiveTab =
   | "contributors"
   | "recipes"
   | "doctor"
+  | "launch"
   | "playground";
 
 export interface DiagnosticCheck {
@@ -325,6 +331,9 @@ export interface DemoScenario {
   description: string;
   target_branch: string;
   estimated_duration_sec: number;
+  diff_preview?: string;
+  pr_summary?: string;
+  custom_logs?: string[];
 }
 
 export interface DemoRunState {
@@ -514,6 +523,105 @@ export interface SyndicationStatusResponse {
   publish_as_draft: boolean;
 }
 
+export interface AuthenticityAnalysis {
+  score: number;
+  rating: string;
+  suggestions: string[];
+  keyword_matches: string[];
+  penalty_reasons: string[];
+}
+
+export interface ShowHnState {
+  title: string;
+  url: string;
+  maker_comment: string;
+  authenticity_score: number;
+  score_breakdown?: AuthenticityAnalysis;
+}
+
+export interface ProductHuntAssetSpec {
+  name: string;
+  dimensions: string;
+  requirement: string;
+  status: string;
+}
+
+export interface ProductHuntChecklistItem {
+  id: string;
+  task: string;
+  completed: boolean;
+}
+
+export interface ProductHuntKit {
+  taglines: string[];
+  selected_tagline: string;
+  first_comment: string;
+  asset_specs: ProductHuntAssetSpec[];
+  checklist: ProductHuntChecklistItem[];
+}
+
+export interface BetaTester {
+  id: string;
+  name: string;
+  handle: string;
+  platform: "GitHub" | "X" | "HN" | "Discord" | string;
+  specialty: string;
+  outreach_status:
+    | "Identified"
+    | "Contacted"
+    | "Committed"
+    | "Feedback Received"
+    | "Active on Launch Day"
+    | string;
+  notes: string;
+  updated_at: string;
+}
+
+export interface SyndicationChecklistItem {
+  id: string;
+  platform: "Reddit" | "Twitter/X" | "TLDR" | "Console.dev" | "Changelog" | string;
+  title: string;
+  instructions: string;
+  blurb: string;
+  completed: boolean;
+}
+
+export interface TimelineTask {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+}
+
+export interface TimelinePhase {
+  id: string;
+  phase: string;
+  timing: string;
+  tasks: TimelineTask[];
+}
+
+export interface LaunchCampaignState {
+  show_hn: ShowHnState;
+  product_hunt: ProductHuntKit;
+  beta_testers: BetaTester[];
+  syndication_checklist: SyndicationChecklistItem[];
+  timeline: TimelinePhase[];
+}
+
+export interface AnalyzeShowHnRequest {
+  title: string;
+  maker_comment: string;
+}
+
+export interface UpdateBetaTesterRequest {
+  outreach_status?: string;
+  handle?: string;
+  notes?: string;
+  name?: string;
+  platform?: string;
+  specialty?: string;
+}
+
 export interface WorktreeFileNode {
   name: string;
   path: string;
@@ -576,4 +684,15 @@ export interface ImportIssueRequest {
   issue_url?: string;
   title?: string;
   description?: string;
+}
+
+export interface PlaygroundFileInspection {
+  scenario_id: string;
+  path: string;
+  name: string;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  content: string;
+  file_diff?: string;
+  language: string;
+  line_count: number;
 }

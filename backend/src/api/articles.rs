@@ -2547,25 +2547,7 @@ mod tests {
 
     #[test]
     fn test_ivy_web_frontmatter_generation() {
-        let now = Utc::now();
-        let article = Article {
-            id: "art-test".to_string(),
-            title: "Test Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
-            summary: "Test summary of the article.".to_string(),
-            content: "# Test\n\nSome body.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
-            slug: Some("test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
-        };
+        let article = Article::default_for_test();
 
         let fm = generate_ivy_web_frontmatter(&article, "test-article");
         assert!(fm.contains("title: \"Test Article\""));
@@ -2581,25 +2563,7 @@ mod tests {
 
     #[test]
     fn test_generate_ivy_web_frontmatter_dual() {
-        let now = Utc::now();
-        let article = Article {
-            id: "art-test".to_string(),
-            title: "Test Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
-            summary: "Test summary of the article.".to_string(),
-            content: "# Test\n\nSome body.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
-            slug: Some("test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
-        };
+        let article = Article::default_for_test();
 
         let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
         assert!(fm_default.contains("image: \"/site/images/blog/test-article-hero.png\""));
@@ -2613,25 +2577,7 @@ mod tests {
 
     #[test]
     fn test_generate_ivy_web_frontmatter_svg_only() {
-        let now = Utc::now();
-        let article = Article {
-            id: "art-test".to_string(),
-            title: "Test Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
-            summary: "Test summary of the article.".to_string(),
-            content: "# Test\n\nSome body.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
-            slug: Some("test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
-        };
+        let article = Article::default_for_test();
 
         let fm_svg =
             generate_ivy_web_frontmatter_with_options(&article, "test-article", Some("svg"));
@@ -2641,25 +2587,7 @@ mod tests {
 
     #[test]
     fn test_generate_ivy_web_frontmatter_png_only() {
-        let now = Utc::now();
-        let article = Article {
-            id: "art-test".to_string(),
-            title: "Test Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
-            summary: "Test summary of the article.".to_string(),
-            content: "# Test\n\nSome body.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
-            slug: Some("test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
-        };
+        let article = Article::default_for_test();
 
         let fm_png =
             generate_ivy_web_frontmatter_with_options(&article, "test-article", Some("png"));
@@ -2679,20 +2607,11 @@ mod tests {
         let article = Article {
             id: "art-test-fmt".to_string(),
             title: "Test Format Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
             summary: "Testing hero format export".to_string(),
             content: "## Body Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: chrono::Utc::now(),
             published_at: None,
             slug: Some("test-format-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
         growth_state.articles.push(article);
 
@@ -2737,24 +2656,10 @@ mod tests {
 
     #[test]
     fn test_channel_formatters() {
-        let now = Utc::now();
         let article = Article {
-            id: "art-test".to_string(),
-            title: "Test Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
             summary: "Test summary.".to_string(),
             content: "Body content.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
-            slug: Some("test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         let (devto, t1) = format_for_channel(&article, "Dev.to", "test-article");
@@ -2794,24 +2699,13 @@ mod tests {
     fn test_export_ivy_web_file_write() {
         let temp_dir =
             std::env::temp_dir().join(format!("growthhack_test_{}", uuid::Uuid::new_v4().simple()));
-        let now = Utc::now();
         let article = Article {
-            id: "art-test".to_string(),
             title: "Temp Export Test".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
             angle: "Tutorial".to_string(),
             summary: "Testing file write.".to_string(),
             content: "# Header\n\nContent here.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
             slug: Some("temp-export-test".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2831,22 +2725,12 @@ mod tests {
     fn test_record_export() {
         let now = Utc::now();
         let mut article = Article {
-            id: "art-test".to_string(),
             title: "Record Export Test".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
             angle: "Tutorial".to_string(),
             summary: "Testing export record.".to_string(),
             content: "Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: Some(now),
             slug: Some("record-export-test".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         let rec = ExportRecord {
@@ -3036,7 +2920,6 @@ mod tests {
 
     #[test]
     fn test_devto_payload_formatting() {
-        let now = Utc::now();
         let article = Article {
             id: "art-devto".to_string(),
             title: "Scaling Autonomous Agents With Worktrees".to_string(),
@@ -3045,15 +2928,8 @@ mod tests {
             angle: "Architecture".to_string(),
             summary: "Worktrees eliminate git dirty-index collisions.".to_string(),
             content: "---\nfrontmatter: true\n---\n# Real Content Here".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: None,
             slug: Some("scaling-autonomous-agents-with-worktrees".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         let payload =
@@ -3079,7 +2955,6 @@ mod tests {
 
     #[test]
     fn test_hashnode_graphql_query_formatting() {
-        let now = Utc::now();
         let article = Article {
             id: "art-hashnode".to_string(),
             title: "15-Minute Issue to PR Autonomous Loop".to_string(),
@@ -3088,15 +2963,8 @@ mod tests {
             angle: "Tutorial".to_string(),
             summary: "Automate routine engineering tasks safely.".to_string(),
             content: "Markdown body for Hashnode.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: now,
-            published_at: None,
             slug: Some("15-minute-issue-to-pr-autonomous-loop".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         let payload = format_hashnode_publish_mutation(
@@ -3203,20 +3071,10 @@ mod tests {
         let article = Article {
             id: "art-test-1".to_string(),
             title: "Test Syncing Article".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
             summary: "Testing hero sync".to_string(),
             content: "## Body Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: chrono::Utc::now(),
-            published_at: None,
             slug: Some("test-syncing-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
         growth_state.articles.push(article);
 
@@ -3263,20 +3121,10 @@ mod tests {
         let article = Article {
             id: "art-test-2".to_string(),
             title: "Test Sync Assets Endpoint".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
             summary: "Testing sync assets endpoint".to_string(),
             content: "## Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: chrono::Utc::now(),
-            published_at: None,
             slug: Some("test-sync-assets-endpoint".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
         growth_state.articles.push(article);
 
@@ -3368,19 +3216,11 @@ mod tests {
             id: "art-banner-1".to_string(),
             title: "Dynamic Banner Test Article".to_string(),
             feature: "Social Sharing".to_string(),
-            channel: "Website".to_string(),
             angle: "Benchmark".to_string(),
             summary: "Validating dynamic banner SVG endpoint output".to_string(),
             content: "## Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: chrono::Utc::now(),
-            published_at: None,
             slug: Some("dynamic-banner-test-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
         growth_state.articles.push(article);
 
@@ -3425,19 +3265,11 @@ mod tests {
             id: "art-upload-1".to_string(),
             title: "Upload Custom Banner Article".to_string(),
             feature: "Canvas Rendering".to_string(),
-            channel: "Website".to_string(),
             angle: "Tutorial".to_string(),
             summary: "Testing upload endpoint with base64 data".to_string(),
             content: "## Content".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
-            status: "Draft".to_string(),
-            created_at: chrono::Utc::now(),
-            published_at: None,
             slug: Some("upload-custom-banner-article".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
         growth_state.articles.push(article);
 
@@ -4107,20 +3939,13 @@ mod tests {
         let article = Article {
             id: "art-reset-test".to_string(),
             title: "Original Title".to_string(),
-            feature: "Worktrees".to_string(),
-            channel: "Website".to_string(),
-            angle: "Architecture".to_string(),
             summary: "Original summary.".to_string(),
             content: "Original content.".to_string(),
-            backlinks: vec![],
-            outbound_citations: vec![],
             status: "Approved".to_string(),
             created_at: now,
             published_at: Some(now),
             slug: Some("original-title".to_string()),
-            exports: vec![],
-            engagement: None,
-            engagement_snapshots: Vec::new(),
+            ..Article::default_for_test()
         };
 
         {
