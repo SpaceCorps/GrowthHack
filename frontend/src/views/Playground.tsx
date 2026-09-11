@@ -32,10 +32,84 @@ import {
   Plus,
 } from "lucide-react";
 
+export const scenarioIdToSlug = (id: string): string => {
+  if (id.startsWith("scenario-")) {
+    return id.substring("scenario-".length);
+  }
+  return id;
+};
+
+export const slugToScenarioId = (
+  slug: string,
+  scenariosList: PlaygroundScenario[],
+): string | undefined => {
+  const cleanSlug = slug.trim();
+  if (!cleanSlug) return undefined;
+
+  const exact = scenariosList.find((s) => s.id === cleanSlug);
+  if (exact) return exact.id;
+
+  const prefixed = scenariosList.find((s) => s.id === `scenario-${cleanSlug}`);
+  if (prefixed) return prefixed.id;
+
+  const stripped = scenariosList.find((s) => s.id.replace(/^scenario-/, "") === cleanSlug);
+  if (stripped) return stripped.id;
+
+  return undefined;
+};
+
+export const extractScenarioSlugFromLocation = (
+  hash: string,
+  search: string = "",
+): string | null => {
+  const hashWithoutPound = hash.replace(/^#/, "");
+  if (hashWithoutPound) {
+    const queryIndex = hashWithoutPound.indexOf("?");
+    if (queryIndex !== -1) {
+      const params = new URLSearchParams(hashWithoutPound.substring(queryIndex + 1));
+      const val = params.get("scenario");
+      if (val) return val;
+    }
+    const params = new URLSearchParams(hashWithoutPound);
+    const val = params.get("scenario");
+    if (val) return val;
+  }
+  if (search) {
+    const params = new URLSearchParams(search);
+    const val = params.get("scenario");
+    if (val) return val;
+  }
+  return null;
+};
+
+export const resolveBaseOrigin = (): string => {
+  if (typeof window === "undefined" || !window.location) {
+    return "https://tendril.run";
+  }
+  const hostname = window.location.hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || !hostname) {
+    return "https://tendril.run";
+  }
+  return window.location.origin;
+};
+
 export const Playground: React.FC = () => {
+  const getInitialScenarioId = (): string => {
+    if (typeof window !== "undefined") {
+      const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+      if (slug) {
+        if (slug.startsWith("scenario-") || slug.startsWith("custom-")) {
+          return slug;
+        }
+        return `scenario-${slug}`;
+      }
+    }
+    return "scenario-health-check";
+  };
+
   // Scenario and simulation state
   const [scenarios, setScenarios] = useState<PlaygroundScenario[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("scenario-health-check");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(getInitialScenarioId);
   const [fileTree, setFileTree] = useState<WorktreeFileNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
     backend: true,
@@ -73,6 +147,7 @@ export const Playground: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState<boolean>(false);
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState<boolean>(false);
 
   // Import Issue Form State
   const [importUrl, setImportUrl] = useState<string>("");
@@ -82,19 +157,43 @@ export const Playground: React.FC = () => {
 
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch initial data
+  // Fetch initial data and sync scenario from URL
   useEffect(() => {
+    const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+    if (!slug) {
+      if (!window.location.hash.includes("scenario=")) {
+        window.location.hash = "scenario=health-check";
+      }
+    }
     fetchScenarios();
     fetchTree(selectedScenarioId);
     fetchStatus();
     fetchMetrics();
-    fetchBanner();
+    fetchBanner(selectedScenarioId);
   }, []);
 
-  // Update tree when scenario changes
+  // Update tree and banner when scenario changes
   useEffect(() => {
     fetchTree(selectedScenarioId);
+    fetchBanner(selectedScenarioId);
   }, [selectedScenarioId]);
+
+  // Listen for hashchange events to switch active scenario
+  useEffect(() => {
+    const handleHashChange = () => {
+      const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+      if (slug) {
+        const matchedId =
+          slugToScenarioId(slug, scenarios) ||
+          (slug.startsWith("scenario-") || slug.startsWith("custom-") ? slug : `scenario-${slug}`);
+        if (matchedId && matchedId !== selectedScenarioId) {
+          setSelectedScenarioId(matchedId);
+        }
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [scenarios, selectedScenarioId]);
 
   // Polling simulation status while running
   useEffect(() => {
@@ -132,6 +231,21 @@ export const Playground: React.FC = () => {
       if (res.ok) {
         const data: PlaygroundScenario[] = await res.json();
         setScenarios(data);
+
+        const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+        if (slug) {
+          const matchedId = slugToScenarioId(slug, data);
+          if (matchedId) {
+            setSelectedScenarioId(matchedId);
+            fetchTree(matchedId);
+            fetchBanner(matchedId);
+          }
+        } else {
+          setSelectedScenarioId("scenario-health-check");
+          if (!window.location.hash.includes("scenario=")) {
+            window.location.hash = "scenario=health-check";
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to fetch scenarios:", err);
@@ -174,15 +288,43 @@ export const Playground: React.FC = () => {
     }
   };
 
-  const fetchBanner = async () => {
+  const fetchBanner = async (scenarioId?: string) => {
     try {
-      const res = await fetch("/api/playground/banner");
+      const targetId = scenarioId || selectedScenarioId;
+      const res = await fetch(`/api/playground/banner?scenario_id=${encodeURIComponent(targetId)}`);
       if (res.ok) {
         const data: BannerEmbedInfo = await res.json();
         setBannerInfo(data);
       }
     } catch (err) {
       console.error("Failed to fetch banner info:", err);
+    }
+  };
+
+  const handleSelectScenario = (id: string) => {
+    if (simulationState.status === "Running") return;
+    setSelectedScenarioId(id);
+    const slug = scenarioIdToSlug(id);
+    window.location.hash = `scenario=${slug}`;
+  };
+
+  const getShareUrl = (scenarioId?: string): string => {
+    const id = scenarioId || selectedScenarioId;
+    const slug = scenarioIdToSlug(id);
+    const origin = resolveBaseOrigin();
+    return `${origin}/#scenario=${slug}`;
+  };
+
+  const handleShareScenario = async (scenarioId?: string) => {
+    const shareUrl = getShareUrl(scenarioId);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      console.error("Failed to copy share link:", err);
     }
   };
 
@@ -241,6 +383,8 @@ export const Playground: React.FC = () => {
         const newScenario: PlaygroundScenario = await res.json();
         setScenarios((prev) => [newScenario, ...prev]);
         setSelectedScenarioId(newScenario.id);
+        const slug = scenarioIdToSlug(newScenario.id);
+        window.location.hash = `scenario=${slug}`;
         setShowImportModal(false);
         setImportUrl("");
         setImportTitle("");
@@ -265,7 +409,9 @@ export const Playground: React.FC = () => {
   };
 
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    }
     setCopiedSnippet(label);
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
@@ -396,7 +542,24 @@ export const Playground: React.FC = () => {
                   : "28.6s"}
               </div>
             </div>
-            <div className="text-center px-2">
+            <div className="text-center px-2 flex items-center gap-2">
+              <button
+                onClick={() => handleShareScenario()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-md text-xs font-semibold transition-all cursor-pointer"
+                title="Copy share link for this scenario"
+              >
+                {shareCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Share Scenario</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleStarClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-md text-xs font-semibold transition-all cursor-pointer"
@@ -425,6 +588,22 @@ export const Playground: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => handleShareScenario()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+            >
+              {shareCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Share Link</span>
+                </>
+              )}
+            </button>
+            <button
               onClick={() => setShowImportModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold transition-all cursor-pointer"
             >
@@ -441,7 +620,7 @@ export const Playground: React.FC = () => {
             return (
               <button
                 key={sc.id}
-                onClick={() => setSelectedScenarioId(sc.id)}
+                onClick={() => handleSelectScenario(sc.id)}
                 disabled={simulationState.status === "Running"}
                 className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
                   isSelected
@@ -808,7 +987,7 @@ export const Playground: React.FC = () => {
             </span>
             <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg shadow-md hover:border-cyan-500/50 transition-colors">
               <a
-                href={bannerInfo?.target_url || "https://tendril.run/playground"}
+                href={bannerInfo?.target_url || getShareUrl()}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-block"
@@ -824,7 +1003,12 @@ export const Playground: React.FC = () => {
               </a>
             </div>
             <p className="text-xs text-slate-500">
-              Links directly to <span className="text-cyan-400">tendril.run/playground</span>
+              Links directly to{" "}
+              <span className="text-cyan-400 font-mono">
+                {bannerInfo?.target_url
+                  ? bannerInfo.target_url.replace("https://", "")
+                  : `tendril.run/#scenario=${scenarioIdToSlug(selectedScenarioId)}`}
+              </span>
             </p>
           </div>
 
@@ -835,7 +1019,16 @@ export const Playground: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-300">Markdown (for README.md):</span>
                 <button
-                  onClick={() => copyToClipboard(bannerInfo?.markdown_snippet || "", "markdown")}
+                  onClick={() =>
+                    copyToClipboard(
+                      bannerInfo?.markdown_snippet ||
+                        `[![Try Tendril in 30 Seconds](${
+                          bannerInfo?.badge_url ||
+                          "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                        })](${bannerInfo?.target_url || getShareUrl()})`,
+                      "markdown",
+                    )
+                  }
                   className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
                 >
                   {copiedSnippet === "markdown" ? (
@@ -852,7 +1045,11 @@ export const Playground: React.FC = () => {
                 </button>
               </div>
               <code className="block bg-slate-950 border border-slate-800 p-2.5 rounded text-[11px] font-mono text-slate-300 break-all select-all">
-                {bannerInfo?.markdown_snippet || "[![Try Tendril in 30 Seconds](...)]"}
+                {bannerInfo?.markdown_snippet ||
+                  `[![Try Tendril in 30 Seconds](${
+                    bannerInfo?.badge_url ||
+                    "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                  })](${bannerInfo?.target_url || getShareUrl()})`}
               </code>
             </div>
 
@@ -861,7 +1058,18 @@ export const Playground: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-300">HTML (for Website & Docs):</span>
                 <button
-                  onClick={() => copyToClipboard(bannerInfo?.html_snippet || "", "html")}
+                  onClick={() =>
+                    copyToClipboard(
+                      bannerInfo?.html_snippet ||
+                        `<a href="${
+                          bannerInfo?.target_url || getShareUrl()
+                        }" target="_blank" rel="noopener noreferrer"><img src="${
+                          bannerInfo?.badge_url ||
+                          "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                        }" alt="Try Tendril in 30 Seconds" /></a>`,
+                      "html",
+                    )
+                  }
                   className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
                 >
                   {copiedSnippet === "html" ? (
@@ -878,7 +1086,13 @@ export const Playground: React.FC = () => {
                 </button>
               </div>
               <code className="block bg-slate-950 border border-slate-800 p-2.5 rounded text-[11px] font-mono text-slate-300 break-all select-all">
-                {bannerInfo?.html_snippet || '<a href="..."><img src="..." /></a>'}
+                {bannerInfo?.html_snippet ||
+                  `<a href="${
+                    bannerInfo?.target_url || getShareUrl()
+                  }" target="_blank" rel="noopener noreferrer"><img src="${
+                    bannerInfo?.badge_url ||
+                    "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                  }" alt="Try Tendril in 30 Seconds" /></a>`}
               </code>
             </div>
           </div>
@@ -993,6 +1207,22 @@ export const Playground: React.FC = () => {
             </p>
 
             <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={() => handleShareScenario()}
+                className="w-full py-2.5 px-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {shareCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span>Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Share this run</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleStarClick}
                 className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
