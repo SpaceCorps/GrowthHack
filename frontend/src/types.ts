@@ -223,7 +223,8 @@ export type ActiveTab =
   | "flywheel"
   | "contributors"
   | "recipes"
-  | "doctor";
+  | "doctor"
+  | "playground";
 
 export interface DiagnosticCheck {
   id: string;
@@ -380,4 +381,68 @@ export interface SyndicationStatusResponse {
   hashnode_key_preview?: string;
   hashnode_publication_id?: string;
   publish_as_draft: boolean;
+}
+
+export interface WorktreeFileNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  children?: WorktreeFileNode[];
+}
+
+export interface PlaygroundScenario {
+  id: string;
+  title: string;
+  description: string;
+  target_branch: string;
+  estimated_seconds: number;
+  file_tree: WorktreeFileNode[];
+  diff: string;
+  pr_summary: string;
+}
+
+export interface VerificationGateItem {
+  name: string;
+  command: string;
+  status: "Pending" | "Running" | "Passed" | "Failed" | string;
+  duration_ms: number;
+  output: string;
+}
+
+export interface PlaygroundRunState {
+  id: string;
+  scenario_id: string;
+  status: "Idle" | "Running" | "Completed" | "Failed" | string;
+  current_step: number;
+  step_progress_pct: number;
+  logs: string[];
+  verification_gates: VerificationGateItem[];
+  diff_preview?: string;
+  pr_summary?: string;
+  elapsed_seconds: number;
+  speed_multiplier: number;
+}
+
+export interface PlaygroundMetrics {
+  total_sessions: number;
+  walkthroughs_completed: number;
+  issues_imported: number;
+  github_stars_clicked: number;
+  avg_completion_seconds: number;
+}
+
+export interface BannerEmbedInfo {
+  title: string;
+  badge_url: string;
+  target_url: string;
+  markdown_snippet: string;
+  html_snippet: string;
+  raw_svg: string;
+}
+
+export interface ImportIssueRequest {
+  issue_url?: string;
+  title?: string;
+  description?: string;
 }

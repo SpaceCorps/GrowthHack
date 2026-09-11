@@ -15,6 +15,7 @@ import {
   GitPullRequest,
   Activity,
   Users,
+  Globe,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -112,6 +113,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: "doctor" as ActiveTab,
       label: "Doctor & Demo",
       icon: Activity,
+    },
+    {
+      id: "playground" as ActiveTab,
+      label: "Web Playground",
+      icon: Globe,
     },
   ];
 

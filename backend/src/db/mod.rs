@@ -248,6 +248,15 @@ pub struct ContributorRecord {
     pub contributions: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PlaygroundMetrics {
+    pub total_sessions: u32,
+    pub walkthroughs_completed: u32,
+    pub issues_imported: u32,
+    pub github_stars_clicked: u32,
+    pub avg_completion_seconds: f64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
@@ -267,6 +276,8 @@ pub struct GrowthState {
     pub recipes: Vec<Recipe>,
     #[serde(default)]
     pub onboarding_metrics: OnboardingMetrics,
+    #[serde(default)]
+    pub playground_metrics: PlaygroundMetrics,
     #[serde(default)]
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
@@ -296,6 +307,10 @@ impl GrowthState {
                     }
                     if !state.issues.iter().any(|i| i.number == 11) {
                         state.issues.push(Self::seed_issue_11(Utc::now()));
+                        let _ = state.save(path);
+                    }
+                    if !state.issues.iter().any(|i| i.number == 16) {
+                        state.issues.push(Self::seed_issue_16(Utc::now()));
                         let _ = state.save(path);
                     }
                     if state.contributor_issues.is_empty() {
@@ -525,6 +540,7 @@ impl GrowthState {
                 updated_at: now,
             },
             Self::seed_issue_11(now),
+            Self::seed_issue_16(now),
         ];
 
         let articles = vec![
@@ -768,6 +784,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             latest_release: None,
             recipes,
             onboarding_metrics: OnboardingMetrics::default(),
+            playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
         }
@@ -787,6 +804,31 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 "Implement 1-click remediation command copying for quick developer fix execution".to_string(),
                 "Create replayable zero-config demo simulator modeling intake, isolated worktree, verification gates, and PR diff".to_string(),
                 "Add celebration modal with GitHub star call-to-action on successful first-run completion".to_string(),
+            ],
+            routine_schedule: None,
+            run_count: 1,
+            last_run_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn seed_issue_16(now: DateTime<Utc>) -> GrowthIssue {
+        GrowthIssue {
+            id: "issue-16".to_string(),
+            number: 16,
+            title: "Interactive Browser Web Playground (tendril.run)".to_string(),
+            category: "Developer Experience".to_string(),
+            status: "In Progress".to_string(),
+            priority: "Critical".to_string(),
+            description: "Zero-barrier interactive simulation sandbox (tendril.run) demonstrating Tendril's issue-to-verified-PR workflow in 30 seconds with simulated worktrees, live terminal logs, verification gates, diff viewer, and embeddable README banners.".to_string(),
+            direct_actions: vec![
+                "Build zero-barrier interactive browser playground simulation engine in backend/src/api/playground.rs".to_string(),
+                "Support curated developer scenarios and custom GitHub issue intake (POST /api/playground/import-issue)".to_string(),
+                "Implement simulated worktree filesystem tree state with file status badges (GET /api/playground/tree)".to_string(),
+                "Create live agent terminal execution, verification gate inspection, and syntax-highlighted diff viewer".to_string(),
+                "Add embed banner generator for README and website with Markdown and HTML snippets".to_string(),
+                "Provide high-conversion 1-click GitHub star CTA upon walkthrough completion with conversion metrics".to_string(),
             ],
             routine_schedule: None,
             run_count: 1,
