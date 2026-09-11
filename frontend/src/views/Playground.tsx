@@ -6,6 +6,7 @@ import type {
   PlaygroundMetrics,
   BannerEmbedInfo,
   ImportIssueRequest,
+  PlaygroundFileInspection,
 } from "../types";
 import {
   Globe,
@@ -30,12 +31,88 @@ import {
   ChevronDown,
   CheckCircle2,
   Plus,
+  Columns,
+  Code,
 } from "lucide-react";
 
+export const scenarioIdToSlug = (id: string): string => {
+  if (id.startsWith("scenario-")) {
+    return id.substring("scenario-".length);
+  }
+  return id;
+};
+
+export const slugToScenarioId = (
+  slug: string,
+  scenariosList: PlaygroundScenario[],
+): string | undefined => {
+  const cleanSlug = slug.trim();
+  if (!cleanSlug) return undefined;
+
+  const exact = scenariosList.find((s) => s.id === cleanSlug);
+  if (exact) return exact.id;
+
+  const prefixed = scenariosList.find((s) => s.id === `scenario-${cleanSlug}`);
+  if (prefixed) return prefixed.id;
+
+  const stripped = scenariosList.find((s) => s.id.replace(/^scenario-/, "") === cleanSlug);
+  if (stripped) return stripped.id;
+
+  return undefined;
+};
+
+export const extractScenarioSlugFromLocation = (
+  hash: string,
+  search: string = "",
+): string | null => {
+  const hashWithoutPound = hash.replace(/^#/, "");
+  if (hashWithoutPound) {
+    const queryIndex = hashWithoutPound.indexOf("?");
+    if (queryIndex !== -1) {
+      const params = new URLSearchParams(hashWithoutPound.substring(queryIndex + 1));
+      const val = params.get("scenario");
+      if (val) return val;
+    }
+    const params = new URLSearchParams(hashWithoutPound);
+    const val = params.get("scenario");
+    if (val) return val;
+  }
+  if (search) {
+    const params = new URLSearchParams(search);
+    const val = params.get("scenario");
+    if (val) return val;
+  }
+  return null;
+};
+
+export const resolveBaseOrigin = (): string => {
+  if (typeof window === "undefined" || !window.location) {
+    return "https://tendril.run";
+  }
+  const hostname = window.location.hostname;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || !hostname) {
+    return "https://tendril.run";
+  }
+  return window.location.origin;
+};
+
 export const Playground: React.FC = () => {
+  const getInitialScenarioId = (): string => {
+    if (typeof window !== "undefined") {
+      const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+      if (slug) {
+        if (slug.startsWith("scenario-") || slug.startsWith("custom-")) {
+          return slug;
+        }
+        return `scenario-${slug}`;
+      }
+    }
+    return "scenario-health-check";
+  };
+
   // Scenario and simulation state
   const [scenarios, setScenarios] = useState<PlaygroundScenario[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("scenario-health-check");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(getInitialScenarioId);
   const [fileTree, setFileTree] = useState<WorktreeFileNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
     backend: true,
@@ -68,11 +145,22 @@ export const Playground: React.FC = () => {
   const [metrics, setMetrics] = useState<PlaygroundMetrics | null>(null);
   const [bannerInfo, setBannerInfo] = useState<BannerEmbedInfo | null>(null);
 
+  // File Inspection State
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(
+    "backend/src/api/health.rs",
+  );
+  const [inspectedFile, setInspectedFile] = useState<PlaygroundFileInspection | null>(null);
+  const [loadingFile, setLoadingFile] = useState<boolean>(false);
+  const [inspectorViewMode, setInspectorViewMode] = useState<"split" | "diff" | "source">("split");
+  const [showFullDiff, setShowFullDiff] = useState<boolean>(false);
+  const [copiedSource, setCopiedSource] = useState<boolean>(false);
+
   // UI Tabs & Modals
   const [activeRightTab, setActiveRightTab] = useState<"gates" | "diff" | "pr">("gates");
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState<boolean>(false);
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState<boolean>(false);
 
   // Import Issue Form State
   const [importUrl, setImportUrl] = useState<string>("");
@@ -82,19 +170,43 @@ export const Playground: React.FC = () => {
 
   const logsEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch initial data
+  // Fetch initial data and sync scenario from URL
   useEffect(() => {
+    const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+    if (!slug) {
+      if (!window.location.hash.includes("scenario=")) {
+        window.location.hash = "scenario=health-check";
+      }
+    }
     fetchScenarios();
     fetchTree(selectedScenarioId);
     fetchStatus();
     fetchMetrics();
-    fetchBanner();
+    fetchBanner(selectedScenarioId);
   }, []);
 
-  // Update tree when scenario changes
+  // Update tree and banner when scenario changes
   useEffect(() => {
     fetchTree(selectedScenarioId);
+    fetchBanner(selectedScenarioId);
   }, [selectedScenarioId]);
+
+  // Listen for hashchange events to switch active scenario
+  useEffect(() => {
+    const handleHashChange = () => {
+      const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+      if (slug) {
+        const matchedId =
+          slugToScenarioId(slug, scenarios) ||
+          (slug.startsWith("scenario-") || slug.startsWith("custom-") ? slug : `scenario-${slug}`);
+        if (matchedId && matchedId !== selectedScenarioId) {
+          setSelectedScenarioId(matchedId);
+        }
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [scenarios, selectedScenarioId]);
 
   // Polling simulation status while running
   useEffect(() => {
@@ -132,9 +244,81 @@ export const Playground: React.FC = () => {
       if (res.ok) {
         const data: PlaygroundScenario[] = await res.json();
         setScenarios(data);
+
+        const slug = extractScenarioSlugFromLocation(window.location.hash, window.location.search);
+        if (slug) {
+          const matchedId = slugToScenarioId(slug, data);
+          if (matchedId) {
+            setSelectedScenarioId(matchedId);
+            fetchTree(matchedId);
+            fetchBanner(matchedId);
+          }
+        } else {
+          setSelectedScenarioId("scenario-health-check");
+          if (!window.location.hash.includes("scenario=")) {
+            window.location.hash = "scenario=health-check";
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to fetch scenarios:", err);
+    }
+  };
+
+  const findFirstModifiedFile = (nodes: WorktreeFileNode[]): string | null => {
+    for (const node of nodes) {
+      if (!node.is_dir && node.status !== "Unchanged") {
+        return node.path;
+      }
+      if (node.children) {
+        const found = findFirstModifiedFile(node.children);
+        if (found) return found;
+      }
+    }
+    for (const node of nodes) {
+      if (!node.is_dir) return node.path;
+      if (node.children) {
+        const found = findFirstModifiedFile(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const fetchFileContent = async (scenarioId: string, filePath: string) => {
+    setLoadingFile(true);
+    try {
+      const res = await fetch(
+        `/api/playground/file-content?scenario_id=${encodeURIComponent(
+          scenarioId,
+        )}&path=${encodeURIComponent(filePath)}`,
+      );
+      if (res.ok) {
+        const data: PlaygroundFileInspection = await res.json();
+        setInspectedFile(data);
+      } else {
+        setInspectedFile(null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch file content:", err);
+      setInspectedFile(null);
+    } finally {
+      setLoadingFile(false);
+    }
+  };
+
+  const handleSelectFile = (filePath: string) => {
+    setSelectedFilePath(filePath);
+    setActiveRightTab("diff");
+    setShowFullDiff(false);
+    fetchFileContent(selectedScenarioId, filePath);
+  };
+
+  const copySourceCode = (code: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code);
+      setCopiedSource(true);
+      setTimeout(() => setCopiedSource(false), 2000);
     }
   };
 
@@ -144,6 +328,9 @@ export const Playground: React.FC = () => {
       if (res.ok) {
         const data: WorktreeFileNode[] = await res.json();
         setFileTree(data);
+        const targetFile = findFirstModifiedFile(data) || "backend/src/api/health.rs";
+        setSelectedFilePath(targetFile);
+        fetchFileContent(scenarioId, targetFile);
       }
     } catch (err) {
       console.error("Failed to fetch worktree tree:", err);
@@ -174,15 +361,43 @@ export const Playground: React.FC = () => {
     }
   };
 
-  const fetchBanner = async () => {
+  const fetchBanner = async (scenarioId?: string) => {
     try {
-      const res = await fetch("/api/playground/banner");
+      const targetId = scenarioId || selectedScenarioId;
+      const res = await fetch(`/api/playground/banner?scenario_id=${encodeURIComponent(targetId)}`);
       if (res.ok) {
         const data: BannerEmbedInfo = await res.json();
         setBannerInfo(data);
       }
     } catch (err) {
       console.error("Failed to fetch banner info:", err);
+    }
+  };
+
+  const handleSelectScenario = (id: string) => {
+    if (simulationState.status === "Running") return;
+    setSelectedScenarioId(id);
+    const slug = scenarioIdToSlug(id);
+    window.location.hash = `scenario=${slug}`;
+  };
+
+  const getShareUrl = (scenarioId?: string): string => {
+    const id = scenarioId || selectedScenarioId;
+    const slug = scenarioIdToSlug(id);
+    const origin = resolveBaseOrigin();
+    return `${origin}/#scenario=${slug}`;
+  };
+
+  const handleShareScenario = async (scenarioId?: string) => {
+    const shareUrl = getShareUrl(scenarioId);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      }
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      console.error("Failed to copy share link:", err);
     }
   };
 
@@ -241,6 +456,8 @@ export const Playground: React.FC = () => {
         const newScenario: PlaygroundScenario = await res.json();
         setScenarios((prev) => [newScenario, ...prev]);
         setSelectedScenarioId(newScenario.id);
+        const slug = scenarioIdToSlug(newScenario.id);
+        window.location.hash = `scenario=${slug}`;
         setShowImportModal(false);
         setImportUrl("");
         setImportTitle("");
@@ -265,7 +482,9 @@ export const Playground: React.FC = () => {
   };
 
   const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    }
     setCopiedSnippet(label);
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
@@ -328,14 +547,29 @@ export const Playground: React.FC = () => {
       );
     }
 
+    const isSelected = selectedFilePath === node.path;
     return (
-      <div
+      <button
         key={node.path}
-        className="flex items-center gap-1.5 py-1 px-1.5 hover:bg-slate-800/40 rounded transition-colors group"
+        type="button"
+        onClick={() => handleSelectFile(node.path)}
+        className={`w-full flex items-center gap-1.5 py-1 px-1.5 rounded transition-colors group cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+          isSelected
+            ? "bg-cyan-500/20 text-white border-l-2 border-cyan-400 font-semibold shadow-sm"
+            : "hover:bg-slate-800/40"
+        }`}
         style={{ paddingLeft: `${depth * 14 + 20}px` }}
       >
-        <FileText className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-200" />
-        <span className="text-xs font-mono text-slate-300 group-hover:text-white truncate">
+        <FileText
+          className={`w-3.5 h-3.5 shrink-0 ${
+            isSelected ? "text-cyan-300" : "text-slate-400 group-hover:text-slate-200"
+          }`}
+        />
+        <span
+          className={`text-xs font-mono truncate ${
+            isSelected ? "text-white" : "text-slate-300 group-hover:text-white"
+          }`}
+        >
           {node.name}
         </span>
         {node.status !== "Unchanged" && (
@@ -349,7 +583,7 @@ export const Playground: React.FC = () => {
             {node.status}
           </span>
         )}
-      </div>
+      </button>
     );
   };
 
@@ -396,7 +630,24 @@ export const Playground: React.FC = () => {
                   : "28.6s"}
               </div>
             </div>
-            <div className="text-center px-2">
+            <div className="text-center px-2 flex items-center gap-2">
+              <button
+                onClick={() => handleShareScenario()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-md text-xs font-semibold transition-all cursor-pointer"
+                title="Copy share link for this scenario"
+              >
+                {shareCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Share Scenario</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleStarClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-md text-xs font-semibold transition-all cursor-pointer"
@@ -425,6 +676,22 @@ export const Playground: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => handleShareScenario()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+            >
+              {shareCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Link Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Share Link</span>
+                </>
+              )}
+            </button>
+            <button
               onClick={() => setShowImportModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold transition-all cursor-pointer"
             >
@@ -441,7 +708,7 @@ export const Playground: React.FC = () => {
             return (
               <button
                 key={sc.id}
-                onClick={() => setSelectedScenarioId(sc.id)}
+                onClick={() => handleSelectScenario(sc.id)}
                 disabled={simulationState.status === "Running"}
                 className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
                   isSelected
@@ -456,6 +723,18 @@ export const Playground: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
                   {sc.description}
                 </p>
+                {sc.labels && sc.labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {sc.labels.map((label, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700/50"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between mt-3 text-[11px] text-slate-500 font-mono">
                   <span>Branch: {sc.target_branch}</span>
                   <span className="text-cyan-400 font-semibold">~{sc.estimated_seconds}s run</span>
@@ -474,10 +753,35 @@ export const Playground: React.FC = () => {
               <Play className="w-5 h-5 text-emerald-400" />
               Autonomous Pipeline Stepper
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Current scenario:{" "}
-              <span className="text-white font-semibold">{activeScenario?.title}</span>
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-400">
+                Current scenario:{" "}
+                <span className="text-white font-semibold">{activeScenario?.title}</span>
+              </p>
+              {activeScenario?.issue_url && (
+                <a
+                  href={activeScenario.issue_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-mono transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>View GitHub Issue</span>
+                </a>
+              )}
+            </div>
+            {activeScenario?.labels && activeScenario.labels.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {activeScenario.labels.map((label, idx) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-mono font-medium"
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -685,7 +989,8 @@ export const Playground: React.FC = () => {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  Diff
+                  <span className="hidden sm:inline">Code &amp; </span>
+                  <span>Diff</span>
                 </button>
                 <button
                   onClick={() => setActiveRightTab("pr")}
@@ -743,29 +1048,199 @@ export const Playground: React.FC = () => {
               )}
 
               {activeRightTab === "diff" && (
-                <div className="font-mono text-xs overflow-x-auto bg-slate-950 p-2 rounded border border-slate-900">
-                  {simulationState.diff_preview || activeScenario?.diff ? (
-                    (simulationState.diff_preview || activeScenario.diff)
-                      .split("\n")
-                      .map((line, i) => (
+                <div className="flex flex-col h-full space-y-2">
+                  {/* File inspector header toolbar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-900/90 border border-slate-800 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileCode className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span
+                        className="font-mono text-slate-200 truncate font-semibold"
+                        title={inspectedFile?.path || selectedFilePath || ""}
+                      >
+                        {inspectedFile?.path || selectedFilePath || "No file selected"}
+                      </span>
+                      {inspectedFile && (
                         <span
-                          key={i}
-                          className={
-                            line.startsWith("+") && !line.startsWith("+++")
-                              ? "text-emerald-400 block bg-emerald-950/30 px-1"
-                              : line.startsWith("-") && !line.startsWith("---")
-                                ? "text-rose-400 block bg-rose-950/30 px-1"
-                                : line.startsWith("@@")
-                                  ? "text-cyan-400 block font-bold mt-1"
-                                  : "text-slate-400 block"
-                          }
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
+                            inspectedFile.status === "Created"
+                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                              : inspectedFile.status === "Modified"
+                                ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                : "bg-slate-800 text-slate-400 border border-slate-700"
+                          }`}
                         >
-                          {line}
+                          {inspectedFile.status}
                         </span>
-                      ))
+                      )}
+                      {inspectedFile && (
+                        <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+                          {inspectedFile.line_count} lines ({inspectedFile.language})
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* View mode toggle buttons */}
+                      <div className="flex items-center bg-slate-950 border border-slate-800 rounded p-0.5 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("split")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "split"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Side by side split view"
+                        >
+                          <Columns className="w-3 h-3" />
+                          <span>Split</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("source")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "source"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Source code only"
+                        >
+                          <Code className="w-3 h-3" />
+                          <span>Source</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("diff")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "diff"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Diff only"
+                        >
+                          <GitPullRequest className="w-3 h-3" />
+                          <span>Diff</span>
+                        </button>
+                      </div>
+
+                      {/* Copy source code button */}
+                      {inspectedFile && (
+                        <button
+                          type="button"
+                          onClick={() => copySourceCode(inspectedFile.content)}
+                          className="flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-medium transition-colors cursor-pointer"
+                          title="Copy source code"
+                        >
+                          {copiedSource ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-400" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main Inspector Code & Diff Panes */}
+                  {loadingFile ? (
+                    <div className="flex items-center justify-center py-16 text-xs text-slate-500 font-mono">
+                      Loading file content &amp; diff...
+                    </div>
+                  ) : inspectedFile ? (
+                    <div
+                      className={`grid gap-2 overflow-hidden flex-1 ${
+                        inspectorViewMode === "split" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
+                      }`}
+                    >
+                      {/* Left Pane: Source Code */}
+                      {(inspectorViewMode === "split" || inspectorViewMode === "source") && (
+                        <div className="flex flex-col bg-slate-950 border border-slate-900 rounded-lg overflow-hidden h-72">
+                          <div className="px-2.5 py-1 bg-slate-900/90 border-b border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between shrink-0">
+                            <span className="truncate">Source: {inspectedFile.name}</span>
+                            <span className="text-cyan-400">{inspectedFile.language}</span>
+                          </div>
+                          <div className="flex-1 overflow-auto p-2 font-mono text-xs flex leading-5">
+                            {/* Gutter with line numbers */}
+                            <div className="select-none text-slate-600 text-right pr-2.5 mr-2.5 border-r border-slate-800">
+                              {inspectedFile.content.split("\n").map((_, idx) => (
+                                <div key={idx}>{idx + 1}</div>
+                              ))}
+                            </div>
+                            {/* Monospace Code */}
+                            <pre className="text-slate-200 whitespace-pre overflow-x-auto flex-1">
+                              <code>{inspectedFile.content}</code>
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Right Pane: Unified Diff */}
+                      {(inspectorViewMode === "split" || inspectorViewMode === "diff") && (
+                        <div className="flex flex-col bg-slate-950 border border-slate-900 rounded-lg overflow-hidden h-72">
+                          <div className="px-2.5 py-1 bg-slate-900/90 border-b border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between shrink-0">
+                            <span>Unified Diff</span>
+                            {inspectedFile.status !== "Unchanged" && (
+                              <button
+                                type="button"
+                                onClick={() => setShowFullDiff(!showFullDiff)}
+                                className="text-cyan-400 hover:text-cyan-300 text-[10px] cursor-pointer"
+                              >
+                                {showFullDiff ? "Show File Diff" : "Show Full Diff"}
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex-1 overflow-auto p-2 font-mono text-xs">
+                            {inspectedFile.status === "Unchanged" && !showFullDiff ? (
+                              <div className="text-slate-500 text-xs text-center py-10 space-y-2">
+                                <p>File unchanged in this simulation run. No diff chunks.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFullDiff(true)}
+                                  className="text-cyan-400 hover:underline text-xs cursor-pointer"
+                                >
+                                  View full scenario diff
+                                </button>
+                              </div>
+                            ) : (
+                              (showFullDiff
+                                ? simulationState.diff_preview || activeScenario?.diff || ""
+                                : inspectedFile.file_diff ||
+                                  simulationState.diff_preview ||
+                                  activeScenario?.diff ||
+                                  ""
+                              )
+                                .split("\n")
+                                .map((line, i) => (
+                                  <span
+                                    key={i}
+                                    className={
+                                      line.startsWith("+") && !line.startsWith("+++")
+                                        ? "text-emerald-400 block bg-emerald-950/30 px-1"
+                                        : line.startsWith("-") && !line.startsWith("---")
+                                          ? "text-rose-400 block bg-rose-950/30 px-1"
+                                          : line.startsWith("@@")
+                                            ? "text-cyan-400 block font-bold mt-1"
+                                            : "text-slate-400 block"
+                                    }
+                                  >
+                                    {line}
+                                  </span>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <div className="text-slate-500 text-xs text-center py-6">
-                      Diff will generate upon simulation completion.
+                    <div className="text-slate-500 text-xs text-center py-12">
+                      Click on any file in the worktree tree to inspect source code and unified diff
+                      side by side.
                     </div>
                   )}
                 </div>
@@ -808,7 +1283,7 @@ export const Playground: React.FC = () => {
             </span>
             <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg shadow-md hover:border-cyan-500/50 transition-colors">
               <a
-                href={bannerInfo?.target_url || "https://tendril.run/playground"}
+                href={bannerInfo?.target_url || getShareUrl()}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-block"
@@ -824,7 +1299,12 @@ export const Playground: React.FC = () => {
               </a>
             </div>
             <p className="text-xs text-slate-500">
-              Links directly to <span className="text-cyan-400">tendril.run/playground</span>
+              Links directly to{" "}
+              <span className="text-cyan-400 font-mono">
+                {bannerInfo?.target_url
+                  ? bannerInfo.target_url.replace("https://", "")
+                  : `tendril.run/#scenario=${scenarioIdToSlug(selectedScenarioId)}`}
+              </span>
             </p>
           </div>
 
@@ -835,7 +1315,16 @@ export const Playground: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-300">Markdown (for README.md):</span>
                 <button
-                  onClick={() => copyToClipboard(bannerInfo?.markdown_snippet || "", "markdown")}
+                  onClick={() =>
+                    copyToClipboard(
+                      bannerInfo?.markdown_snippet ||
+                        `[![Try Tendril in 30 Seconds](${
+                          bannerInfo?.badge_url ||
+                          "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                        })](${bannerInfo?.target_url || getShareUrl()})`,
+                      "markdown",
+                    )
+                  }
                   className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
                 >
                   {copiedSnippet === "markdown" ? (
@@ -852,7 +1341,11 @@ export const Playground: React.FC = () => {
                 </button>
               </div>
               <code className="block bg-slate-950 border border-slate-800 p-2.5 rounded text-[11px] font-mono text-slate-300 break-all select-all">
-                {bannerInfo?.markdown_snippet || "[![Try Tendril in 30 Seconds](...)]"}
+                {bannerInfo?.markdown_snippet ||
+                  `[![Try Tendril in 30 Seconds](${
+                    bannerInfo?.badge_url ||
+                    "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                  })](${bannerInfo?.target_url || getShareUrl()})`}
               </code>
             </div>
 
@@ -861,7 +1354,18 @@ export const Playground: React.FC = () => {
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-300">HTML (for Website & Docs):</span>
                 <button
-                  onClick={() => copyToClipboard(bannerInfo?.html_snippet || "", "html")}
+                  onClick={() =>
+                    copyToClipboard(
+                      bannerInfo?.html_snippet ||
+                        `<a href="${
+                          bannerInfo?.target_url || getShareUrl()
+                        }" target="_blank" rel="noopener noreferrer"><img src="${
+                          bannerInfo?.badge_url ||
+                          "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                        }" alt="Try Tendril in 30 Seconds" /></a>`,
+                      "html",
+                    )
+                  }
                   className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
                 >
                   {copiedSnippet === "html" ? (
@@ -878,7 +1382,13 @@ export const Playground: React.FC = () => {
                 </button>
               </div>
               <code className="block bg-slate-950 border border-slate-800 p-2.5 rounded text-[11px] font-mono text-slate-300 break-all select-all">
-                {bannerInfo?.html_snippet || '<a href="..."><img src="..." /></a>'}
+                {bannerInfo?.html_snippet ||
+                  `<a href="${
+                    bannerInfo?.target_url || getShareUrl()
+                  }" target="_blank" rel="noopener noreferrer"><img src="${
+                    bannerInfo?.badge_url ||
+                    "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white"
+                  }" alt="Try Tendril in 30 Seconds" /></a>`}
               </code>
             </div>
           </div>
@@ -914,6 +1424,13 @@ export const Playground: React.FC = () => {
                   onChange={(e) => setImportUrl(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>
+                    Live issue title, description, and labels will be imported automatically when a
+                    GitHub token is configured.
+                  </span>
+                </p>
               </div>
 
               <div>
@@ -993,6 +1510,22 @@ export const Playground: React.FC = () => {
             </p>
 
             <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={() => handleShareScenario()}
+                className="w-full py-2.5 px-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {shareCopied ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span>Link Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Share this run</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={handleStarClick}
                 className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg hover:shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"

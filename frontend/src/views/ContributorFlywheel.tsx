@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AllContributorsRcResponse,
   AllContributorsResponse,
@@ -6,6 +6,7 @@ import type {
   ContributorIssue,
   ContributorRecord,
   GenerateAllContributorsPrResponse,
+  GitHubUserSummary,
 } from "../types";
 import {
   Users,
@@ -27,6 +28,7 @@ import {
   GitPullRequest,
   ShieldCheck,
   Terminal,
+  RefreshCw,
 } from "lucide-react";
 
 interface ContributorFlywheelProps {
@@ -112,6 +114,15 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
   const [claimError, setClaimError] = useState<string | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
 
+  // GitHub user autocomplete state
+  const [userSuggestions, setUserSuggestions] = useState<Array<GitHubUserSummary>>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState<boolean>(false);
+  const [showUserDropdown, setShowUserDropdown] = useState<boolean>(false);
+  const [highlightedUserIndex, setHighlightedUserIndex] = useState<number>(-1);
+
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+  const skipNextSearchRef = useRef<boolean>(false);
+
   // Verification modal state
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
   const [verifyIssueId, setVerifyIssueId] = useState<string | undefined>(undefined);
@@ -129,6 +140,68 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
 
   // Copy feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Claim timeout and unclaim state
+  const [isCheckingTimeouts, setIsCheckingTimeouts] = useState<boolean>(false);
+  const [isUnclaimingIssue, setIsUnclaimingIssue] = useState<string | null>(null);
+
+  const getClaimTimeoutInfo = (claimedAtStr?: string, prUrl?: string) => {
+    if (!claimedAtStr || prUrl) return null;
+    const claimedAt = new Date(claimedAtStr).getTime();
+    if (isNaN(claimedAt)) return null;
+    const now = Date.now();
+    const diffDays = Math.floor((now - claimedAt) / (1000 * 60 * 60 * 24));
+    const daysLeft = 7 - diffDays;
+    if (daysLeft <= 0) {
+      return {
+        text: "Timeout due",
+        isDue: true,
+      };
+    }
+    return {
+      text: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left before timeout`,
+      isDue: false,
+    };
+  };
+
+  const handleUnclaimIssue = async (issueId: string) => {
+    try {
+      setIsUnclaimingIssue(issueId);
+      const res = await fetch(`/api/contributors/issues/${issueId}/unclaim`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to unclaim issue.");
+      }
+      await fetchFlywheelData();
+      if (onIssueClaimed) {
+        onIssueClaimed();
+      }
+    } catch (err: any) {
+      console.error("Failed to unclaim issue:", err);
+    } finally {
+      setIsUnclaimingIssue(null);
+    }
+  };
+
+  const handleCheckTimeouts = async () => {
+    try {
+      setIsCheckingTimeouts(true);
+      const res = await fetch("/api/contributors/issues/check-timeouts", {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to check claim timeouts.");
+      }
+      await fetchFlywheelData();
+    } catch (err: any) {
+      console.error("Failed to check timeouts:", err);
+    } finally {
+      setIsCheckingTimeouts(false);
+    }
+  };
 
   const fetchFlywheelData = async () => {
     try {
@@ -187,6 +260,94 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     setExpandedIssues((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Click outside handling for autocomplete dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+        setHighlightedUserIndex(-1);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Debounced search for GitHub users
+  useEffect(() => {
+    if (skipNextSearchRef.current) {
+      skipNextSearchRef.current = false;
+      return;
+    }
+
+    const clean = githubHandle.trim().replace(/^@+/, "").trim();
+    if (clean.length < 2) {
+      setUserSuggestions([]);
+      setShowUserDropdown(false);
+      setHighlightedUserIndex(-1);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingUsers(true);
+        const res = await fetch(`/api/contributors/github-users?q=${encodeURIComponent(clean)}`);
+        if (res.ok) {
+          const data: GitHubUserSummary[] = await res.json();
+          setUserSuggestions(data);
+          setShowUserDropdown(data.length > 0);
+          setHighlightedUserIndex(-1);
+        } else {
+          setUserSuggestions([]);
+          setShowUserDropdown(false);
+          setHighlightedUserIndex(-1);
+        }
+      } catch {
+        setUserSuggestions([]);
+        setShowUserDropdown(false);
+        setHighlightedUserIndex(-1);
+      } finally {
+        setIsSearchingUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [githubHandle]);
+
+  const handleSelectUser = (user: GitHubUserSummary) => {
+    skipNextSearchRef.current = true;
+    setGithubHandle(`@${user.login}`);
+    if (!contributorName.trim()) {
+      setContributorName(user.login);
+    }
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+  };
+
+  const handleHandleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showUserDropdown || userSuggestions.length === 0) {
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedUserIndex((prev) => (prev < userSuggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedUserIndex((prev) => (prev > 0 ? prev - 1 : userSuggestions.length - 1));
+    } else if (e.key === "Enter") {
+      if (highlightedUserIndex >= 0 && highlightedUserIndex < userSuggestions.length) {
+        e.preventDefault();
+        handleSelectUser(userSuggestions[highlightedUserIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowUserDropdown(false);
+      setHighlightedUserIndex(-1);
+    }
+  };
+
   const handleOpenClaimModal = (issue: ContributorIssue) => {
     setClaimingIssue(issue);
     setContributorName("");
@@ -195,12 +356,22 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     setAutoSyncGithub(true);
     setClaimFeedback(null);
     setClaimError(null);
+    setUserSuggestions([]);
+    setIsSearchingUsers(false);
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+    skipNextSearchRef.current = false;
   };
 
   const handleCloseClaimModal = () => {
     setClaimingIssue(null);
     setClaimFeedback(null);
     setClaimError(null);
+    setUserSuggestions([]);
+    setIsSearchingUsers(false);
+    setShowUserDropdown(false);
+    setHighlightedUserIndex(-1);
+    skipNextSearchRef.current = false;
   };
 
   const handleConfirmClaim = async (e: React.FormEvent) => {
@@ -341,7 +512,10 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
 
   // Metrics computation
   const totalIssues = issues.length;
-  const unclaimedCount = useMemo(() => issues.filter((i) => !i.claimed).length, [issues]);
+  const unclaimedCount = useMemo(
+    () => issues.filter((i) => !i.claimed && !i.closed).length,
+    [issues],
+  );
   const activeMentors = useMemo(() => {
     const mentors = new Set(issues.map((i) => i.mentor));
     return mentors.size;
@@ -359,10 +533,13 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
       if (timeFilter !== "all" && issue.estimated_minutes > parseInt(timeFilter, 10)) {
         return false;
       }
-      if (statusFilter === "unclaimed" && issue.claimed) {
+      if (statusFilter === "unclaimed" && (issue.claimed || issue.closed)) {
         return false;
       }
       if (statusFilter === "claimed" && !issue.claimed) {
+        return false;
+      }
+      if (statusFilter === "closed" && !issue.closed) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -512,6 +689,19 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCheckTimeouts}
+              disabled={isCheckingTimeouts}
+              data-testid="check-timeouts-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+              title="Evaluate claim timeouts and release inactive claims"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isCheckingTimeouts ? "animate-spin text-cyan-400" : "text-slate-400"}`}
+              />
+              Check Timeouts
+            </button>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
               <input
@@ -576,6 +766,7 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                 <option value="all">All Statuses</option>
                 <option value="unclaimed">Unclaimed Only</option>
                 <option value="claimed">Claimed Only</option>
+                <option value="closed">Closed Only</option>
               </select>
             </div>
           </div>
@@ -609,6 +800,14 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           {issue.difficulty}
                         </span>
+                        {issue.closed && (
+                          <span
+                            data-testid={`closed-badge-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                        )}
                         {issue.github_issue_number && (
                           <a
                             href={`https://github.com/${issue.github_repo || "SpaceCorps/GrowthHack"}/issues/${issue.github_issue_number}`}
@@ -689,9 +888,38 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                       Mentor: <span className="text-slate-200 font-medium">{issue.mentor}</span>
                     </div>
 
-                    {issue.claimed ? (
+                    {issue.closed ? (
                       <div className="flex flex-col items-end gap-1">
                         <div className="flex items-center gap-2">
+                          <span
+                            data-testid={`closed-status-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                          <button
+                            type="button"
+                            disabled
+                            data-testid={`claim-btn-${issue.id}`}
+                            title="This issue is closed on GitHub"
+                            className="px-3 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                          >
+                            Claim Issue
+                          </button>
+                        </div>
+                        {issue.github_sync_status && (
+                          <span
+                            data-testid={`github-sync-status-${issue.id}`}
+                            title={issue.github_sync_message || issue.github_sync_status}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-purple-500/10 text-purple-300 border-purple-500/20"
+                          >
+                            GitHub: {issue.github_sync_status}
+                          </span>
+                        )}
+                      </div>
+                    ) : issue.claimed ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
                             <UserCheck className="w-3.5 h-3.5" />
                             Claimed {issue.claimed_by ? `by ${issue.claimed_by}` : ""}
@@ -717,22 +945,53 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                               Verify & Generate PR
                             </button>
                           )}
-                        </div>
-                        {issue.github_sync_status && (
-                          <span
-                            data-testid={`github-sync-status-${issue.id}`}
-                            title={issue.github_sync_message || issue.github_sync_status}
-                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                              issue.github_sync_status.startsWith("Synced")
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                : issue.github_sync_status.startsWith("Skipped")
-                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                  : "bg-red-500/10 text-red-400 border-red-500/20"
-                            }`}
+                          <button
+                            type="button"
+                            onClick={() => handleUnclaimIssue(issue.id)}
+                            disabled={isUnclaimingIssue === issue.id}
+                            data-testid={`unclaim-btn-${issue.id}`}
+                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-600/80 hover:bg-rose-500 text-white transition-colors cursor-pointer disabled:opacity-50"
+                            title="Release claim and remove GitHub label"
                           >
-                            GitHub: {issue.github_sync_status}
-                          </span>
-                        )}
+                            {isUnclaimingIssue === issue.id ? "Unclaiming..." : "Unclaim"}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const timeoutInfo = getClaimTimeoutInfo(issue.claimed_at, issue.pr_url);
+                            if (!timeoutInfo) return null;
+                            return (
+                              <span
+                                data-testid={`claim-timeout-badge-${issue.id}`}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                  timeoutInfo.isDue
+                                    ? "bg-red-500/10 text-red-400 border-red-500/20"
+                                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                }`}
+                              >
+                                <Clock className="w-2.5 h-2.5" />
+                                {timeoutInfo.text}
+                              </span>
+                            );
+                          })()}
+                          {issue.github_sync_status && (
+                            <span
+                              data-testid={`github-sync-status-${issue.id}`}
+                              title={issue.github_sync_message || issue.github_sync_status}
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                issue.github_sync_status.startsWith("Synced")
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : issue.github_sync_status.startsWith("Skipped")
+                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                    : issue.github_sync_status.includes("Webhook")
+                                      ? "bg-purple-500/10 text-purple-300 border-purple-500/20"
+                                      : "bg-red-500/10 text-red-400 border-red-500/20"
+                              }`}
+                            >
+                              GitHub: {issue.github_sync_status}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <button
@@ -1094,18 +1353,77 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                   />
                 </div>
 
-                <div>
+                <div ref={autocompleteRef} className="relative">
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     GitHub Handle (Optional)
                   </label>
-                  <input
-                    type="text"
-                    value={githubHandle}
-                    onChange={(e) => setGithubHandle(e.target.value)}
-                    placeholder="e.g. @janedev"
-                    data-testid="claim-handle-input"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={githubHandle}
+                      onChange={(e) => setGithubHandle(e.target.value)}
+                      onKeyDown={handleHandleKeyDown}
+                      onFocus={() => {
+                        const clean = githubHandle.trim().replace(/^@+/, "").trim();
+                        if (clean.length >= 2 && userSuggestions.length > 0) {
+                          setShowUserDropdown(true);
+                        }
+                      }}
+                      placeholder="e.g. @janedev"
+                      data-testid="claim-handle-input"
+                      autoComplete="off"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                    />
+                    {isSearchingUsers && (
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+                        <Sparkles className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {showUserDropdown && userSuggestions.length > 0 && (
+                    <div
+                      data-testid="claim-handle-autocomplete-dropdown"
+                      className="absolute z-30 left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden max-h-48 overflow-y-auto"
+                    >
+                      {userSuggestions.map((user, idx) => {
+                        const isHighlighted = idx === highlightedUserIndex;
+                        return (
+                          <div
+                            key={user.login}
+                            data-testid={`claim-handle-suggestion-${idx}`}
+                            onClick={() => handleSelectUser(user)}
+                            className={`flex items-center justify-between px-3 py-2 text-xs cursor-pointer transition-colors ${
+                              isHighlighted
+                                ? "bg-cyan-600/30 text-cyan-200"
+                                : "hover:bg-slate-800 text-slate-200"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <img
+                                src={user.avatar_url}
+                                alt={user.login}
+                                className="w-5 h-5 rounded-full object-cover shrink-0 border border-slate-700"
+                              />
+                              <span className="font-mono text-xs font-semibold truncate">
+                                @{user.login}
+                              </span>
+                            </div>
+                            <a
+                              href={user.html_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-slate-400 hover:text-cyan-400 shrink-0 p-1"
+                              title="View GitHub profile"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>

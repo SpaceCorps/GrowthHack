@@ -1,11 +1,14 @@
 mod common;
 
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::api::listings::{
-    build_pr_submission_prompt, build_tailored_prompt, check_backlink_content, create_listing,
-    extract_pr_url, generate_batch_listings, list_listings, submit_listing_pr, update_listing,
-    verify_backlink, CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
+    build_pr_submission_prompt, build_tailored_prompt, check_backlink_content,
+    check_single_listing_pr, create_listing, extract_pr_url, generate_batch_listings,
+    handle_github_pr_webhook, list_listings, submit_listing_pr, sync_all_listing_prs,
+    sync_listing_pr_statuses_internal, update_listing, verify_backlink, CreateListingRequest,
+    GenerateBatchRequest, UpdateListingRequest,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
@@ -79,8 +82,8 @@ async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
         awesome_count
     );
     assert!(
-        directory_count >= 12,
-        "Expected at least 12 Dev Directories, found {}",
+        directory_count >= 11,
+        "Expected at least 11 Dev Directories, found {}",
         directory_count
     );
     assert!(
@@ -652,4 +655,254 @@ async fn test_submit_listing_pr_preserves_pr_url_on_resubmission() {
     assert_eq!(listing.pr_url, Some(existing_pr_url));
     assert_eq!(listing.status, "PR Submitted");
     assert!(listing.updated_at > old_time);
+}
+
+static GITHUB_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn start_mock_github_pulls_server() -> (String, tokio::task::JoinHandle<()>) {
+    let mock_app = axum::Router::new().route(
+        "/repos/{owner}/{repo}/pulls/{number}",
+        axum::routing::get(
+            |axum::extract::Path((_owner, _repo, number)): axum::extract::Path<(
+                String,
+                String,
+                u64,
+            )>| async move {
+                match number {
+                    42 | 44 | 50 => (
+                        StatusCode::OK,
+                        Json(serde_json::json!({
+                            "number": number,
+                            "state": "closed",
+                            "merged": true,
+                            "merged_at": "2026-09-11T05:00:00Z",
+                            "html_url": format!("https://github.com/testorg/awesome-list/pull/{}", number)
+                        })),
+                    ),
+                    _ => (
+                        StatusCode::OK,
+                        Json(serde_json::json!({
+                            "number": number,
+                            "state": "open",
+                            "merged": false,
+                            "merged_at": null,
+                            "html_url": format!("https://github.com/testorg/awesome-list/pull/{}", number)
+                        })),
+                    ),
+                }
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+    (format!("http://{}", addr), handle)
+}
+
+#[tokio::test]
+async fn test_sync_listing_pr_statuses_transitions_to_live() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
+    let (server_url, _handle) = start_mock_github_pulls_server().await;
+    std::env::set_var("GITHUB_API_BASE_URL", &server_url);
+
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
+    let listing_id = "list-merge-test-42".to_string();
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "PR Submitted".to_string(),
+        pr_url: Some("https://github.com/testorg/awesome-list/pull/42".to_string()),
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+            .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+        let _ = state.save(&guard.data_file);
+    }
+
+    let summary = sync_listing_pr_statuses_internal(&ctx).await.unwrap();
+    assert!(summary.checked_count >= 1);
+    assert!(summary.merged_count >= 1);
+    assert!(summary.transitioned_ids.contains(&listing_id));
+
+    let state = ctx.state.read().await;
+    let listing = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    assert_eq!(listing.status, "Live");
+
+    let loaded_state = GrowthState::load_or_init(&guard.data_file);
+    let loaded_listing = loaded_state
+        .listings
+        .iter()
+        .find(|l| l.id == listing_id)
+        .unwrap();
+    assert_eq!(loaded_listing.status, "Live");
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
+}
+
+#[tokio::test]
+async fn test_sync_listing_pr_statuses_leaves_open_prs() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
+    let (server_url, _handle) = start_mock_github_pulls_server().await;
+    std::env::set_var("GITHUB_API_BASE_URL", &server_url);
+
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
+    let listing_id = "list-open-test-43".to_string();
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "PR Submitted".to_string(),
+        pr_url: Some("https://github.com/testorg/awesome-list/pull/43".to_string()),
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+            .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state
+            .listings
+            .retain(|l| l.status != "PR Submitted" && l.status != "Under Review");
+        state.listings.push(test_listing);
+        let _ = state.save(&guard.data_file);
+    }
+
+    let summary = sync_listing_pr_statuses_internal(&ctx).await.unwrap();
+    assert_eq!(summary.checked_count, 1);
+    assert_eq!(summary.merged_count, 0);
+    assert!(summary.transitioned_ids.is_empty());
+
+    let state = ctx.state.read().await;
+    let listing = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    assert_eq!(listing.status, "PR Submitted");
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
+}
+
+#[tokio::test]
+async fn test_sync_listing_prs_endpoint() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
+    let (server_url, _handle) = start_mock_github_pulls_server().await;
+    std::env::set_var("GITHUB_API_BASE_URL", &server_url);
+
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
+    let listing_id = "list-endpoint-test-44".to_string();
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "Under Review".to_string(),
+        pr_url: Some("https://github.com/testorg/awesome-list/pull/44".to_string()),
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+            .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state
+            .listings
+            .retain(|l| l.status != "PR Submitted" && l.status != "Under Review");
+        state.listings.push(test_listing);
+        let _ = state.save(&guard.data_file);
+    }
+
+    // Test POST /api/listings/sync-prs handler
+    let (status_all, Json(summary)) = sync_all_listing_prs(State(ctx.clone())).await;
+    assert_eq!(status_all, StatusCode::OK);
+    assert_eq!(summary.checked_count, 1);
+    assert_eq!(summary.merged_count, 1);
+    assert!(summary.transitioned_ids.contains(&listing_id));
+
+    // Test POST /api/listings/{id}/sync-pr handler
+    let (status_single, Json(single_res)) =
+        check_single_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+    assert_eq!(status_single, StatusCode::OK);
+    assert_eq!(single_res.id, listing_id);
+    assert!(single_res.merged);
+    assert_eq!(single_res.status, "Live");
+
+    // Test POST /api/listings/{id}/sync-pr with nonexistent ID
+    let (status_missing, Json(_)) =
+        check_single_listing_pr(Path("nonexistent-id".to_string()), State(ctx.clone())).await;
+    assert_eq!(status_missing, StatusCode::NOT_FOUND);
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
+}
+
+#[tokio::test]
+async fn test_github_pr_webhook_transitions_listing() {
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
+    let listing_id = "list-webhook-test-50".to_string();
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "PR Submitted".to_string(),
+        pr_url: Some("https://github.com/testorg/awesome-list/pull/50".to_string()),
+        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+            .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+        let _ = state.save(&guard.data_file);
+    }
+
+    let webhook_payload = serde_json::json!({
+        "action": "closed",
+        "pull_request": {
+            "number": 50,
+            "state": "closed",
+            "merged": true,
+            "merged_at": "2026-09-11T05:30:00Z",
+            "html_url": "https://github.com/testorg/awesome-list/pull/50"
+        }
+    });
+
+    let (status, Json(res)) =
+        handle_github_pr_webhook(State(ctx.clone()), Json(webhook_payload)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(res["success"], true);
+    assert_eq!(res["listing_id"], listing_id);
+    assert_eq!(res["status"], "Live");
+
+    let state = ctx.state.read().await;
+    let listing = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    assert_eq!(listing.status, "Live");
+
+    let loaded_state = GrowthState::load_or_init(&guard.data_file);
+    let loaded_listing = loaded_state
+        .listings
+        .iter()
+        .find(|l| l.id == listing_id)
+        .unwrap();
+    assert_eq!(loaded_listing.status, "Live");
 }

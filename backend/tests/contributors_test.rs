@@ -3,10 +3,11 @@ use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::contributors::{
-    claim_contributor_issue, generate_all_contributors_pr, get_all_contributors,
-    get_all_contributorsrc, get_contributing_guide, link_github_issue, list_contributor_issues,
-    verify_contributor, ClaimIssueRequest, ContributorIssuesQuery, GenerateAllContributorsPrRequest,
-    LinkGitHubIssueRequest, VerifyContributorRequest,
+    check_claim_timeouts_internal, claim_contributor_issue, generate_all_contributors_pr,
+    get_all_contributors, get_all_contributorsrc, get_contributing_guide, link_github_issue,
+    list_contributor_issues, search_github_users, unclaim_contributor_issue, verify_contributor,
+    ClaimIssueRequest, ContributorIssuesQuery, GenerateAllContributorsPrRequest,
+    GitHubUserSearchQuery, GitHubUserSummary, LinkGitHubIssueRequest, VerifyContributorRequest,
 };
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::db::GrowthState;
@@ -36,6 +37,7 @@ fn create_test_context() -> Arc<AppContext> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::new(growthhack_backend::api::MetricsSyncDebouncer::default()),
     })
 }
 
@@ -277,12 +279,8 @@ async fn test_claim_issue_with_github_sync_skipped_without_token() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     assert!(result.is_ok());
     let (status, Json(claimed_issue)) = result.unwrap();
@@ -337,8 +335,11 @@ async fn test_link_github_issue_endpoint() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+static GITHUB_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn test_claim_issue_with_mock_github_client() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
     use axum::routing::post;
     use axum::Router;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -406,12 +407,8 @@ async fn test_claim_issue_with_mock_github_client() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     std::env::remove_var("GITHUB_API_BASE_URL");
 
@@ -420,7 +417,10 @@ async fn test_claim_issue_with_mock_github_client() {
     assert_eq!(status, StatusCode::OK);
     assert!(claimed_issue.claimed);
     assert_eq!(claimed_issue.github_sync_status.as_deref(), Some("Synced"));
-    assert!(claimed_issue.github_sync_message.unwrap().contains("claimed"));
+    assert!(claimed_issue
+        .github_sync_message
+        .unwrap()
+        .contains("claimed"));
     assert_eq!(labels_hit.load(Ordering::SeqCst), 1);
     assert_eq!(assignees_hit.load(Ordering::SeqCst), 1);
     assert_eq!(comments_hit.load(Ordering::SeqCst), 1);
@@ -521,7 +521,10 @@ async fn test_generate_all_contributors_pr_payload() {
 
     assert_eq!(resp.branch_name, "docs/add-rocket-dev");
     assert_eq!(resp.file_path, ".all-contributorsrc");
-    assert_eq!(resp.pr_title, "docs: update .all-contributorsrc for @rocket-dev");
+    assert_eq!(
+        resp.pr_title,
+        "docs: update .all-contributorsrc for @rocket-dev"
+    );
     assert!(resp.pr_body.contains("@rocket-dev"));
     assert!(resp.pr_body.contains("doc, review"));
     assert!(resp.file_content.contains("rocket-dev"));
@@ -531,7 +534,388 @@ async fn test_generate_all_contributors_pr_payload() {
     assert_eq!(resp.cli_commands[0], "git checkout -b docs/add-rocket-dev");
     assert!(resp.cli_commands[1].starts_with("cat << 'EOF' > .all-contributorsrc"));
     assert_eq!(resp.cli_commands[2], "git add .all-contributorsrc");
-    assert!(resp.cli_commands[3].contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
+    assert!(resp.cli_commands[3]
+        .contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
     assert_eq!(resp.cli_commands[4], "git push origin docs/add-rocket-dev");
-    assert!(resp.cli_commands[5].starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
+    assert!(resp.cli_commands[5]
+        .starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
+}
+
+#[tokio::test]
+async fn test_manual_unclaim_issue_endpoint() {
+    let ctx = create_test_context();
+
+    // Claim the issue first
+    let claim_req = ClaimIssueRequest {
+        contributor_name: "Unclaim Tester".to_string(),
+        github_handle: Some("@unclaim-tester".to_string()),
+        ..Default::default()
+    };
+    let claim_res = claim_contributor_issue(
+        State(ctx.clone()),
+        Path("cf-issue-1".to_string()),
+        Json(claim_req),
+    )
+    .await;
+    assert!(claim_res.is_ok());
+
+    // Call manual unclaim
+    let unclaim_res = unclaim_contributor_issue(
+        State(ctx.clone()),
+        Path("cf-issue-1".to_string()),
+    )
+    .await;
+
+    assert!(unclaim_res.is_ok());
+    let (status, Json(unclaimed)) = unclaim_res.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    assert!(!unclaimed.claimed);
+    assert!(unclaimed.claimed_by.is_none());
+    assert!(unclaimed.claimed_at.is_none());
+    assert_eq!(unclaimed.github_sync_status.as_deref(), Some("Unclaimed"));
+
+    // Verify list reflects unclaimed state
+    let Json(issues) = list_contributor_issues(
+        State(ctx),
+        Query(ContributorIssuesQuery {
+            claimed: Some(true),
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert!(issues.is_empty());
+}
+
+#[tokio::test]
+async fn test_check_claim_timeouts_skips_recent_and_with_pr() {
+    let ctx = create_test_context();
+    let now = chrono::Utc::now();
+
+    {
+        let mut state = ctx.state.write().await;
+        // Issue 1: Claimed recently (2 days ago), no PR
+        if let Some(i1) = state.contributor_issues.iter_mut().find(|i| i.id == "cf-issue-1") {
+            i1.claimed = true;
+            i1.claimed_by = Some("@recent-dev".to_string());
+            i1.claimed_at = Some(now - chrono::Duration::days(2));
+            i1.pr_url = None;
+        }
+
+        // Issue 2: Claimed 10 days ago, but has a PR URL
+        if let Some(i2) = state.contributor_issues.iter_mut().find(|i| i.id == "cf-issue-2") {
+            i2.claimed = true;
+            i2.claimed_by = Some("@active-dev".to_string());
+            i2.claimed_at = Some(now - chrono::Duration::days(10));
+            i2.pr_url = Some("https://github.com/SpaceCorps/GrowthHack/pull/123".to_string());
+        }
+    }
+
+    let unclaimed = check_claim_timeouts_internal(&ctx, 7)
+        .await
+        .expect("check_claim_timeouts_internal failed");
+
+    assert!(unclaimed.is_empty(), "Expected no issues to be unclaimed");
+
+    let state = ctx.state.read().await;
+    let i1 = state.contributor_issues.iter().find(|i| i.id == "cf-issue-1").unwrap();
+    let i2 = state.contributor_issues.iter().find(|i| i.id == "cf-issue-2").unwrap();
+    assert!(i1.claimed, "Recent claim should remain claimed");
+    assert!(i2.claimed, "Claim with PR should remain claimed");
+}
+
+#[tokio::test]
+async fn test_check_claim_timeouts_unclaims_expired_issues() {
+    let ctx = create_test_context();
+    let now = chrono::Utc::now();
+
+    {
+        let mut state = ctx.state.write().await;
+        // Issue 1: Claimed 9 days ago (> 7 days), no PR -> should be unclaimed
+        if let Some(i1) = state.contributor_issues.iter_mut().find(|i| i.id == "cf-issue-1") {
+            i1.claimed = true;
+            i1.claimed_by = Some("@abandoned-dev".to_string());
+            i1.claimed_at = Some(now - chrono::Duration::days(9));
+            i1.pr_url = None;
+        }
+
+        // Issue 2: Claimed 3 days ago (< 7 days), no PR -> should remain claimed
+        if let Some(i2) = state.contributor_issues.iter_mut().find(|i| i.id == "cf-issue-2") {
+            i2.claimed = true;
+            i2.claimed_by = Some("@fresh-dev".to_string());
+            i2.claimed_at = Some(now - chrono::Duration::days(3));
+            i2.pr_url = None;
+        }
+    }
+
+    let unclaimed = check_claim_timeouts_internal(&ctx, 7)
+        .await
+        .expect("check_claim_timeouts_internal failed");
+
+    assert_eq!(unclaimed, vec!["cf-issue-1"]);
+
+    let state = ctx.state.read().await;
+    let i1 = state.contributor_issues.iter().find(|i| i.id == "cf-issue-1").unwrap();
+    let i2 = state.contributor_issues.iter().find(|i| i.id == "cf-issue-2").unwrap();
+
+    assert!(!i1.claimed, "Expired claim should be unclaimed");
+    assert!(i1.claimed_by.is_none());
+    assert!(i1.claimed_at.is_none());
+    assert_eq!(i1.github_sync_status.as_deref(), Some("Unclaimed"));
+
+    assert!(i2.claimed, "Non-expired claim should remain claimed");
+    assert_eq!(i2.claimed_by.as_deref(), Some("@fresh-dev"));
+}
+
+#[tokio::test]
+async fn test_unclaim_with_mock_github_client() {
+    let _lock = GITHUB_ENV_MUTEX.lock().await;
+    use axum::routing::{delete, post};
+    use axum::Router;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let labels_deleted = Arc::new(AtomicUsize::new(0));
+    let assignees_deleted = Arc::new(AtomicUsize::new(0));
+    let comments_posted = Arc::new(AtomicUsize::new(0));
+
+    let l_del = labels_deleted.clone();
+    let a_del = assignees_deleted.clone();
+    let c_post = comments_posted.clone();
+
+    let mock_app = Router::new()
+        .route(
+            "/repos/{owner}/{repo}/issues/{num}/labels/{label}",
+            delete(move || {
+                let hit = l_del.clone();
+                async move {
+                    hit.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        )
+        .route(
+            "/repos/{owner}/{repo}/issues/{num}/assignees",
+            delete(move || {
+                let hit = a_del.clone();
+                async move {
+                    hit.fetch_add(1, Ordering::SeqCst);
+                    Json(serde_json::json!({
+                        "assignees": []
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/repos/{owner}/{repo}/issues/{num}/comments",
+            post(move || {
+                let hit = c_post.clone();
+                async move {
+                    hit.fetch_add(1, Ordering::SeqCst);
+                    (StatusCode::CREATED, Json(serde_json::json!({"id": 202})))
+                }
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    std::env::set_var("GITHUB_API_BASE_URL", format!("http://{}", local_addr));
+
+    let mut ctx_val = (*create_test_context()).clone();
+    ctx_val.config.github_token = Some("ghp_mock_token_456".to_string());
+    let ctx = Arc::new(ctx_val);
+
+    {
+        let mut state = ctx.state.write().await;
+        let issue = state.contributor_issues.iter_mut().find(|i| i.id == "cf-issue-1").unwrap();
+        issue.claimed = true;
+        issue.claimed_by = Some("@mockclaimer".to_string());
+        issue.claimed_at = Some(chrono::Utc::now());
+        issue.github_issue_number = Some(14);
+        issue.github_repo = Some("SpaceCorps/GrowthHack".to_string());
+    }
+
+    let result = unclaim_contributor_issue(
+        State(ctx),
+        Path("cf-issue-1".to_string()),
+    )
+    .await;
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
+
+    assert!(result.is_ok());
+    let (status, Json(unclaimed)) = result.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    assert!(!unclaimed.claimed);
+    assert_eq!(unclaimed.github_sync_status.as_deref(), Some("Unclaimed"));
+
+    assert_eq!(labels_deleted.load(Ordering::SeqCst), 1, "DELETE /labels/claimed should be called");
+    assert_eq!(assignees_deleted.load(Ordering::SeqCst), 1, "DELETE /assignees should be called");
+    assert_eq!(comments_posted.load(Ordering::SeqCst), 1, "POST /comments notification should be called");
+}
+
+#[tokio::test]
+async fn test_remove_issue_label_client_mock() {
+    use axum::routing::delete;
+    use axum::Router;
+    use growthhack_backend::api::submission::GitHubClient;
+
+    let app = Router::new().route(
+        "/repos/{owner}/{repo}/issues/{issue_number}/labels/{label}",
+        delete(
+            |axum::extract::Path((owner, repo, issue_number, label)): axum::extract::Path<(
+                String,
+                String,
+                u64,
+                String,
+            )>| async move {
+                assert_eq!(owner, "SpaceCorps");
+                assert_eq!(repo, "GrowthHack");
+                assert_eq!(issue_number, 42);
+                assert_eq!(label, "claimed");
+                StatusCode::NO_CONTENT
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let mock_url = format!("http://{}", addr);
+    let client = GitHubClient::with_base_url("mock_token", &mock_url).unwrap();
+
+    let res = client
+        .remove_issue_label("SpaceCorps", "GrowthHack", 42, "claimed")
+        .await;
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+async fn test_search_github_users_empty_or_short_query_returns_empty_array() {
+    let ctx = create_test_context();
+
+    // Empty query
+    let empty_q = GitHubUserSearchQuery { q: "".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(empty_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single whitespace
+    let space_q = GitHubUserSearchQuery { q: "   ".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(space_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single '@' symbol
+    let at_q = GitHubUserSearchQuery { q: "@".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(at_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single character
+    let single_char = GitHubUserSearchQuery { q: "a".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(single_char)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // '@' with single character
+    let at_single_char = GitHubUserSearchQuery { q: "@b".to_string() };
+    let res = search_github_users(State(ctx), Query(at_single_char)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+}
+
+#[tokio::test]
+async fn test_search_github_users_with_mock_github_api() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
+    use axum::extract::Query as AxumQuery;
+    use axum::routing::get;
+    use axum::Router;
+    use std::collections::HashMap;
+
+    let mock_app = Router::new().route(
+        "/search/users",
+        get(|AxumQuery(params): AxumQuery<HashMap<String, String>>| async move {
+            let q = params.get("q").cloned().unwrap_or_default();
+            if q == "ratelimit" {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "message": "API rate limit exceeded",
+                        "documentation_url": "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
+                    })),
+                );
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "total_count": 2,
+                    "incomplete_results": false,
+                    "items": [
+                        {
+                            "login": "octocat",
+                            "id": 1,
+                            "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
+                            "html_url": "https://github.com/octocat"
+                        },
+                        {
+                            "login": "octodog",
+                            "id": 2,
+                            "avatar_url": "https://avatars.githubusercontent.com/u/583232?v=4",
+                            "html_url": "https://github.com/octodog"
+                        }
+                    ]
+                })),
+            )
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    std::env::set_var("GITHUB_API_BASE_URL", format!("http://{}", local_addr));
+
+    let ctx = create_test_context();
+
+    // Test successful search query with leading @
+    let query = GitHubUserSearchQuery {
+        q: "@octo".to_string(),
+    };
+    let res = search_github_users(State(ctx.clone()), Query(query)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert_eq!(users.len(), 2);
+    assert_eq!(
+        users[0],
+        GitHubUserSummary {
+            login: "octocat".to_string(),
+            avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4".to_string(),
+            html_url: "https://github.com/octocat".to_string(),
+        }
+    );
+    assert_eq!(users[1].login, "octodog");
+
+    // Test rate limit handling returns empty vector cleanly
+    let rate_limit_query = GitHubUserSearchQuery {
+        q: "ratelimit".to_string(),
+    };
+    let rate_limit_res = search_github_users(State(ctx), Query(rate_limit_query)).await;
+    assert!(rate_limit_res.is_ok());
+    let Json(empty_users) = rate_limit_res.unwrap();
+    assert!(empty_users.is_empty());
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
 }

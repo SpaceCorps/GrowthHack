@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
-import { ReviewQueue, resetSharedAudioContextForTesting } from "./ReviewQueue";
+import {
+  ReviewQueue,
+  resetSharedAudioContextForTesting,
+  getAutoPostDestination,
+} from "./ReviewQueue";
 import type { ReviewItem } from "../types";
 
 const mockItems: ReviewItem[] = [
@@ -539,5 +543,227 @@ describe("ReviewQueue Component", () => {
     expect(onRefineMock).toHaveBeenCalledTimes(1);
     const updatedPayload = onRefineMock.mock.calls[0][1];
     expect(updatedPayload.status).toBeUndefined();
+  });
+
+  it("refining an approved trend synthesis resets status to Pending when topic or summary/content is modified", async () => {
+    const onRefineMock = vi.fn();
+    const approvedTrend: ReviewItem = {
+      id: "trend-approved-1",
+      type: "trend_synthesis",
+      title: "Original Trend Topic",
+      subtitle: "Sub",
+      channel: "GitHub",
+      summary: "Original trend summary",
+      content: "Original trend content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "trend-1",
+    };
+
+    render(<ReviewQueue items={[approvedTrend]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    const topicInput = screen.getByDisplayValue("Original Trend Topic");
+    fireEvent.change(topicInput, { target: { value: "Updated Trend Topic" } });
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledWith(
+      approvedTrend,
+      expect.objectContaining({
+        title: "Updated Trend Topic",
+        status: "Pending",
+      }),
+    );
+  });
+
+  it("saving trend synthesis refinement without changes preserves existing status", async () => {
+    const onRefineMock = vi.fn();
+    const approvedTrend: ReviewItem = {
+      id: "trend-approved-2",
+      type: "trend_synthesis",
+      title: "Original Trend Topic",
+      subtitle: "Sub",
+      channel: "GitHub",
+      summary: "Original trend summary",
+      content: "Original trend content",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "trend-2",
+    };
+
+    render(<ReviewQueue items={[approvedTrend]} onRefine={onRefineMock} />);
+    fireEvent.click(screen.getByTestId("refine-btn"));
+
+    fireEvent.click(screen.getByText("Save & Update Card"));
+
+    expect(onRefineMock).toHaveBeenCalledTimes(1);
+    const updatedPayload = onRefineMock.mock.calls[0][1];
+    expect(updatedPayload.status).toBeUndefined();
+  });
+
+  describe("Instant Auto-Post", () => {
+    const listingItem: ReviewItem = {
+      id: "item-listing-1",
+      type: "listing_blurb",
+      title: "Awesome Repo Submission",
+      subtitle: "Directory PR",
+      channel: "GitHub PR",
+      summary: "Blurb for directory listing.",
+      content: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)",
+      backlinks: [],
+      citations: [],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "listing-1",
+    };
+
+    it("renders the auto-post toggle enabled by default with no stored preference", () => {
+      render(<ReviewQueue items={mockItems} />);
+
+      const toggleBtn = screen.getByTestId("auto-post-toggle-btn");
+      expect(toggleBtn).toBeDefined();
+      expect(screen.getByText("Instant Auto-Post")).toBeDefined();
+    });
+
+    it("approving with auto-post enabled calls onApprove and onAutoPost with the article item", async () => {
+      const onApprove = vi.fn();
+      const onAutoPost = vi.fn().mockResolvedValue(undefined);
+      render(<ReviewQueue items={mockItems} onApprove={onApprove} onAutoPost={onAutoPost} />);
+
+      fireEvent.click(screen.getByTestId("approve-btn"));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+
+      expect(onApprove).toHaveBeenCalledTimes(1);
+      expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
+      expect(onAutoPost).toHaveBeenCalledTimes(1);
+      expect(onAutoPost).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
+    });
+
+    it("toggling auto-post off before approving calls onApprove and not onAutoPost", async () => {
+      const onApprove = vi.fn();
+      const onAutoPost = vi.fn().mockResolvedValue(undefined);
+      render(<ReviewQueue items={mockItems} onApprove={onApprove} onAutoPost={onAutoPost} />);
+
+      fireEvent.click(screen.getByTestId("auto-post-toggle-btn"));
+      expect(screen.getByText("Manual Publish")).toBeDefined();
+
+      fireEvent.click(screen.getByTestId("approve-btn"));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+
+      expect(onApprove).toHaveBeenCalledTimes(1);
+      expect(onAutoPost).not.toHaveBeenCalled();
+    });
+
+    it("toggling auto-post writes to localStorage and a fresh render rehydrates the off state", () => {
+      const { unmount } = render(<ReviewQueue items={mockItems} />);
+
+      fireEvent.click(screen.getByTestId("auto-post-toggle-btn"));
+      expect(localStorage.getItem("growth_review_auto_post_enabled")).toBe("false");
+
+      unmount();
+      render(<ReviewQueue items={mockItems} />);
+      expect(screen.getByText("Manual Publish")).toBeDefined();
+    });
+
+    it("shows the correct auto-post destination badge per item type, hidden when disabled", () => {
+      expect(getAutoPostDestination("article")).toBe("Ivy Web");
+      expect(getAutoPostDestination("listing_blurb")).toBe("Upstream PR");
+      expect(getAutoPostDestination("video_demo")).toBe("Platform Assets");
+      expect(getAutoPostDestination("trend_synthesis")).toBe("Platform Assets");
+
+      const { unmount } = render(<ReviewQueue items={[listingItem]} />);
+      expect(screen.getByTestId("auto-post-destination-badge").textContent).toContain(
+        "Upstream PR",
+      );
+      unmount();
+
+      render(<ReviewQueue items={mockItems} />);
+      fireEvent.click(screen.getByTestId("auto-post-toggle-btn"));
+      expect(screen.queryByTestId("auto-post-destination-badge")).toBeNull();
+    });
+
+    it("pointer drag past +120px dispatches auto-post via the gesture path", async () => {
+      const onApprove = vi.fn();
+      const onAutoPost = vi.fn().mockResolvedValue(undefined);
+      render(<ReviewQueue items={mockItems} onApprove={onApprove} onAutoPost={onAutoPost} />);
+
+      const card = screen.getByTestId("active-card");
+      fireEvent.pointerDown(card, { clientX: 100, clientY: 100, button: 0 });
+      fireEvent.pointerMove(card, { clientX: 250, clientY: 100 });
+      fireEvent.pointerUp(card, { clientX: 250, clientY: 100 });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+
+      expect(onApprove).toHaveBeenCalledTimes(1);
+      expect(onAutoPost).toHaveBeenCalledTimes(1);
+      expect(onAutoPost).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
+    });
+
+    it("shows the dispatching then dispatched toast, clears after 2500ms, and increments the auto-posted count", async () => {
+      let resolveAutoPost: () => void = () => {};
+      const onAutoPost = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveAutoPost = resolve;
+          }),
+      );
+      render(<ReviewQueue items={mockItems} onAutoPost={onAutoPost} />);
+
+      fireEvent.click(screen.getByTestId("approve-btn"));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(screen.getByTestId("auto-post-toast").textContent).toContain("Dispatching to Ivy Web");
+
+      await act(async () => {
+        resolveAutoPost();
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId("auto-post-toast").textContent).toContain("Dispatched to Ivy Web");
+      expect(screen.getByTestId("auto-posted-count").textContent).toContain("1");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(screen.queryByTestId("auto-post-toast")).toBeNull();
+    });
+
+    it("renders the failure toast when onAutoPost rejects, without throwing out of the component", async () => {
+      const onAutoPost = vi.fn().mockRejectedValue(new Error("dispatch failed"));
+      render(<ReviewQueue items={mockItems} onAutoPost={onAutoPost} />);
+
+      fireEvent.click(screen.getByTestId("approve-btn"));
+
+      await expect(
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(200);
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(screen.getByTestId("auto-post-toast").textContent).toContain("Auto-post failed");
+    });
+
+    it("excludes a Published item from the pending deck and includes it in the export count", () => {
+      const publishedItem: ReviewItem = { ...mockItems[0], status: "Published" };
+      render(<ReviewQueue items={[publishedItem, mockItems[1]]} />);
+
+      expect(screen.queryByText(publishedItem.title)).toBeNull();
+      expect(screen.getByText("From GitHub Issue to Verified Pull Request")).toBeDefined();
+      expect(screen.getByText("Export Approved (1)")).toBeDefined();
+    });
   });
 });

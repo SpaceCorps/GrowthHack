@@ -52,6 +52,24 @@ const mockIssues: ContributorIssue[] = [
     github_sync_status: "Synced",
     github_sync_message: "Assigned to @test-dev with claimed label",
   },
+  {
+    id: "cf-issue-4",
+    title: "Document webhook endpoints",
+    description: "Write developer docs for GitHub webhook endpoints.",
+    category: "Documentation",
+    difficulty: "Good First Issue",
+    estimated_minutes: 10,
+    affected_files: ["docs/webhooks.md"],
+    reproduction_steps: ["Open docs"],
+    mentor: "@alex-spacecorps",
+    claimed: false,
+    closed: true,
+    closed_at: "2026-09-11T00:00:00Z",
+    github_issue_number: 105,
+    github_repo: "SpaceCorps/GrowthHack",
+    github_sync_status: "Closed (Webhook)",
+    github_sync_message: "Issue #105 was closed externally on GitHub",
+  },
 ];
 
 const mockGuide: ContributingGuideResponse = {
@@ -150,6 +168,19 @@ const mockVerifyResponse = {
   },
 };
 
+const mockGitHubUsers = [
+  {
+    login: "octocat",
+    avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4",
+    html_url: "https://github.com/octocat",
+  },
+  {
+    login: "octodog",
+    avatar_url: "https://avatars.githubusercontent.com/u/583232?v=4",
+    html_url: "https://github.com/octodog",
+  },
+];
+
 describe("ContributorFlywheel View", () => {
   beforeEach(() => {
     // Mock clipboard
@@ -175,6 +206,25 @@ describe("ContributorFlywheel View", () => {
 
     // Mock fetch
     global.fetch = vi.fn().mockImplementation((url: string, _options?: RequestInit) => {
+      if (url.includes("/api/contributors/github-users")) {
+        if (url.includes("error")) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () => Promise.resolve({ error: "Rate limit or GitHub API error" }),
+          });
+        }
+        if (url.includes("empty")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockGitHubUsers),
+        });
+      }
       if (url.includes("/api/contributors/verify")) {
         return Promise.resolve({
           ok: true,
@@ -203,6 +253,32 @@ describe("ContributorFlywheel View", () => {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(mockContributors),
+        });
+      }
+      if (url.includes("/unclaim")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...mockIssues[2],
+              claimed: false,
+              claimed_by: undefined,
+              claimed_at: undefined,
+              github_sync_status: "Unclaimed",
+              github_sync_message: "Claim released manually",
+            }),
+        });
+      }
+      if (url.includes("/check-timeouts")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              unclaimed_count: 1,
+              unclaimed_issue_ids: ["cf-issue-3"],
+              message: "Timeouts evaluated",
+            }),
         });
       }
       if (url.includes("/claim")) {
@@ -479,5 +555,258 @@ describe("ContributorFlywheel View", () => {
     // Close modal
     const finishBtn = screen.getByTestId("finish-verify-btn");
     fireEvent.click(finishBtn);
+  });
+
+  it("triggers debounced fetch to /api/contributors/github-users when typing into handle input", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    expect(screen.getByText("Claim Good First Issue")).toBeDefined();
+
+    const handleInput = screen.getByTestId("claim-handle-input");
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=octo");
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it("renders matching avatar, login handle, and profile link in user suggestions", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input");
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    expect(suggestion0.textContent).toContain("@octocat");
+
+    const img = suggestion0.querySelector("img") as HTMLImageElement;
+    expect(img).toBeDefined();
+    expect(img.src).toBe("https://avatars.githubusercontent.com/u/583231?v=4");
+
+    const link = suggestion0.querySelector("a") as HTMLAnchorElement;
+    expect(link).toBeDefined();
+    expect(link.href).toBe("https://github.com/octocat");
+
+    const suggestion1 = screen.getByTestId("claim-handle-suggestion-1");
+    expect(suggestion1.textContent).toContain("@octodog");
+  });
+
+  it("populates handle input and autofills contributorName upon clicking a suggestion", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const nameInput = screen.getByTestId("claim-name-input") as HTMLInputElement;
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    expect(nameInput.value).toBe("");
+
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-suggestion-0")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    fireEvent.click(suggestion0);
+
+    expect(handleInput.value).toBe("@octocat");
+    expect(nameInput.value).toBe("octocat");
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
+
+  it("supports keyboard navigation (ArrowDown, Enter, Escape) in suggestion list", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    // ArrowDown once to highlight first item (@octocat)
+    fireEvent.keyDown(handleInput, { key: "ArrowDown" });
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    expect(suggestion0.className).toContain("bg-cyan-600/30");
+
+    // ArrowDown again to highlight second item (@octodog)
+    fireEvent.keyDown(handleInput, { key: "ArrowDown" });
+    const suggestion1 = screen.getByTestId("claim-handle-suggestion-1");
+    expect(suggestion1.className).toContain("bg-cyan-600/30");
+
+    // Enter to select currently highlighted suggestion
+    fireEvent.keyDown(handleInput, { key: "Enter" });
+    expect(handleInput.value).toBe("@octodog");
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+
+    // Type again to reopen and test Escape dismissal
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    fireEvent.keyDown(handleInput, { key: "Escape" });
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
+
+  it("handles empty or error response gracefully from user search endpoint", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    // Test query returning empty list
+    fireEvent.change(handleInput, { target: { value: "empty" } });
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=empty");
+      },
+      { timeout: 2000 },
+    );
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+
+    // Test query resulting in endpoint error
+    fireEvent.change(handleInput, { target: { value: "error" } });
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=error");
+      },
+      { timeout: 2000 },
+    );
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
+  it("renders claim timeout countdown badge on claimed issue and handles timeout due", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-timeout-badge-cf-issue-3")).toBeDefined();
+    });
+
+    const badge = screen.getByTestId("claim-timeout-badge-cf-issue-3");
+    expect(badge.textContent).toMatch(/(days? left before timeout|Timeout due)/);
+  });
+
+  it("handles manual unclaim button click", async () => {
+    const onIssueClaimed = vi.fn();
+    render(<ContributorFlywheel onIssueClaimed={onIssueClaimed} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("unclaim-btn-cf-issue-3")).toBeDefined();
+    });
+
+    const unclaimBtn = screen.getByTestId("unclaim-btn-cf-issue-3");
+    fireEvent.click(unclaimBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/cf-issue-3/unclaim",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(onIssueClaimed).toHaveBeenCalled();
+    });
+  });
+
+  it("handles Check Timeouts toolbar button click", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-timeouts-btn")).toBeDefined();
+    });
+
+    const checkBtn = screen.getByTestId("check-timeouts-btn");
+    fireEvent.click(checkBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/check-timeouts",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
+
+  it("renders closed issue with Closed on GitHub badge and disabled claim button", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("closed-badge-cf-issue-4")).toBeDefined();
+    });
+
+    const badge = screen.getByTestId("closed-badge-cf-issue-4");
+    expect(badge.textContent).toContain("Closed on GitHub");
+
+    const claimBtn = screen.getByTestId("claim-btn-cf-issue-4") as HTMLButtonElement;
+    expect(claimBtn.disabled).toBe(true);
+    expect(claimBtn.title).toBe("This issue is closed on GitHub");
+  });
+
+  it("filters issues correctly by closed status", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Document webhook endpoints")).toBeDefined();
+    });
+
+    const statusSelect = screen.getByTestId("status-filter-select");
+    fireEvent.change(statusSelect, { target: { value: "closed" } });
+
+    expect(screen.getByText("Document webhook endpoints")).toBeDefined();
+    expect(screen.queryByText("Add CLI shell completion for zsh")).toBeNull();
+    expect(screen.queryByText("Improve empty state message on Plan Review view")).toBeNull();
+  });
+
+  it("displays claim button on unassigned issues", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    const claimBtn = screen.getByTestId("claim-btn-cf-issue-1") as HTMLButtonElement;
+    expect(claimBtn.disabled).toBe(false);
+    expect(claimBtn.textContent).toContain("Claim Issue");
   });
 });

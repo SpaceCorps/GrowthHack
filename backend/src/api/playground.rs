@@ -1,6 +1,7 @@
 use crate::api::AppContext;
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::IntoResponse,
     Json,
 };
@@ -31,6 +32,10 @@ pub struct PlaygroundScenario {
     pub file_tree: Vec<WorktreeFileNode>,
     pub diff: String,
     pub pr_summary: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub issue_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -53,7 +58,7 @@ pub struct VerificationGateItem {
 pub struct PlaygroundRunState {
     pub id: String,
     pub scenario_id: String,
-    pub status: String, // "Idle", "Running", "Completed", "Failed"
+    pub status: String,      // "Idle", "Running", "Completed", "Failed"
     pub current_step: usize, // 1: Intake, 2: Worktree, 3: Verification, 4: PR & Diff
     pub step_progress_pct: u32,
     pub logs: Vec<String>,
@@ -73,6 +78,24 @@ pub struct StartPlaygroundRequest {
 #[derive(Deserialize, Default)]
 pub struct ScenarioQuery {
     pub scenario_id: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct PlaygroundFileQuery {
+    pub scenario_id: Option<String>,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlaygroundFileResponse {
+    pub scenario_id: String,
+    pub path: String,
+    pub name: String,
+    pub status: String, // "Created", "Modified", "Unchanged"
+    pub content: String,
+    pub file_diff: Option<String>,
+    pub language: String,
+    pub line_count: usize,
 }
 
 #[derive(Serialize)]
@@ -106,7 +129,8 @@ fn get_playground_state() -> Arc<RwLock<PlaygroundRunState>> {
                 step_progress_pct: 0,
                 logs: vec![
                     "tendril.run interactive browser sandbox ready.".to_string(),
-                    "Select a scenario or import a GitHub issue to test the 30-second loop.".to_string(),
+                    "Select a scenario or import a GitHub issue to test the 30-second loop."
+                        .to_string(),
                 ],
                 verification_gates: default_verification_gates(),
                 diff_preview: None,
@@ -310,6 +334,8 @@ Implemented lightweight `/api/health` diagnostic route returning system status, 
 - Executed in ephemeral worktree: `.tendril/Worktrees/growthhack-demo`
 - Base commit: `origin/master` (0 conflicts)
 "#.to_string(),
+            labels: vec!["backend".to_string(), "api".to_string(), "metrics".to_string()],
+            issue_url: None,
         },
         PlaygroundScenario {
             id: "scenario-rate-limiter".to_string(),
@@ -396,6 +422,8 @@ Integrated Tower RateLimitLayer enforcing a 100 req/min threshold across public 
 - **NpmBuild**: Clean
 - **CheckResult**: Verified.
 "#.to_string(),
+            labels: vec!["backend".to_string(), "middleware".to_string(), "security".to_string()],
+            issue_url: None,
         },
         PlaygroundScenario {
             id: "scenario-terminal-theme".to_string(),
@@ -456,6 +484,8 @@ Enhanced terminal theme with accessibility-focused color contrast and Tailwind C
 - **Screenshots**: Captured UI verification evidence.
 - **CheckResult**: Verified.
 "#.to_string(),
+            labels: vec!["frontend".to_string(), "ui".to_string(), "accessibility".to_string()],
+            issue_url: None,
         },
     ]
 }
@@ -467,14 +497,109 @@ pub async fn list_scenarios() -> impl IntoResponse {
     Json(all)
 }
 
+#[derive(Deserialize, Debug)]
+struct GitHubLabel {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct GitHubIssueMetadata {
+    title: String,
+    body: Option<String>,
+    #[serde(default)]
+    labels: Vec<GitHubLabel>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    html_url: Option<String>,
+}
+
+pub fn parse_github_issue_url(url: &str) -> Option<(String, String, u64)> {
+    let clean_url = url.trim();
+    let after_scheme = if let Some(stripped) = clean_url.strip_prefix("https://") {
+        stripped
+    } else if let Some(stripped) = clean_url.strip_prefix("http://") {
+        stripped
+    } else {
+        clean_url
+    };
+
+    let without_anchor = after_scheme.split('#').next().unwrap_or(after_scheme);
+    let without_query = without_anchor.split('?').next().unwrap_or(without_anchor);
+    let trimmed = without_query.trim_end_matches('/');
+
+    let parts: Vec<&str> = trimmed.split('/').collect();
+    let domain_idx = parts
+        .iter()
+        .position(|&p| p == "github.com" || p == "www.github.com")?;
+    if parts.len() >= domain_idx + 5 {
+        let owner = parts[domain_idx + 1];
+        let repo = parts[domain_idx + 2];
+        let issues_segment = parts[domain_idx + 3];
+        let num_str = parts[domain_idx + 4];
+
+        if issues_segment == "issues" && !owner.is_empty() && !repo.is_empty() {
+            if let Ok(issue_num) = num_str.parse::<u64>() {
+                return Some((owner.to_string(), repo.to_string(), issue_num));
+            }
+        }
+    }
+    None
+}
+
+async fn fetch_github_issue_metadata(
+    owner: &str,
+    repo: &str,
+    issue_number: u64,
+    token: &str,
+) -> Result<GitHubIssueMetadata, reqwest::Error> {
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let res = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "GrowthHack-Playground/0.1.0")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?;
+
+    if !res.status().is_success() {
+        return Err(res.error_for_status().unwrap_err());
+    }
+
+    res.json::<GitHubIssueMetadata>().await
+}
+
 pub async fn import_issue(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<ImportIssueRequest>,
 ) -> impl IntoResponse {
     let issue_id = format!("custom-{}", Uuid::new_v4().simple());
+
+    let parsed_coords = payload
+        .issue_url
+        .as_deref()
+        .and_then(parse_github_issue_url);
+    let mut live_metadata: Option<GitHubIssueMetadata> = None;
+
+    if let Some((ref owner, ref repo, issue_num)) = parsed_coords {
+        if let Some(token) = ctx.get_github_token() {
+            if let Ok(meta) = fetch_github_issue_metadata(owner, repo, issue_num, &token).await {
+                live_metadata = Some(meta);
+            }
+        }
+    }
+
+    let labels: Vec<String> = live_metadata
+        .as_ref()
+        .map(|m| m.labels.iter().map(|l| l.name.clone()).collect())
+        .unwrap_or_default();
+
     let title = payload
         .title
         .filter(|t| !t.trim().is_empty())
+        .or_else(|| live_metadata.as_ref().map(|m| m.title.clone()))
         .or_else(|| {
             payload.issue_url.as_ref().map(|url| {
                 let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
@@ -491,12 +616,48 @@ pub async fn import_issue(
         .description
         .filter(|d| !d.trim().is_empty())
         .or_else(|| {
+            live_metadata
+                .as_ref()
+                .and_then(|m| m.body.clone())
+                .filter(|b| !b.trim().is_empty())
+                .map(|b| {
+                    if b.len() > 500 {
+                        format!("{}...", &b[..500])
+                    } else {
+                        b
+                    }
+                })
+        })
+        .or_else(|| {
             payload
                 .issue_url
                 .as_ref()
                 .map(|url| format!("Autonomous implementation synthesized from issue: {}", url))
         })
-        .unwrap_or_else(|| "Simulated custom developer workflow and test verification.".to_string());
+        .unwrap_or_else(|| {
+            "Simulated custom developer workflow and test verification.".to_string()
+        });
+
+    let label_lines = if labels.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n## Labels\n{}\n",
+            labels
+                .iter()
+                .map(|l| format!("- `{}`", l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    let diff_labels_comment = if labels.is_empty() {
+        String::new()
+    } else {
+        format!("\n// Labels: [{}]", labels.join(", "))
+    };
+
+    let issue_url = payload.issue_url.clone();
 
     let scenario = PlaygroundScenario {
         id: issue_id.clone(),
@@ -559,16 +720,18 @@ index 0000000..8a9b1c2
 --- /dev/null
 +++ b/backend/src/api/feature.rs
 @@ -0,0 +1,15 @@
-+// Feature implementation for {}
++// Feature implementation for {}{}
 +pub fn execute_feature() -> bool {{
 +    true
 +}}"#,
-            title
+            title, diff_labels_comment
         ),
         pr_summary: format!(
-            "# Pull Request: {}\n\n## Changes\n{}\n\n## Verifications Passed\n- RustClippy: Pass\n- RustTest: Pass\n- NpmLint: Pass\n- CheckResult: Pass\n",
-            title, description
+            "# Pull Request: {}\n\n## Changes\n{}\n{}\n## Verifications Passed\n- RustClippy: Pass\n- RustTest: Pass\n- NpmLint: Pass\n- CheckResult: Pass\n",
+            title, description, label_lines
         ),
+        labels,
+        issue_url,
     };
 
     {
@@ -652,9 +815,14 @@ pub async fn start_simulation(
         s.step_progress_pct = 25;
         s.speed_multiplier = speed;
         s.logs = vec![
-            format!("[00:01] Initializing Tendril autonomous agent for '{}'...", active_scenario.title),
-            "[00:03] Step 1/4 (Intake): Analyzing task specification and acceptance criteria...".to_string(),
-            "[00:05] Step 1/4 (Intake): Target branch identified as 'master'. Plan validated.".to_string(),
+            format!(
+                "[00:01] Initializing Tendril autonomous agent for '{}'...",
+                active_scenario.title
+            ),
+            "[00:03] Step 1/4 (Intake): Analyzing task specification and acceptance criteria..."
+                .to_string(),
+            "[00:05] Step 1/4 (Intake): Target branch identified as 'master'. Plan validated."
+                .to_string(),
         ];
         s.verification_gates = default_verification_gates();
         s.diff_preview = None;
@@ -683,7 +851,10 @@ pub async fn start_simulation(
             s.step_progress_pct = 50;
             s.elapsed_seconds = 14.8;
             s.logs.push("[00:10] Step 2/4 (Worktree): Provisioning ephemeral git worktree at 'Worktrees/spacecorps/growthhack'...".to_string());
-            s.logs.push(format!("[00:13] Step 2/4 (Worktree): Checked out branch 'tendril/{}' from origin/master.", scenario_for_bg.id));
+            s.logs.push(format!(
+                "[00:13] Step 2/4 (Worktree): Checked out branch 'tendril/{}' from origin/master.",
+                scenario_for_bg.id
+            ));
             s.logs.push("[00:15] Step 2/4 (Worktree): Zero uncommitted changes. Worktree sandbox isolation confirmed.".to_string());
             for gate in &mut s.verification_gates {
                 gate.status = "Running".to_string();
@@ -701,7 +872,10 @@ pub async fn start_simulation(
             s.current_step = 3;
             s.step_progress_pct = 75;
             s.elapsed_seconds = 23.4;
-            s.logs.push("[00:18] Step 3/4 (Verification Gates): Running automated test and lint suite...".to_string());
+            s.logs.push(
+                "[00:18] Step 3/4 (Verification Gates): Running automated test and lint suite..."
+                    .to_string(),
+            );
             s.logs.push("[00:20] Step 3/4 (Verification Gates): RustClippy -> cargo clippy -- -D warnings [PASS]".to_string());
             s.logs.push("[00:22] Step 3/4 (Verification Gates): RustTest -> cargo test [PASS: 36 passed, 0 failed]".to_string());
             s.logs.push("[00:24] Step 3/4 (Verification Gates): NpmLint -> vp check [PASS: clean formatting]".to_string());
@@ -711,9 +885,12 @@ pub async fn start_simulation(
                 gate.status = "Passed".to_string();
                 gate.duration_ms = 850 + (idx as u64 * 320);
                 gate.output = match gate.name.as_str() {
-                    "RustClippy" => "cargo clippy -- -D warnings: 0 warnings, clean build.".to_string(),
+                    "RustClippy" => {
+                        "cargo clippy -- -D warnings: 0 warnings, clean build.".to_string()
+                    }
                     "RustTest" => "cargo test: 36 passed, 0 failed, 0 filtered out.".to_string(),
-                    "NpmLint" => "vp fmt --check && vp lint: 0 errors found in TypeScript modules.".to_string(),
+                    "NpmLint" => "vp fmt --check && vp lint: 0 errors found in TypeScript modules."
+                        .to_string(),
                     "NpmBuild" => "vp build: Production bundle generated successfully.".to_string(),
                     _ => "All verification criteria passed without defects.".to_string(),
                 };
@@ -731,10 +908,22 @@ pub async fn start_simulation(
             s.step_progress_pct = 100;
             s.status = "Completed".to_string();
             s.elapsed_seconds = 28.6;
-            s.logs.push(format!("[00:27] Step 4/4 (PR & Diff): Generating commit for '{}'...", scenario_for_bg.title));
-            s.logs.push("[00:28] Step 4/4 (PR & Diff): Unified Git diff preview synthesized cleanly.".to_string());
-            s.logs.push("[00:29] Step 4/4 (PR & Diff): Pull request opened with 0 merge conflicts.".to_string());
-            s.logs.push("[00:30] Workflow execution completed successfully in 28.6s! All 5 gates green.".to_string());
+            s.logs.push(format!(
+                "[00:27] Step 4/4 (PR & Diff): Generating commit for '{}'...",
+                scenario_for_bg.title
+            ));
+            s.logs.push(
+                "[00:28] Step 4/4 (PR & Diff): Unified Git diff preview synthesized cleanly."
+                    .to_string(),
+            );
+            s.logs.push(
+                "[00:29] Step 4/4 (PR & Diff): Pull request opened with 0 merge conflicts."
+                    .to_string(),
+            );
+            s.logs.push(
+                "[00:30] Workflow execution completed successfully in 28.6s! All 5 gates green."
+                    .to_string(),
+            );
             s.diff_preview = Some(scenario_for_bg.diff.clone());
             s.pr_summary = Some(scenario_for_bg.pr_summary.clone());
         }
@@ -800,6 +989,331 @@ pub async fn get_diff(Query(query): Query<ScenarioQuery>) -> impl IntoResponse {
     })
 }
 
+fn find_file_node<'a>(
+    tree: &'a [WorktreeFileNode],
+    target_path: &str,
+) -> Option<&'a WorktreeFileNode> {
+    for node in tree {
+        if node.path == target_path && !node.is_dir {
+            return Some(node);
+        }
+        if let Some(ref children) = node.children {
+            if let Some(found) = find_file_node(children, target_path) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn infer_language(path: &str) -> String {
+    if path.ends_with(".rs") {
+        "rust".to_string()
+    } else if path.ends_with(".toml") {
+        "toml".to_string()
+    } else if path.ends_with(".json") {
+        "json".to_string()
+    } else if path.ends_with(".ts") || path.ends_with(".tsx") {
+        "typescript".to_string()
+    } else if path.ends_with(".js") || path.ends_with(".jsx") {
+        "javascript".to_string()
+    } else if path.ends_with(".md") {
+        "markdown".to_string()
+    } else if path.ends_with(".html") {
+        "html".to_string()
+    } else if path.ends_with(".css") {
+        "css".to_string()
+    } else {
+        "plaintext".to_string()
+    }
+}
+
+fn extract_file_diff(full_diff: &str, path: &str) -> Option<String> {
+    let header = format!("diff --git a/{} b/{}", path, path);
+    if let Some(start_idx) = full_diff.find(&header) {
+        let after_start = &full_diff[start_idx..];
+        let end_idx = after_start[header.len()..]
+            .find("\ndiff --git ")
+            .map(|i| header.len() + i)
+            .unwrap_or(after_start.len());
+        Some(after_start[..end_idx].trim().to_string())
+    } else {
+        None
+    }
+}
+
+pub fn get_simulated_file_content(
+    scenario: &PlaygroundScenario,
+    path: &str,
+) -> Option<PlaygroundFileResponse> {
+    let node = find_file_node(&scenario.file_tree, path)?;
+    let name = node.name.clone();
+    let status = node.status.clone();
+    let language = infer_language(path);
+
+    let content = match (scenario.id.as_str(), path) {
+        ("scenario-health-check", "backend/src/api/health.rs") => {
+            r#"use axum::{response::IntoResponse, Json};
+use serde::Serialize;
+use std::time::Instant;
+
+#[derive(Serialize)]
+pub struct HealthResponse {
+    pub status: &'static str,
+    pub uptime_seconds: u64,
+    pub version: &'static str,
+}
+
+static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+pub async fn health_check() -> impl IntoResponse {
+    let start = START_TIME.get_or_init(Instant::now);
+    Json(HealthResponse {
+        status: "healthy",
+        uptime_seconds: start.elapsed().as_secs(),
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/tests/health_test.rs") => {
+            r#"use growthhack_backend::api::health::health_check;
+
+#[tokio::test]
+async fn test_health_check_returns_ok() {
+    let response = health_check().await;
+    assert_eq!(response.status, "healthy");
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/Cargo.toml") => {
+            r#"[package]
+name = "growthhack-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/src/api/mod.rs") => {
+            r#"pub mod health;
+pub mod playground;
+
+use axum::{routing::get, Router};
+use std::sync::Arc;
+
+pub fn router(ctx: Arc<AppContext>) -> Router {
+    Router::new()
+        .route("/api/health", get(health::health_check))
+        .route("/api/playground/scenarios", get(playground::list_scenarios))
+        .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
+        .with_state(ctx)
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "backend/src/main.rs") => {
+            r#"use axum::Router;
+use std::net::SocketAddr;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new("info"))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app = Router::new().nest("/api", growthhack_backend::api::router(ctx));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 4200));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+"#
+            .to_string()
+        }
+        ("scenario-health-check", "frontend/package.json") => {
+            r#"{
+  "name": "growthhack-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "tsc && vp build",
+    "preview": "vp preview",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "lucide-react": "^1.43.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.3",
+    "vite-plus": "^0.3.0"
+  }
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/src/middleware/rate_limit.rs") => {
+            r#"use tower::limit::RateLimitLayer;
+use std::time::Duration;
+
+pub fn build_rate_limiter() -> RateLimitLayer {
+    RateLimitLayer::new(100, Duration::from_secs(60))
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/tests/rate_limit_test.rs") => {
+            r#"use growthhack_backend::middleware::rate_limit::build_rate_limiter;
+
+#[tokio::test]
+async fn test_rate_limiter_allows_under_threshold() {
+    let limiter = build_rate_limiter();
+    assert_eq!(limiter.num_requests(), 0);
+}
+"#
+            .to_string()
+        }
+        ("scenario-rate-limiter", "backend/src/main.rs") => {
+            r#"use axum::Router;
+use growthhack_backend::middleware::rate_limit::build_rate_limiter;
+
+#[tokio::main]
+async fn main() {
+    let limiter = build_rate_limiter();
+    let app = Router::new().layer(limiter);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:4200").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+"#
+            .to_string()
+        }
+        ("scenario-terminal-theme", "frontend/src/components/LiveTerminal.tsx") => {
+            r#"import React from "react";
+
+export const HighContrastTheme = {
+  bg: "bg-slate-950 border-emerald-500/50",
+  text: "text-emerald-400 font-mono tracking-tight",
+};
+
+export const LiveTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
+  return (
+    <div className={`p-4 rounded-xl border ${HighContrastTheme.bg}`}>
+      {logs.map((log, i) => (
+        <div key={i} className={HighContrastTheme.text}>
+          &gt; {log}
+        </div>
+      ))}
+    </div>
+  );
+};
+"#
+            .to_string()
+        }
+        (_, "backend/src/api/feature.rs") => format!(
+            "// Feature implementation for {}\npub fn execute_feature() -> bool {{\n    true\n}}\n",
+            scenario.title
+        ),
+        (_, "backend/tests/feature_test.rs") => format!(
+            "// Integration test for {}\n#[test]\nfn test_feature_execution() {{\n    assert!(true);\n}}\n",
+            scenario.title
+        ),
+        _ => match language.as_str() {
+            "rust" => {
+                format!("// {}\npub fn handler() {{\n    // Simulated implementation\n}}\n", path)
+            }
+            "typescript" => {
+                format!("// {}\nexport const Component = () => {{\n  return null;\n}};\n", path)
+            }
+            "toml" => format!("# {}\n[package]\nname = \"growthhack-backend\"\n", path),
+            "json" => "{\n  \"name\": \"growthhack\"\n}\n".to_string(),
+            _ => format!("// Content of {}\n", path),
+        },
+    };
+
+    let file_diff = if status == "Unchanged" {
+        None
+    } else {
+        extract_file_diff(&scenario.diff, path)
+    };
+
+    let line_count = content.lines().count().max(1);
+
+    Some(PlaygroundFileResponse {
+        scenario_id: scenario.id.clone(),
+        path: path.to_string(),
+        name,
+        status,
+        content,
+        file_diff,
+        language,
+        line_count,
+    })
+}
+
+pub async fn get_file_content(
+    Query(query): Query<PlaygroundFileQuery>,
+) -> impl IntoResponse {
+    let scenario_id = query
+        .scenario_id
+        .clone()
+        .unwrap_or_else(|| "scenario-health-check".to_string());
+
+    let all_scenarios = {
+        let mut list = curated_scenarios();
+        let custom = get_custom_scenarios().read().await.clone();
+        list.extend(custom);
+        list
+    };
+
+    let scenario = match all_scenarios.into_iter().find(|s| s.id == scenario_id) {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": format!("Scenario '{}' not found", scenario_id)
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match get_simulated_file_content(&scenario, &query.path) {
+        Some(file_resp) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(file_resp).unwrap()),
+        )
+            .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": format!("File '{}' not found in scenario '{}'", query.path, scenario_id)
+            })),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn get_metrics(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
     let state = ctx.state.read().await;
     Json(state.playground_metrics.clone())
@@ -813,9 +1327,16 @@ pub async fn record_star_click(State(ctx): State<Arc<AppContext>>) -> impl IntoR
     Json(state.playground_metrics.clone())
 }
 
-pub async fn get_banner_info() -> impl IntoResponse {
+pub async fn get_banner_info(Query(query): Query<ScenarioQuery>) -> impl IntoResponse {
+    let slug = query
+        .scenario_id
+        .as_deref()
+        .map(|s| s.strip_prefix("scenario-").unwrap_or(s))
+        .filter(|s| !s.is_empty())
+        .unwrap_or("health-check");
+
     let badge_url = "https://img.shields.io/badge/Try%20Tendril-30s%20Interactive%20Playground-06b6d4?style=for-the-badge&logo=visualstudiocode&logoColor=white";
-    let target_url = "https://tendril.run/playground";
+    let target_url = format!("https://tendril.run/#scenario={}", slug);
     let markdown_snippet = format!(
         "[![Try Tendril in 30 Seconds]({})]({})",
         badge_url, target_url
@@ -835,7 +1356,7 @@ pub async fn get_banner_info() -> impl IntoResponse {
     Json(BannerEmbedInfo {
         title: "Try Tendril in 30 Seconds Embed Banner".to_string(),
         badge_url: badge_url.to_string(),
-        target_url: target_url.to_string(),
+        target_url,
         markdown_snippet,
         html_snippet,
         raw_svg,

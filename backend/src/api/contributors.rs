@@ -3,7 +3,7 @@ use crate::api::submission::GitHubClient;
 use crate::db::{AllContributorsConfig, AllContributorsEntry, ContributorIssue, ContributorRecord};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
@@ -16,6 +16,19 @@ pub struct ContributorIssuesQuery {
     pub difficulty: Option<String>,
     pub claimed: Option<bool>,
     pub max_time: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct GitHubUserSearchQuery {
+    #[serde(default)]
+    pub q: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitHubUserSummary {
+    pub login: String,
+    pub avatar_url: String,
+    pub html_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -96,6 +109,57 @@ pub struct GenerateAllContributorsPrResponse {
     pub cli_commands: Vec<String>,
     pub pr_url: Option<String>,
     pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookUser {
+    pub login: String,
+    #[serde(default)]
+    pub id: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookLabel {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookIssue {
+    pub number: u64,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub assignees: Vec<GitHubWebhookUser>,
+    #[serde(default)]
+    pub labels: Vec<GitHubWebhookLabel>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookRepo {
+    #[serde(default)]
+    pub full_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookPayload {
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub issue: Option<GitHubWebhookIssue>,
+    #[serde(default)]
+    pub assignee: Option<GitHubWebhookUser>,
+    #[serde(default)]
+    pub repository: Option<GitHubWebhookRepo>,
+    #[serde(default)]
+    pub sender: Option<GitHubWebhookUser>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitHubWebhookResponse {
+    pub received: bool,
+    pub action: String,
+    pub matched_issue_id: Option<String>,
+    pub message: String,
 }
 
 pub async fn list_contributor_issues(
@@ -277,6 +341,252 @@ pub async fn claim_contributor_issue(
     let _ = state.save(&ctx.data_file);
 
     Ok((StatusCode::OK, Json(updated_issue)))
+}
+
+pub async fn unclaim_issue_internal(
+    issue: &mut ContributorIssue,
+    token: Option<&str>,
+    reason: &str,
+) {
+    issue.claimed = false;
+    let previous_claimer = issue.claimed_by.take();
+    issue.claimed_at = None;
+    issue.github_sync_status = Some("Unclaimed".to_string());
+    issue.github_sync_message = Some(reason.to_string());
+
+    if let Some(num) = issue.github_issue_number {
+        if let Some(tok) = token {
+            if !tok.trim().is_empty() {
+                if let Ok(client) = GitHubClient::new(tok) {
+                    let repo_target = issue
+                        .github_repo
+                        .as_deref()
+                        .unwrap_or("SpaceCorps/GrowthHack");
+                    let (owner, repo_name) = match repo_target.split_once('/') {
+                        Some((o, r)) => (o.trim(), r.trim()),
+                        None => ("SpaceCorps", "GrowthHack"),
+                    };
+
+                    let mut sync_errors = Vec::new();
+
+                    // 1. Remove label 'claimed'
+                    if let Err(e) = client.remove_issue_label(owner, repo_name, num, "claimed").await {
+                        sync_errors.push(format!("Label removal failed: {}", e));
+                    }
+
+                    // 2. Remove assignee if handle exists
+                    let clean_handle = previous_claimer
+                        .as_deref()
+                        .unwrap_or("")
+                        .trim()
+                        .trim_start_matches('@')
+                        .trim();
+                    if !clean_handle.is_empty() {
+                        if let Err(e) = client
+                            .remove_issue_assignees(owner, repo_name, num, &[clean_handle])
+                            .await
+                        {
+                            sync_errors.push(format!("Assignee removal failed: {}", e));
+                        }
+                    }
+
+                    // 3. Post notification comment
+                    let comment_body = if !clean_handle.is_empty() {
+                        format!(
+                            "Issue claim by @{} released: {}.",
+                            clean_handle, reason
+                        )
+                    } else {
+                        format!("Issue claim released: {}.", reason)
+                    };
+                    if let Err(e) = client
+                        .create_issue_comment(owner, repo_name, num, &comment_body)
+                        .await
+                    {
+                        sync_errors.push(format!("Comment notification failed: {}", e));
+                    }
+
+                    if !sync_errors.is_empty() {
+                        issue.github_sync_message = Some(format!(
+                            "{}; GitHub sync issues: {}",
+                            reason,
+                            sync_errors.join("; ")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn check_claim_timeouts_internal(
+    ctx: &AppContext,
+    timeout_days: i64,
+) -> Result<Vec<String>, String> {
+    let now = Utc::now();
+    let token = ctx.get_github_token();
+
+    let candidate_ids: Vec<String> = {
+        let state = ctx.state.read().await;
+        state
+            .contributor_issues
+            .iter()
+            .filter(|issue| {
+                if !issue.claimed || issue.pr_url.is_some() {
+                    return false;
+                }
+                if let Some(claimed_at) = issue.claimed_at {
+                    let elapsed = now.signed_duration_since(claimed_at);
+                    elapsed.num_seconds() >= timeout_days * 86400
+                } else {
+                    false
+                }
+            })
+            .map(|i| i.id.clone())
+            .collect()
+    };
+
+    if candidate_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut unclaimed_ids = Vec::new();
+    let client_opt = match &token {
+        Some(tok) if !tok.trim().is_empty() => GitHubClient::new(tok).ok(),
+        _ => None,
+    };
+
+    let mut state = ctx.state.write().await;
+
+    for id in candidate_ids {
+        if let Some(issue) = state.contributor_issues.iter_mut().find(|i| i.id == id) {
+            if !issue.claimed || issue.pr_url.is_some() {
+                continue;
+            }
+
+            let mut pr_found = None;
+            if let (Some(client), Some(num)) = (&client_opt, issue.github_issue_number) {
+                let repo_target = issue
+                    .github_repo
+                    .as_deref()
+                    .unwrap_or("SpaceCorps/GrowthHack");
+                let (owner, repo_name) = match repo_target.split_once('/') {
+                    Some((o, r)) => (o.trim(), r.trim()),
+                    None => ("SpaceCorps", "GrowthHack"),
+                };
+                if let Ok(found_url) = client.check_issue_pull_request(owner, repo_name, num).await {
+                    pr_found = found_url;
+                }
+            }
+
+            if let Some(pr_url) = pr_found {
+                issue.pr_url = Some(pr_url);
+                tracing::info!(
+                    "Issue {} has linked PR {}, preserving claim.",
+                    issue.id,
+                    issue.pr_url.as_deref().unwrap_or("")
+                );
+                continue;
+            }
+
+            let reason = format!("Claim released after {} days without a pull request", timeout_days);
+            unclaim_issue_internal(issue, token.as_deref(), &reason).await;
+            unclaimed_ids.push(id);
+        }
+    }
+
+    if !unclaimed_ids.is_empty() {
+        let _ = state.save(&ctx.data_file);
+    }
+
+    Ok(unclaimed_ids)
+}
+
+pub async fn unclaim_contributor_issue(
+    State(ctx): State<Arc<AppContext>>,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<ContributorIssue>), (StatusCode, Json<ErrorResponse>)> {
+    let mut state = ctx.state.write().await;
+
+    let issue = state
+        .contributor_issues
+        .iter_mut()
+        .find(|item| item.id == id);
+
+    let issue = match issue {
+        Some(i) => i,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Contributor issue with id '{}' not found", id),
+                }),
+            ));
+        }
+    };
+
+    if !issue.claimed {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Issue '{}' is not currently claimed", id),
+            }),
+        ));
+    }
+
+    let token = ctx.get_github_token();
+    unclaim_issue_internal(issue, token.as_deref(), "Claim released manually by maintainer").await;
+
+    let updated_issue = issue.clone();
+    let _ = state.save(&ctx.data_file);
+
+    Ok((StatusCode::OK, Json(updated_issue)))
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct CheckClaimTimeoutsQuery {
+    pub timeout_days: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CheckClaimTimeoutsResponse {
+    pub success: bool,
+    pub unclaimed_count: usize,
+    pub unclaimed_issue_ids: Vec<String>,
+    pub message: String,
+}
+
+pub async fn check_claim_timeouts(
+    State(ctx): State<Arc<AppContext>>,
+    Query(query): Query<CheckClaimTimeoutsQuery>,
+) -> Result<(StatusCode, Json<CheckClaimTimeoutsResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let timeout_days = query.timeout_days.unwrap_or(7);
+
+    match check_claim_timeouts_internal(&ctx, timeout_days).await {
+        Ok(unclaimed_ids) => {
+            let count = unclaimed_ids.len();
+            let msg = if count > 0 {
+                format!("Successfully evaluated timeouts: {} issue(s) unclaimed", count)
+            } else {
+                "No issues met the claim timeout threshold".to_string()
+            };
+            Ok((
+                StatusCode::OK,
+                Json(CheckClaimTimeoutsResponse {
+                    success: true,
+                    unclaimed_count: count,
+                    unclaimed_issue_ids: unclaimed_ids,
+                    message: msg,
+                }),
+            ))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to evaluate claim timeouts: {}", e),
+            }),
+        )),
+    }
 }
 
 pub async fn link_github_issue(
@@ -761,4 +1071,274 @@ pub async fn verify_contributor(
         pr: pr_response,
         message: "Contributor verified successfully".to_string(),
     }))
+}
+
+pub async fn search_github_users(
+    State(ctx): State<Arc<AppContext>>,
+    Query(params): Query<GitHubUserSearchQuery>,
+) -> Result<Json<Vec<GitHubUserSummary>>, (StatusCode, Json<serde_json::Value>)> {
+    let clean_q = params.q.trim().trim_start_matches('@').trim();
+    if clean_q.chars().count() < 2 {
+        return Ok(Json(Vec::new()));
+    }
+
+    let base_url = std::env::var("GITHUB_API_BASE_URL")
+        .unwrap_or_else(|_| "https://api.github.com".to_string());
+    let url = format!("{}/search/users", base_url.trim_end_matches('/'));
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to build reqwest client for github user search: {}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Client error: {}", e) })),
+            ));
+        }
+    };
+
+    let mut req = client
+        .get(&url)
+        .query(&[("q", clean_q), ("per_page", "5")])
+        .header(reqwest::header::USER_AGENT, "GrowthHack-UpstreamWorker/0.1.0")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header("x-github-api-version", "2022-11-28");
+
+    if let Some(tok) = ctx.get_github_token() {
+        let tok_clean = tok.trim();
+        if !tok_clean.is_empty() {
+            req = req.header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", tok_clean),
+            );
+        }
+    }
+
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("GitHub user search request error: {}", e);
+            return Ok(Json(Vec::new()));
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let err_body = resp.text().await.unwrap_or_default();
+        tracing::warn!("GitHub user search returned status {}: {}", status, err_body);
+        return Ok(Json(Vec::new()));
+    }
+
+    #[derive(Deserialize)]
+    struct GitHubSearchResponse {
+        #[serde(default)]
+        items: Vec<GitHubUserSummary>,
+    }
+
+    match resp.json::<GitHubSearchResponse>().await {
+        Ok(search_res) => Ok(Json(search_res.items)),
+        Err(e) => {
+            tracing::warn!("Failed to parse GitHub user search response: {}", e);
+            Ok(Json(Vec::new()))
+        }
+    }
+}
+
+pub async fn handle_github_webhook(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(payload): Json<GitHubWebhookPayload>,
+) -> (StatusCode, Json<GitHubWebhookResponse>) {
+    let event_header = headers
+        .get("x-github-event")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.trim());
+
+    if let Some("ping") = event_header {
+        return (
+            StatusCode::OK,
+            Json(GitHubWebhookResponse {
+                received: true,
+                action: "ping".to_string(),
+                matched_issue_id: None,
+                message: "pong".to_string(),
+            }),
+        );
+    }
+
+    let is_issues_event = match event_header {
+        Some("issues") => true,
+        None if !payload.action.is_empty() && payload.issue.is_some() => true,
+        Some(ev) if ev != "ping" && !payload.action.is_empty() && payload.issue.is_some() => true,
+        _ => false,
+    };
+
+    if !is_issues_event {
+        return (
+            StatusCode::OK,
+            Json(GitHubWebhookResponse {
+                received: true,
+                action: if payload.action.is_empty() {
+                    event_header.unwrap_or("unknown").to_string()
+                } else {
+                    payload.action.clone()
+                },
+                matched_issue_id: None,
+                message: "Event ignored (not an issues event)".to_string(),
+            }),
+        );
+    }
+
+    let issue_payload = match &payload.issue {
+        Some(i) => i,
+        None => {
+            return (
+                StatusCode::OK,
+                Json(GitHubWebhookResponse {
+                    received: true,
+                    action: payload.action.clone(),
+                    matched_issue_id: None,
+                    message: "No issue payload provided".to_string(),
+                }),
+            );
+        }
+    };
+
+    let payload_repo = payload
+        .repository
+        .as_ref()
+        .and_then(|r| r.full_name.as_deref());
+
+    let (matched_id, sync_msg, remove_label_info) = {
+        let mut state = ctx.state.write().await;
+        let target_issue = state.contributor_issues.iter_mut().find(|issue| {
+            if issue.github_issue_number != Some(issue_payload.number) {
+                return false;
+            }
+            if let (Some(pr), Some(ir)) = (payload_repo, issue.github_repo.as_deref()) {
+                ir.eq_ignore_ascii_case(pr)
+            } else {
+                true
+            }
+        });
+
+        match target_issue {
+            None => (
+                None,
+                format!(
+                    "No local contributor issue matched GitHub issue #{}",
+                    issue_payload.number
+                ),
+                None,
+            ),
+            Some(issue) => {
+                let id = issue.id.clone();
+                let mut remove_label = None;
+                let action_lower = payload.action.to_lowercase();
+
+                match action_lower.as_str() {
+                    "unassigned" => {
+                        let unassigned_login = payload.assignee.as_ref().map(|u| u.login.as_str());
+                        let matches_claim = match (&issue.claimed_by, unassigned_login) {
+                            (Some(claimed_by), Some(unassigned)) => {
+                                let clean_claimed = claimed_by.trim().trim_start_matches('@');
+                                let clean_unassigned = unassigned.trim().trim_start_matches('@');
+                                clean_claimed.eq_ignore_ascii_case(clean_unassigned)
+                            }
+                            _ => false,
+                        };
+                        let should_unassign = matches_claim || issue_payload.assignees.is_empty();
+
+                        if should_unassign {
+                            issue.claimed = false;
+                            issue.claimed_by = None;
+                            issue.claimed_at = None;
+                            issue.github_sync_status =
+                                Some("Unassigned (Webhook)".to_string());
+                            issue.github_sync_message =
+                                Some("Contributor unassigned externally on GitHub".to_string());
+
+                            let repo_target = issue
+                                .github_repo
+                                .as_deref()
+                                .or(payload_repo)
+                                .unwrap_or("SpaceCorps/GrowthHack");
+                            let (owner, repo_name) = match repo_target.split_once('/') {
+                                Some((o, r)) => (o.trim().to_string(), r.trim().to_string()),
+                                None => ("SpaceCorps".to_string(), "GrowthHack".to_string()),
+                            };
+                            remove_label = Some((owner, repo_name, issue_payload.number));
+                        }
+                    }
+                    "closed" => {
+                        issue.closed = true;
+                        issue.closed_at = Some(Utc::now());
+                        issue.github_sync_status = Some("Closed (Webhook)".to_string());
+                        issue.github_sync_message = Some(format!(
+                            "Issue #{} was closed externally on GitHub",
+                            issue_payload.number
+                        ));
+                    }
+                    "reopened" => {
+                        issue.closed = false;
+                        issue.closed_at = None;
+                        issue.github_sync_status = Some("Reopened (Webhook)".to_string());
+                        issue.github_sync_message = Some(format!(
+                            "Issue #{} was reopened on GitHub",
+                            issue_payload.number
+                        ));
+                    }
+                    "assigned" if !issue.claimed => {
+                        if let Some(assignee) = &payload.assignee {
+                            issue.claimed = true;
+                            issue.claimed_by = Some(assignee.login.clone());
+                            issue.claimed_at = Some(Utc::now());
+                            issue.github_sync_status = Some("Assigned (Webhook)".to_string());
+                            issue.github_sync_message =
+                                Some(format!("Assigned to @{} on GitHub", assignee.login));
+                        }
+                    }
+                    _ => {
+                        // Unhandled actions ignored
+                    }
+                }
+
+                let final_msg = issue.github_sync_message.clone().unwrap_or_else(|| {
+                    format!(
+                        "Processed action {} for issue #{}",
+                        payload.action, issue_payload.number
+                    )
+                });
+                let _ = state.save(&ctx.data_file);
+                (
+                    Some(id),
+                    final_msg,
+                    remove_label,
+                )
+            }
+        }
+    };
+
+    if let Some((owner, repo, num)) = remove_label_info {
+        if let Some(tok) = ctx.get_github_token().filter(|t| !t.trim().is_empty()) {
+            if let Ok(client) = GitHubClient::new(&tok) {
+                let _ = client
+                    .remove_issue_label(&owner, &repo, num, "claimed")
+                    .await;
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(GitHubWebhookResponse {
+            received: true,
+            action: payload.action,
+            matched_issue_id: matched_id,
+            message: sync_msg,
+        }),
+    )
 }
