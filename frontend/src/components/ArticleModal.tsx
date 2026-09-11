@@ -220,6 +220,15 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     };
   }, [article?.id, selectedChannel, activeTab]);
 
+  const currentBannerSvg = useMemo(() => {
+    return generateClientBannerSvg(
+      bannerTitle || article?.title || "Ivy Autonomous Growth",
+      bannerCategory || article?.angle || "Architecture",
+      bannerSummary || article?.summary || "",
+      bannerTheme,
+    );
+  }, [bannerTitle, bannerCategory, bannerSummary, bannerTheme, article]);
+
   if (!article) return null;
 
   const currentSlug =
@@ -326,15 +335,6 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       setIsSyncingHero(false);
     }
   };
-
-  const currentBannerSvg = useMemo(() => {
-    return generateClientBannerSvg(
-      bannerTitle || article?.title || "Ivy Autonomous Growth",
-      bannerCategory || article?.angle || "Architecture",
-      bannerSummary || article?.summary || "",
-      bannerTheme,
-    );
-  }, [bannerTitle, bannerCategory, bannerSummary, bannerTheme, article]);
 
   const handleSyncRenderedPng = async () => {
     if (!article) return;
