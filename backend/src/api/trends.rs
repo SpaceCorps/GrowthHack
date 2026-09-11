@@ -665,6 +665,7 @@ Requirements:
                     published_at: None,
                     slug: Some(slug),
                     exports: Vec::new(),
+                    engagement: None,
                 };
                 state.articles.insert(0, article);
 

@@ -14,11 +14,20 @@ export interface GrowthIssue {
   updated_at: string;
 }
 
+export interface EngagementMetrics {
+  reactions: number;
+  comments: number;
+  views: number;
+  last_synced_at?: string;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
   target_path?: string;
   status: "Success" | "Copied" | string;
+  external_id?: string;
+  engagement?: EngagementMetrics;
 }
 
 export interface Article {
@@ -37,6 +46,7 @@ export interface Article {
   slug?: string;
   image_path?: string;
   exports?: ExportRecord[];
+  engagement?: EngagementMetrics;
 }
 
 export interface ExportIvyWebRequest {

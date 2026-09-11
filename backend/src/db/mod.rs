@@ -22,12 +22,28 @@ pub struct GrowthIssue {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementMetrics {
+    #[serde(default)]
+    pub reactions: u32,
+    #[serde(default)]
+    pub comments: u32,
+    #[serde(default)]
+    pub views: u32,
+    #[serde(default)]
+    pub last_synced_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExportRecord {
     pub channel: String, // "ivy-web", "Dev.to", "Hashnode", "Medium", "Substack", "LinkedIn", "XThread"
     pub exported_at: DateTime<Utc>,
     pub target_path: Option<String>,
     pub status: String, // "Success", "Copied"
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub engagement: Option<EngagementMetrics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -48,6 +64,8 @@ pub struct Article {
     pub slug: Option<String>,
     #[serde(default)]
     pub exports: Vec<ExportRecord>,
+    #[serde(default)]
+    pub engagement: Option<EngagementMetrics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -457,8 +475,11 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                         exported_at: now,
                         target_path: Some("/Users/rorychatt/git/ivy-web/apps/web-new/content/posts/how-git-worktrees-solve-agent-hallucination-and-workspace-collisions-in-multi-agent-coding.mdoc".to_string()),
                         status: "Success".to_string(),
+                        external_id: None,
+                        engagement: None,
                     },
                 ],
+                engagement: None,
             },
             Article {
                 id: "art-2".to_string(),
@@ -508,8 +529,11 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                         exported_at: now,
                         target_path: None,
                         status: "Copied".to_string(),
+                        external_id: None,
+                        engagement: None,
                     },
                 ],
+                engagement: None,
             },
         ];
 

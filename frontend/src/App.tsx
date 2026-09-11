@@ -238,6 +238,17 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSyncMetrics = async () => {
+    try {
+      const res = await fetch("/api/articles/sync-metrics", { method: "POST" });
+      if (res.ok) {
+        fetchAll();
+      }
+    } catch (err) {
+      console.error("Sync metrics error:", err);
+    }
+  };
+
   // Trend Handlers
   const handleScoutTrends = async (
     sourcesOrMode?: string[] | "general" | "discussions",
@@ -816,6 +827,7 @@ export const App: React.FC = () => {
               setArticleModalTab(tab || "content");
             }}
             onUpdateStatus={handleUpdateArticleStatus}
+            onSyncMetrics={handleSyncMetrics}
           />
         )}
 
