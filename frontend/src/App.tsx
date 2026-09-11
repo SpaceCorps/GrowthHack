@@ -527,12 +527,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDispatchPackagePr = async (id: string, version?: string, skipAuthCheck?: boolean) => {
+  const handleDispatchPackagePr = async (
+    id: string,
+    version?: string,
+    tagOrSkipAuth?: string | boolean,
+    skipAuthCheck?: boolean,
+  ) => {
+    const tag = typeof tagOrSkipAuth === "string" ? tagOrSkipAuth : undefined;
+    const skipAuth = typeof tagOrSkipAuth === "boolean" ? tagOrSkipAuth : skipAuthCheck;
     try {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, skip_auth_check: skipAuthCheck }),
+        body: JSON.stringify({ version, tag, skip_auth_check: skipAuth }),
       });
       const data = await res.json();
       if (data && data.task_id) {

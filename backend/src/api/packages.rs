@@ -137,20 +137,7 @@ impl ReleaseInfo {
                 }
             }
 
-            // 3. Fallback to default baseline if available for this platform
-            if sha256.is_none() {
-                let fallback = Self::default_fallback();
-                if let Some(f_asset) = fallback.assets.iter().find(|fa| {
-                    (a.name.contains("darwin-arm64") && fa.name.contains("darwin-arm64"))
-                        || (a.name.contains("darwin-x64") && fa.name.contains("darwin-x64"))
-                        || (a.name.contains("linux-arm64") && fa.name.contains("linux-arm64"))
-                        || (a.name.contains("linux-x64") && fa.name.contains("linux-x64"))
-                        || (a.name.contains("windows-x64") && fa.name.contains("windows-x64"))
-                        || (a.name.contains("windows-arm64") && fa.name.contains("windows-arm64"))
-                }) {
-                    sha256 = f_asset.sha256.clone();
-                }
-            }
+            // 3. Keep sha256 as None if not in digest or body; resolve_missing_checksums will compute it dynamically
 
             let digest = sha256.as_ref().map(|s| format!("sha256:{}", s));
 
@@ -171,16 +158,75 @@ impl ReleaseInfo {
         })
     }
 
-    pub async fn fetch_latest(repo: &str) -> Result<Self, String> {
-        let repo_to_use = std::env::var("IVY_TENDRIL_REPO").unwrap_or_else(|_| repo.to_string());
-        let url = format!(
-            "https://api.github.com/repos/{}/releases/latest",
-            repo_to_use
-        );
+    pub async fn resolve_missing_checksums(&mut self) -> Result<(), String> {
         let client = reqwest::Client::builder()
             .user_agent("GrowthHack-Backend/0.1.0")
             .build()
             .map_err(|e| e.to_string())?;
+        self.resolve_missing_checksums_with_client(&client).await
+    }
+
+    pub async fn resolve_missing_checksums_with_client(&mut self, client: &reqwest::Client) -> Result<(), String> {
+        // 1. Companion file inspection (checksums.txt, SHA256SUMS, hashes.txt, etc.)
+        let companion_asset = self.assets.iter().find(|a| {
+            let lower = a.name.to_lowercase();
+            lower.contains("checksum") || lower.contains("sha256") || lower.contains("hashes") || lower.ends_with(".sha256")
+        }).cloned();
+
+        if let Some(comp) = companion_asset {
+            if let Ok(resp) = client.get(&comp.browser_download_url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(text) = resp.text().await {
+                        let parsed = parse_checksums_content(&text);
+                        for asset in self.assets.iter_mut() {
+                            if asset.sha256.is_none() {
+                                for (fname, hash) in &parsed {
+                                    if asset.name == *fname || fname.contains(&asset.name) || asset.name.contains(fname) {
+                                        asset.sha256 = Some(hash.clone());
+                                        asset.digest = Some(format!("sha256:{}", hash));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Direct binary hashing for assets that still don't have sha256
+        let platforms = [
+            "darwin-arm64", "darwin-x64",
+            "linux-arm64", "linux-x64",
+            "windows-x64", "windows-arm64",
+        ];
+
+        for asset in self.assets.iter_mut() {
+            let matches_platform = platforms.iter().any(|p| asset.name.contains(p));
+            if matches_platform && asset.sha256.is_none() && !asset.browser_download_url.is_empty() {
+                match compute_asset_sha256(client, &asset.browser_download_url).await {
+                    Ok(hash) => {
+                        asset.sha256 = Some(hash.clone());
+                        asset.digest = Some(format!("sha256:{}", hash));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to compute sha256 for asset {}: {}", asset.name, e);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn fetch_release(repo: &str, tag: Option<&str>) -> Result<Self, String> {
+        let repo_to_use = std::env::var("IVY_TENDRIL_REPO").unwrap_or_else(|_| repo.to_string());
+        let client = reqwest::Client::builder()
+            .user_agent("GrowthHack-Backend/0.1.0")
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let url = format_release_url(&repo_to_use, tag);
 
         let mut request = client.get(&url);
         if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
@@ -189,13 +235,43 @@ impl ReleaseInfo {
             }
         }
 
-        let response = request.send().await.map_err(|e| e.to_string())?;
+        let mut response = request.send().await.map_err(|e| e.to_string())?;
+
+        if response.status() == StatusCode::NOT_FOUND {
+            if let Some(t) = tag {
+                if t != "latest" {
+                    let alt_url = if t.starts_with('v') {
+                        format!("https://api.github.com/repos/{}/releases/tags/{}", repo_to_use, t.trim_start_matches('v'))
+                    } else {
+                        format!("https://api.github.com/repos/{}/releases/tags/{}", repo_to_use, t)
+                    };
+                    let mut alt_req = client.get(&alt_url);
+                    if let Ok(token) = std::env::var("GITHUB_TOKEN").or_else(|_| std::env::var("GH_TOKEN")) {
+                        if !token.is_empty() {
+                            alt_req = alt_req.header("Authorization", format!("Bearer {}", token));
+                        }
+                    }
+                    if let Ok(alt_resp) = alt_req.send().await {
+                        if alt_resp.status().is_success() {
+                            response = alt_resp;
+                        }
+                    }
+                }
+            }
+        }
+
         if !response.status().is_success() {
             return Err(format!("GitHub API returned status: {}", response.status()));
         }
 
         let text = response.text().await.map_err(|e| e.to_string())?;
-        Self::from_github_json(&text)
+        let mut release = Self::from_github_json(&text)?;
+        let _ = release.resolve_missing_checksums_with_client(&client).await;
+        Ok(release)
+    }
+
+    pub async fn fetch_latest(repo: &str) -> Result<Self, String> {
+        Self::fetch_release(repo, None).await
     }
 
     pub fn find_checksum(&self, platform_pattern: &str, fallback: &str) -> String {
@@ -227,6 +303,69 @@ impl ReleaseInfo {
     }
 }
 
+pub fn format_release_url(repo: &str, tag: Option<&str>) -> String {
+    match tag {
+        None | Some("latest") => {
+            format!("https://api.github.com/repos/{}/releases/latest", repo)
+        }
+        Some(t) => {
+            if t.starts_with('v') {
+                format!("https://api.github.com/repos/{}/releases/tags/{}", repo, t)
+            } else {
+                format!("https://api.github.com/repos/{}/releases/tags/v{}", repo, t)
+            }
+        }
+    }
+}
+
+pub fn compute_sha256_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+pub async fn compute_asset_sha256(client: &reqwest::Client, download_url: &str) -> Result<String, String> {
+    let resp = client.get(download_url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with status {}", resp.status()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    Ok(compute_sha256_bytes(&bytes))
+}
+
+pub fn parse_checksums_content(content: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((file, hash)) = line.split_once(':') {
+            let file = file.trim();
+            let hash = hash.trim().to_lowercase();
+            if hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                map.insert(file.to_string(), hash);
+                continue;
+            }
+        }
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let p0 = parts[0].trim().to_lowercase();
+            let p1 = parts[1].trim_start_matches('*').trim();
+            if p0.len() == 64 && p0.chars().all(|c| c.is_ascii_hexdigit()) {
+                map.insert(p1.to_string(), p0);
+            } else {
+                let last = parts[parts.len() - 1].trim().to_lowercase();
+                if last.len() == 64 && last.chars().all(|c| c.is_ascii_hexdigit()) {
+                    map.insert(parts[0].trim().to_string(), last);
+                }
+            }
+        }
+    }
+    map
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageManifestResponse {
     pub target_key: String,
@@ -241,9 +380,10 @@ pub struct PackageManifestResponse {
     pub fetched_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct ManifestQuery {
     pub refresh: Option<bool>,
+    pub tag: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -585,37 +725,57 @@ pub async fn get_manifest(
     Query(query): Query<ManifestQuery>,
     State(ctx): State<Arc<AppContext>>,
 ) -> (StatusCode, Json<Option<PackageManifestResponse>>) {
+    let tag_param = query.tag.as_deref().filter(|t| !t.trim().is_empty());
+
     let should_fetch = {
         let state = ctx.state.read().await;
-        match &state.latest_release {
-            None => true,
-            Some(rel) => rel.is_expired(15 * 60) || query.refresh == Some(true),
+        if query.refresh == Some(true) {
+            true
+        } else {
+            state.find_cached_release(tag_param).is_none()
         }
     };
 
     let release = if should_fetch {
-        match ReleaseInfo::fetch_latest("Ivy-Interactive/Ivy-Tendril").await {
+        match ReleaseInfo::fetch_release("Ivy-Interactive/Ivy-Tendril", tag_param).await {
             Ok(fresh) => {
                 let mut state = ctx.state.write().await;
-                state.latest_release = Some(fresh.clone());
+                if tag_param.is_none() || tag_param == Some("latest") {
+                    state.latest_release = Some(fresh.clone());
+                }
+                state.update_release_cache(fresh.clone());
                 let _ = state.save(&ctx.data_file);
                 fresh
             }
             Err(err) => {
-                tracing::warn!("Failed to fetch latest GitHub release: {}", err);
+                tracing::warn!("Failed to fetch GitHub release for tag {:?}: {}", tag_param, err);
                 let state = ctx.state.read().await;
                 state
-                    .latest_release
-                    .clone()
-                    .unwrap_or_else(ReleaseInfo::default_fallback)
+                    .find_cached_release(tag_param)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                        if let Some(t) = tag_param {
+                            fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                            fallback.version = t.trim_start_matches('v').to_string();
+                        }
+                        fallback
+                    })
             }
         }
     } else {
         let state = ctx.state.read().await;
         state
-            .latest_release
-            .clone()
-            .unwrap_or_else(ReleaseInfo::default_fallback)
+            .find_cached_release(tag_param)
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                if let Some(t) = tag_param {
+                    fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                    fallback.version = t.trim_start_matches('v').to_string();
+                }
+                fallback
+            })
     };
 
     match generate_manifest_content(&target_key, &release) {
@@ -624,14 +784,24 @@ pub async fn get_manifest(
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct RefreshReleaseQuery {
+    pub tag: Option<String>,
+}
+
 pub async fn refresh_release(
+    Query(query): Query<RefreshReleaseQuery>,
     State(ctx): State<Arc<AppContext>>,
 ) -> (StatusCode, Json<ReleaseInfo>) {
-    let fresh_res = ReleaseInfo::fetch_latest("Ivy-Interactive/Ivy-Tendril").await;
+    let tag_param = query.tag.as_deref().filter(|t| !t.trim().is_empty());
+    let fresh_res = ReleaseInfo::fetch_release("Ivy-Interactive/Ivy-Tendril", tag_param).await;
     let release = match fresh_res {
         Ok(r) => {
             let mut state = ctx.state.write().await;
-            state.latest_release = Some(r.clone());
+            if tag_param.is_none() || tag_param == Some("latest") {
+                state.latest_release = Some(r.clone());
+            }
+            state.update_release_cache(r.clone());
             let _ = state.save(&ctx.data_file);
             r
         }
@@ -639,9 +809,16 @@ pub async fn refresh_release(
             tracing::warn!("Failed to refresh GitHub release: {}", err);
             let state = ctx.state.read().await;
             state
-                .latest_release
-                .clone()
-                .unwrap_or_else(ReleaseInfo::default_fallback)
+                .find_cached_release(tag_param)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+                    if let Some(t) = tag_param {
+                        fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                        fallback.version = t.trim_start_matches('v').to_string();
+                    }
+                    fallback
+                })
         }
     };
     (StatusCode::OK, Json(release))
@@ -928,6 +1105,7 @@ pub async fn get_gh_auth_status() -> (StatusCode, Json<GhAuthStatus>) {
 #[derive(Clone, Debug, Deserialize)]
 pub struct DispatchPackagePrRequest {
     pub version: Option<String>,
+    pub tag: Option<String>,
     pub notes: Option<String>,
     #[serde(default)]
     pub skip_auth_check: Option<bool>,
@@ -947,6 +1125,7 @@ pub async fn dispatch_package_pr(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<DispatchPackagePrRequest>,
 ) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
+    let tag_param = payload.tag.as_deref().filter(|t| !t.trim().is_empty());
     let state = ctx.state.read().await;
     let target = match state
         .packages
@@ -957,9 +1136,16 @@ pub async fn dispatch_package_pr(
         None => return (StatusCode::NOT_FOUND, Json(None)),
     };
     let release = state
-        .latest_release
-        .clone()
-        .unwrap_or_else(ReleaseInfo::default_fallback);
+        .find_cached_release(tag_param)
+        .cloned()
+        .unwrap_or_else(|| {
+            let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+            if let Some(t) = tag_param {
+                fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                fallback.version = t.trim_start_matches('v').to_string();
+            }
+            fallback
+        });
     drop(state);
 
     let manifest = match generate_manifest_content(&target.target_key, &release) {
@@ -967,7 +1153,8 @@ pub async fn dispatch_package_pr(
         None => return (StatusCode::BAD_REQUEST, Json(None)),
     };
 
-    let version = payload.version.as_deref().unwrap_or("0.8.4");
+    let default_ver = release.version.clone();
+    let version = payload.version.as_deref().unwrap_or(&default_ver);
     let commands = build_upstream_pr_commands(&target, &manifest, version);
 
     let is_test_bypass = std::env::var("TEST_BYPASS_AUTH")
@@ -1034,8 +1221,10 @@ pub async fn dispatch_package_pr(
 
 pub async fn get_package_dispatch_commands(
     Path(id): Path<String>,
+    Query(query): Query<RefreshReleaseQuery>,
     State(ctx): State<Arc<AppContext>>,
 ) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
+    let tag_param = query.tag.as_deref().filter(|t| !t.trim().is_empty());
     let state = ctx.state.read().await;
     let target = match state
         .packages
@@ -1046,9 +1235,16 @@ pub async fn get_package_dispatch_commands(
         None => return (StatusCode::NOT_FOUND, Json(None)),
     };
     let release = state
-        .latest_release
-        .clone()
-        .unwrap_or_else(ReleaseInfo::default_fallback);
+        .find_cached_release(tag_param)
+        .cloned()
+        .unwrap_or_else(|| {
+            let mut fallback = state.latest_release.clone().unwrap_or_else(ReleaseInfo::default_fallback);
+            if let Some(t) = tag_param {
+                fallback.tag_name = if t.starts_with('v') { t.to_string() } else { format!("v{}", t) };
+                fallback.version = t.trim_start_matches('v').to_string();
+            }
+            fallback
+        });
     drop(state);
 
     let manifest = match generate_manifest_content(&target.target_key, &release) {
@@ -1056,7 +1252,7 @@ pub async fn get_package_dispatch_commands(
         None => return (StatusCode::BAD_REQUEST, Json(None)),
     };
 
-    let commands = build_upstream_pr_commands(&target, &manifest, "0.8.4");
+    let commands = build_upstream_pr_commands(&target, &manifest, &release.version);
 
     (
         StatusCode::OK,

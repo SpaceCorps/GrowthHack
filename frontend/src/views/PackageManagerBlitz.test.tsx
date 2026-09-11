@@ -399,4 +399,57 @@ describe("PackageManagerBlitz View", () => {
     expect(onDispatch).toHaveBeenCalledTimes(1);
     expect(onDispatch).toHaveBeenCalledWith("pkg-homebrew", "0.8.4", true);
   });
+
+  it("triggers manifest fetch with ?tag= query parameter when release tag input changes", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      const isTag = url.includes("tag=v1.3.0");
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          target_key: "homebrew",
+          filename: "tendril.rb",
+          language: "ruby",
+          content: isTag ? "# Tagged formula content v1.3.0" : "# Default formula content",
+          install_command: "brew install ivy-interactive/tap/tendril",
+          instructions: "Dynamic tap instructions",
+          release_tag: isTag ? "v1.3.0" : "v1.2.0",
+          fetched_at: "2026-09-10T12:00:00Z",
+        }),
+      });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    // Open drawer
+    const inspectBtn = screen.getByTestId("inspect-manifest-homebrew");
+    fireEvent.click(inspectBtn);
+
+    // Find release tag input and change value
+    const tagInput = await screen.findByTestId("release-tag-input");
+    fireEvent.change(tagInput, { target: { value: "v1.3.0" } });
+
+    // Verify fetch was called with tag query parameter
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining("tag=v1.3.0"));
+    expect(await screen.findByText("# Tagged formula content v1.3.0")).toBeDefined();
+  });
+
+  it("passes chosen release tag to dispatch handler from upstream PR dispatch modal", async () => {
+    const onDispatch = vi.fn().mockImplementation(() => Promise.resolve());
+    render(<PackageManagerBlitz packages={mockPackages} onDispatchPackagePr={onDispatch} />);
+
+    // Click dispatch button for Scoop
+    const dispatchScoopBtn = screen.getByTestId("dispatch-pr-pkg-scoop");
+    fireEvent.click(dispatchScoopBtn);
+
+    // Modal opens, set release tag input
+    const tagInput = screen.getByTestId("dispatch-tag-input");
+    fireEvent.change(tagInput, { target: { value: "v1.5.0" } });
+
+    // Confirm dispatch
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn");
+    fireEvent.click(confirmBtn);
+
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith("pkg-scoop", "1.5.0", "v1.5.0");
+  });
 });
