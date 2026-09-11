@@ -313,6 +313,9 @@ export interface DemoScenario {
   description: string;
   target_branch: string;
   estimated_duration_sec: number;
+  diff_preview?: string;
+  pr_summary?: string;
+  custom_logs?: string[];
 }
 
 export interface DemoRunState {
