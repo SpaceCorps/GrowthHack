@@ -2228,6 +2228,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2258,6 +2259,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let fm_svg =
@@ -2284,6 +2286,7 @@ mod tests {
             published_at: Some(now),
             slug: Some("test-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
 
         let fm_png =
@@ -2316,6 +2319,7 @@ mod tests {
             published_at: None,
             slug: Some("test-format-article".to_string()),
             exports: vec![],
+            engagement: None,
         };
         growth_state.articles.push(article);
 
