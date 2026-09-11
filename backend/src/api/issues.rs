@@ -21,6 +21,7 @@ pub struct AppContext {
     pub ivy_web_content_path: std::path::PathBuf,
     pub ivy_web_images_path: std::path::PathBuf,
     pub config: Config,
+    pub rate_limiter: std::sync::Arc<crate::api::middleware::rate_limit::IpRateLimiter>,
 }
 
 impl Default for AppContext {
@@ -39,6 +40,9 @@ impl Default for AppContext {
             ivy_web_content_path: temp_dir.clone(),
             ivy_web_images_path: temp_dir,
             config: crate::config::Config::default(),
+            rate_limiter: std::sync::Arc::new(
+                crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
         }
     }
 }
@@ -56,17 +60,64 @@ impl AppContext {
         self.config.github_token.clone()
     }
 
+    pub fn get_webhook_secret(&self) -> Option<String> {
+        if let Ok(state) = self.state.try_read() {
+            if let Some(ref secret) = state.syndication_settings.webhook_secret {
+                let trimmed = secret.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        self.config.syndication_webhook_secret.clone()
+    }
+
     pub fn new_test() -> Self {
         Self::default()
     }
 
-    pub fn new_test_context() -> (std::sync::Arc<Self>, std::path::PathBuf) {
+    pub fn new_test_context() -> TestContextGuard {
         let ctx = Self::default();
         let data_file = ctx.data_file.clone();
         if let Ok(state) = ctx.state.try_read() {
             let _ = state.save(&data_file);
         }
-        (std::sync::Arc::new(ctx), data_file)
+        TestContextGuard::new(std::sync::Arc::new(ctx), data_file)
+    }
+}
+
+pub struct TestContextGuard {
+    pub ctx: std::sync::Arc<AppContext>,
+    pub data_file: std::path::PathBuf,
+}
+
+impl TestContextGuard {
+    pub fn new(ctx: std::sync::Arc<AppContext>, data_file: std::path::PathBuf) -> Self {
+        Self { ctx, data_file }
+    }
+
+    pub fn ctx(&self) -> std::sync::Arc<AppContext> {
+        self.ctx.clone()
+    }
+
+    pub fn data_file(&self) -> &std::path::Path {
+        &self.data_file
+    }
+}
+
+impl std::ops::Deref for TestContextGuard {
+    type Target = AppContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ctx
+    }
+}
+
+impl Drop for TestContextGuard {
+    fn drop(&mut self) {
+        if self.data_file.exists() {
+            let _ = std::fs::remove_file(&self.data_file);
+        }
     }
 }
 
@@ -227,11 +278,29 @@ mod tests {
 
     #[test]
     fn test_app_context_new_test_context_persists_data_file() {
-        let (ctx, data_file) = AppContext::new_test_context();
-        assert!(data_file.exists());
-        assert_eq!(ctx.data_file, data_file);
-        let content = std::fs::read_to_string(&data_file).unwrap();
+        let guard = AppContext::new_test_context();
+        assert!(guard.data_file.exists());
+        assert_eq!(guard.ctx.data_file, guard.data_file);
+        let content = std::fs::read_to_string(&guard.data_file).unwrap();
         assert!(content.contains("issues"));
-        let _ = std::fs::remove_file(data_file);
+    }
+
+    #[test]
+    fn test_test_context_guard_deletes_file_on_drop() {
+        let data_file = {
+            let guard = AppContext::new_test_context();
+            let path = guard.data_file().to_path_buf();
+            assert!(path.exists());
+            path
+        };
+        assert!(!data_file.exists());
+    }
+
+    #[test]
+    fn test_test_context_guard_deref_access() {
+        let guard = AppContext::new_test_context();
+        assert_eq!(guard.config.port, 4200);
+        let state_guard = guard.state.try_read();
+        assert!(state_guard.is_ok());
     }
 }

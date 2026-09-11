@@ -17,9 +17,14 @@ fn create_test_context() -> Arc<AppContext> {
     let state = Arc::new(RwLock::new(GrowthState::seed_default()));
     let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
     let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_recipes_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
+    let data_file = std::env::temp_dir().join(format!(
+        "growth_data_recipes_test_{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    let ivy_web_content_path =
+        std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
+    let ivy_web_images_path =
+        std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
     let config = growthhack_backend::config::Config::load();
 
     Arc::new(AppContext {
@@ -29,6 +34,9 @@ fn create_test_context() -> Arc<AppContext> {
         ivy_web_content_path,
         ivy_web_images_path,
         config,
+        rate_limiter: Arc::new(
+            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
+        ),
     })
 }
 
@@ -72,21 +80,34 @@ async fn test_recipe_parameters_and_cli_snippet_generation() {
     let ctx = create_test_context();
     let Json(recipes) = list_recipes(State(ctx), Query(ListRecipesQuery::default())).await;
 
-    let bugfixer = recipes.iter().find(|r| r.slug == "bugfixer").expect("bugfixer missing");
-    assert!(bugfixer.parameters.iter().any(|p| p.name == "issue_id" && p.required));
-    assert!(bugfixer.parameters.iter().any(|p| p.name == "test_first" && !p.required));
+    let bugfixer = recipes
+        .iter()
+        .find(|r| r.slug == "bugfixer")
+        .expect("bugfixer missing");
+    assert!(bugfixer
+        .parameters
+        .iter()
+        .any(|p| p.name == "issue_id" && p.required));
+    assert!(bugfixer
+        .parameters
+        .iter()
+        .any(|p| p.name == "test_first" && !p.required));
 
     // Default parameters
     let default_cmd = resolve_cli_snippet(bugfixer, &HashMap::new());
-    assert_eq!(default_cmd, "tendril run recipe/bugfixer --issue=42");
+    assert_eq!(
+        default_cmd,
+        "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"issue_id\":\"42\"}}'"
+    );
 
     // Overridden parameters
     let mut overrides = HashMap::new();
     overrides.insert("issue_id".to_string(), "104".to_string());
     overrides.insert("worktree_name".to_string(), "hotfix-auth".to_string());
     let custom_cmd = resolve_cli_snippet(bugfixer, &overrides);
-    assert!(custom_cmd.contains("tendril run recipe/bugfixer --issue=104"));
-    assert!(custom_cmd.contains("--worktree_name=hotfix-auth"));
+    assert!(custom_cmd.contains("curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run"));
+    assert!(custom_cmd.contains("\"issue_id\":\"104\""));
+    assert!(custom_cmd.contains("\"worktree_name\":\"hotfix-auth\""));
 }
 
 #[tokio::test]
@@ -99,7 +120,9 @@ async fn test_run_recipe_endpoint_dispatches_task() {
     let resp = run_recipe(
         Path("recipe-bugfixer".to_string()),
         State(ctx.clone()),
-        Json(RunRecipeRequest { parameters: overrides }),
+        Json(RunRecipeRequest {
+            parameters: overrides,
+        }),
     )
     .await;
 
@@ -112,7 +135,10 @@ async fn test_run_recipe_endpoint_dispatches_task() {
 
     assert!(response_data.task_id.starts_with("task-"));
     assert_eq!(response_data.recipe_id, "recipe-bugfixer");
-    assert_eq!(response_data.cli_command, "tendril run recipe/bugfixer --issue=88");
+    assert_eq!(
+        response_data.cli_command,
+        "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"issue_id\":\"88\"}}'"
+    );
 
     // Check task recorded in state
     let state = ctx.state.read().await;
@@ -130,13 +156,15 @@ async fn test_submit_community_recipe_success() {
     let payload = SubmitRecipeRequest {
         name: "Docstring Generator".to_string(),
         slug: "docstring-generator".to_string(),
-        description: "Autonomous generation of Google-style docstrings and OpenAPI specs".to_string(),
+        description: "Autonomous generation of Google-style docstrings and OpenAPI specs"
+            .to_string(),
         category: "Code Quality".to_string(),
         author: Some("alex_dev".to_string()),
         author_avatar: None,
         version: Some("1.0.0".to_string()),
         tags: Some(vec!["docs".to_string(), "docstrings".to_string()]),
-        promptware_template: "name: Docstring Generator\nsteps:\n  - id: analyze\n    action: Parse AST".to_string(),
+        promptware_template:
+            "name: Docstring Generator\nsteps:\n  - id: analyze\n    action: Parse AST".to_string(),
         parameters: vec![RecipeParameter {
             name: "target_path".to_string(),
             description: "Directory or file path".to_string(),
@@ -145,7 +173,7 @@ async fn test_submit_community_recipe_success() {
             param_type: "string".to_string(),
             options: None,
         }],
-        cli_snippet: Some("tendril run recipe/docstring-generator --path=<target_path>".to_string()),
+        cli_snippet: Some("curl -s -X POST http://localhost:4200/api/recipes/docstring-generator/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"target_path\":\"<target_path>\"}}'".to_string()),
     };
 
     let result = submit_recipe(State(ctx.clone()), Json(payload)).await;
@@ -159,7 +187,10 @@ async fn test_submit_community_recipe_success() {
 
     // Verify persisted in state
     let state = ctx.state.read().await;
-    let found = state.recipes.iter().find(|r| r.slug == "docstring-generator");
+    let found = state
+        .recipes
+        .iter()
+        .find(|r| r.slug == "docstring-generator");
     assert!(found.is_some());
 }
 

@@ -32,7 +32,8 @@ const mockRecipes: Recipe[] = [
         param_type: "boolean",
       },
     ],
-    cli_snippet: "tendril run recipe/bugfixer --issue=<issue_id>",
+    cli_snippet:
+      'curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run -H "Content-Type: application/json" -d \'{"parameters":{"issue_id":"<issue_id>"}}\'',
     forks_count: 142,
     stars_count: 580,
     is_official: true,
@@ -61,7 +62,8 @@ const mockRecipes: Recipe[] = [
         param_type: "string",
       },
     ],
-    cli_snippet: "tendril run recipe/security-patcher --cve=<cve_id>",
+    cli_snippet:
+      'curl -s -X POST http://localhost:4200/api/recipes/security-patcher/run -H "Content-Type: application/json" -d \'{"parameters":{"cve_id":"<cve_id>"}}\'',
     forks_count: 89,
     stars_count: 412,
     is_official: true,
@@ -90,7 +92,8 @@ const mockRecipes: Recipe[] = [
         param_type: "string",
       },
     ],
-    cli_snippet: "tendril run recipe/test-generator --scope=<test_scope>",
+    cli_snippet:
+      'curl -s -X POST http://localhost:4200/api/recipes/test-generator/run -H "Content-Type: application/json" -d \'{"parameters":{"test_scope":"<test_scope>"}}\'',
     forks_count: 215,
     stars_count: 890,
     is_official: true,
@@ -119,7 +122,8 @@ const mockRecipes: Recipe[] = [
         param_type: "string",
       },
     ],
-    cli_snippet: "tendril run recipe/pr-reviewer --pr=<pr_number>",
+    cli_snippet:
+      'curl -s -X POST http://localhost:4200/api/recipes/pr-reviewer/run -H "Content-Type: application/json" -d \'{"parameters":{"pr_number":"<pr_number>"}}\'',
     forks_count: 178,
     stars_count: 670,
     is_official: true,
@@ -148,7 +152,8 @@ const mockRecipes: Recipe[] = [
         param_type: "string",
       },
     ],
-    cli_snippet: "tendril run recipe/db-migrator --name=<schema_target>",
+    cli_snippet:
+      'curl -s -X POST http://localhost:4200/api/recipes/db-migrator/run -H "Content-Type: application/json" -d \'{"parameters":{"schema_target":"<schema_target>"}}\'',
     forks_count: 64,
     stars_count: 320,
     is_official: true,
@@ -238,7 +243,11 @@ describe("RecipeHub View", () => {
     expect(screen.getByText("Configure Recipe: Bugfixer")).toBeDefined();
 
     // Verify initial command preview contains default issue=42
-    expect(screen.getByText(/tendril run recipe\/bugfixer --issue=42/i)).toBeDefined();
+    expect(
+      screen.getByText(
+        /curl -s -X POST http:\/\/localhost:4200\/api\/recipes\/bugfixer\/run.*"issue_id":"42"/i,
+      ),
+    ).toBeDefined();
 
     // Change parameter issue_id to 999
     const inputs = screen.getAllByRole("textbox");
@@ -247,17 +256,25 @@ describe("RecipeHub View", () => {
     fireEvent.change(issueInput!, { target: { value: "999" } });
 
     // Verify dynamic update in command preview
-    expect(screen.getByText(/tendril run recipe\/bugfixer --issue=999/i)).toBeDefined();
+    expect(
+      screen.getByText(
+        /curl -s -X POST http:\/\/localhost:4200\/api\/recipes\/bugfixer\/run.*"issue_id":"999"/i,
+      ),
+    ).toBeDefined();
   });
 
   it("copies CLI snippet to clipboard", async () => {
     render(<RecipeHub recipes={mockRecipes} />);
 
     // Click 1-Click Copy CLI trigger for bugfixer
-    const copyTrigger = screen.getByText("tendril run recipe/bugfixer");
+    const copyTrigger = screen.getByText(
+      "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run",
+    );
     fireEvent.click(copyTrigger);
 
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("tendril run recipe/bugfixer");
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run",
+    );
     await waitFor(() => {
       expect(screen.getByText("Copied!")).toBeDefined();
     });

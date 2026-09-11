@@ -162,7 +162,7 @@ async fn test_parse_scouted_topics_truncated_mid_item() {
 #[tokio::test]
 async fn test_list_trends() {
     let ctx = common::create_test_context();
-    let response = list_trends(State(ctx)).await.into_response();
+    let response = list_trends(State(ctx.ctx())).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
@@ -175,7 +175,9 @@ async fn test_scout_trends_accepts_modes_and_sources() {
         sources: Some(vec!["Reddit".to_string(), "Hacker News".to_string()]),
         mode: Some("discussions".to_string()),
     };
-    let res = scout_trends(State(ctx.clone()), Json(req_discussions)).await.into_response();
+    let res = scout_trends(State(ctx.ctx()), Json(req_discussions))
+        .await
+        .into_response();
     assert_eq!(res.status(), StatusCode::ACCEPTED);
 
     // 2. General mode
@@ -183,7 +185,9 @@ async fn test_scout_trends_accepts_modes_and_sources() {
         sources: Some(vec!["GitHub".to_string(), "LinkedIn".to_string()]),
         mode: Some("general".to_string()),
     };
-    let res2 = scout_trends(State(ctx.clone()), Json(req_general)).await.into_response();
+    let res2 = scout_trends(State(ctx.ctx()), Json(req_general))
+        .await
+        .into_response();
     assert_eq!(res2.status(), StatusCode::ACCEPTED);
 }
 
@@ -195,7 +199,9 @@ async fn test_scout_trends_discussions_with_custom_sources() {
         sources: Some(vec!["r/rust".to_string(), "Lobste.rs".to_string()]),
         mode: Some("discussions".to_string()),
     };
-    let res = scout_trends(State(ctx.clone()), Json(req)).await.into_response();
+    let res = scout_trends(State(ctx.ctx()), Json(req))
+        .await
+        .into_response();
     assert_eq!(res.status(), StatusCode::ACCEPTED);
 }
 
@@ -208,13 +214,17 @@ async fn test_synthesize_trend_validation_and_modes() {
         tendril_tie_in: Some("direct".to_string()),
         channel: Some("Website".to_string()),
     };
-    let res_404 = synthesize_trend(Path("unknown-trend-id".to_string()), State(ctx.clone()), Json(req.clone()))
-        .await
-        .into_response();
+    let res_404 = synthesize_trend(
+        Path("unknown-trend-id".to_string()),
+        State(ctx.ctx()),
+        Json(req.clone()),
+    )
+    .await
+    .into_response();
     assert_eq!(res_404.status(), StatusCode::NOT_FOUND);
 
     // Verify ACCEPTED for seeded trend-1
-    let res_ok = synthesize_trend(Path("trend-1".to_string()), State(ctx.clone()), Json(req))
+    let res_ok = synthesize_trend(Path("trend-1".to_string()), State(ctx.ctx()), Json(req))
         .await
         .into_response();
     assert_eq!(res_ok.status(), StatusCode::ACCEPTED);
@@ -245,6 +255,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_direct);
 
@@ -265,6 +276,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_subtle);
 
@@ -285,6 +297,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_none);
 

@@ -16,7 +16,7 @@ use growthhack_backend::db::GrowthState;
 #[tokio::test]
 async fn test_list_packages_returns_seeded_targets() {
     let ctx = common::create_test_context();
-    let Json(packages) = list_packages(State(ctx)).await;
+    let Json(packages) = list_packages(State(ctx.ctx())).await;
 
     assert_eq!(packages.len(), 4);
 
@@ -109,7 +109,7 @@ async fn test_get_manifest_endpoint() {
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
         Query(ManifestQuery { refresh: None, tag: None }),
-        State(ctx.clone()),
+        State(ctx.ctx()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -120,7 +120,7 @@ async fn test_get_manifest_endpoint() {
     let (status_invalid, Json(manifest_invalid)) = get_manifest(
         Path("invalid_key".to_string()),
         Query(ManifestQuery { refresh: None, tag: None }),
-        State(ctx),
+        State(ctx.ctx()),
     )
     .await;
     assert_eq!(status_invalid, StatusCode::NOT_FOUND);
@@ -139,7 +139,7 @@ async fn test_update_package_status_and_persistence() {
 
     let (status, Json(updated)) = update_package_status(
         Path("pkg-winget".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload),
     )
     .await;
@@ -345,8 +345,11 @@ async fn test_manifest_endpoint_with_refresh_query() {
 
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
-        Query(ManifestQuery { refresh: Some(true), tag: None }),
-        State(ctx.clone()),
+        Query(ManifestQuery {
+            refresh: Some(true),
+            tag: None,
+        }),
+        State(ctx.ctx()),
     )
     .await;
 
@@ -364,8 +367,11 @@ async fn test_release_cache_fallback_on_network_error() {
     // Even if external network fails or repo is invalid, fallback to cached or default
     let (status, Json(manifest)) = get_manifest(
         Path("winget".to_string()),
-        Query(ManifestQuery { refresh: Some(true), tag: None }),
-        State(ctx.clone()),
+        Query(ManifestQuery {
+            refresh: Some(true),
+            tag: None,
+        }),
+        State(ctx.ctx()),
     )
     .await;
 
@@ -465,7 +471,7 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
 
     let (status, Json(response)) = dispatch_package_pr(
         Path("pkg-scoop".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload),
     )
     .await;
@@ -620,7 +626,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
 
     let (status_failed, Json(response_failed)) = dispatch_package_pr(
         Path("pkg-scoop".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload_no_skip),
     )
     .await;
@@ -639,7 +645,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
 
     let (status_accepted, Json(response_accepted)) = dispatch_package_pr(
         Path("pkg-scoop".to_string()),
-        State(ctx.clone()),
+        State(ctx.ctx()),
         Json(payload_skip),
     )
     .await;
@@ -730,7 +736,7 @@ async fn test_manifest_endpoint_with_tag_query() {
             refresh: None,
             tag: Some("v1.3.0".to_string()),
         }),
-        State(ctx),
+        State(ctx.ctx()),
     )
     .await;
 

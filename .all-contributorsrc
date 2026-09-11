@@ -1,0 +1,71 @@
+{
+  "projectName": "GrowthHack",
+  "projectOwner": "SpaceCorps",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 100,
+  "commit": false,
+  "commitConvention": "none",
+  "contributors": [
+    {
+      "login": "rorychatt",
+      "name": "Rory Chatt",
+      "avatar_url": "https://github.com/rorychatt.png",
+      "profile": "https://github.com/rorychatt",
+      "contributions": [
+        "code",
+        "architecture",
+        "review"
+      ]
+    },
+    {
+      "login": "alex-spacecorps",
+      "name": "Alex Vance",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10001?v=4",
+      "profile": "https://github.com/alex-spacecorps",
+      "contributions": [
+        "code",
+        "backend",
+        "test"
+      ]
+    },
+    {
+      "login": "sarah-ui",
+      "name": "Sarah Jenkins",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10002?v=4",
+      "profile": "https://github.com/sarah-ui",
+      "contributions": [
+        "design",
+        "frontend",
+        "a11y"
+      ]
+    },
+    {
+      "login": "dev-elena",
+      "name": "Elena Rostova",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10003?v=4",
+      "profile": "https://github.com/dev-elena",
+      "contributions": [
+        "code",
+        "doc",
+        "maintenance"
+      ]
+    },
+    {
+      "login": "marcus-cli",
+      "name": "Marcus Chen",
+      "avatar_url": "https://avatars.githubusercontent.com/u/10004?v=4",
+      "profile": "https://github.com/marcus-cli",
+      "contributions": [
+        "cli",
+        "package",
+        "test"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": true
+}

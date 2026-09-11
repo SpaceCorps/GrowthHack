@@ -1,13 +1,11 @@
-use growthhack_backend::api::AppContext;
-use std::path::PathBuf;
-use std::sync::Arc;
+use growthhack_backend::api::{AppContext, TestContextGuard};
 
 #[allow(dead_code)]
-pub fn create_test_context_with_file() -> (Arc<AppContext>, PathBuf) {
+pub fn create_test_context_with_file() -> TestContextGuard {
     AppContext::new_test_context()
 }
 
 #[allow(dead_code)]
-pub fn create_test_context() -> Arc<AppContext> {
-    create_test_context_with_file().0
+pub fn create_test_context() -> TestContextGuard {
+    AppContext::new_test_context()
 }
