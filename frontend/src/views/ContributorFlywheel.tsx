@@ -341,7 +341,10 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
 
   // Metrics computation
   const totalIssues = issues.length;
-  const unclaimedCount = useMemo(() => issues.filter((i) => !i.claimed).length, [issues]);
+  const unclaimedCount = useMemo(
+    () => issues.filter((i) => !i.claimed && !i.closed).length,
+    [issues],
+  );
   const activeMentors = useMemo(() => {
     const mentors = new Set(issues.map((i) => i.mentor));
     return mentors.size;
@@ -359,10 +362,13 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
       if (timeFilter !== "all" && issue.estimated_minutes > parseInt(timeFilter, 10)) {
         return false;
       }
-      if (statusFilter === "unclaimed" && issue.claimed) {
+      if (statusFilter === "unclaimed" && (issue.claimed || issue.closed)) {
         return false;
       }
       if (statusFilter === "claimed" && !issue.claimed) {
+        return false;
+      }
+      if (statusFilter === "closed" && !issue.closed) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -576,6 +582,7 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                 <option value="all">All Statuses</option>
                 <option value="unclaimed">Unclaimed Only</option>
                 <option value="claimed">Claimed Only</option>
+                <option value="closed">Closed Only</option>
               </select>
             </div>
           </div>
@@ -609,6 +616,14 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           {issue.difficulty}
                         </span>
+                        {issue.closed && (
+                          <span
+                            data-testid={`closed-badge-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                        )}
                         {issue.github_issue_number && (
                           <a
                             href={`https://github.com/${issue.github_repo || "SpaceCorps/GrowthHack"}/issues/${issue.github_issue_number}`}
@@ -689,7 +704,36 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                       Mentor: <span className="text-slate-200 font-medium">{issue.mentor}</span>
                     </div>
 
-                    {issue.claimed ? (
+                    {issue.closed ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            data-testid={`closed-status-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                          <button
+                            type="button"
+                            disabled
+                            data-testid={`claim-btn-${issue.id}`}
+                            title="This issue is closed on GitHub"
+                            className="px-3 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                          >
+                            Claim Issue
+                          </button>
+                        </div>
+                        {issue.github_sync_status && (
+                          <span
+                            data-testid={`github-sync-status-${issue.id}`}
+                            title={issue.github_sync_message || issue.github_sync_status}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-purple-500/10 text-purple-300 border-purple-500/20"
+                          >
+                            GitHub: {issue.github_sync_status}
+                          </span>
+                        )}
+                      </div>
+                    ) : issue.claimed ? (
                       <div className="flex flex-col items-end gap-1">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
@@ -727,7 +771,9 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                                 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                                 : issue.github_sync_status.startsWith("Skipped")
                                   ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                  : "bg-red-500/10 text-red-400 border-red-500/20"
+                                  : issue.github_sync_status.includes("Webhook")
+                                    ? "bg-purple-500/10 text-purple-300 border-purple-500/20"
+                                    : "bg-red-500/10 text-red-400 border-red-500/20"
                             }`}
                           >
                             GitHub: {issue.github_sync_status}

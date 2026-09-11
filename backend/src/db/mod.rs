@@ -329,6 +329,10 @@ pub struct ContributorIssue {
     pub github_sync_status: Option<String>,
     #[serde(default)]
     pub github_sync_message: Option<String>,
+    #[serde(default)]
+    pub closed: bool,
+    #[serde(default)]
+    pub closed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

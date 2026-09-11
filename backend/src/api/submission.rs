@@ -678,6 +678,35 @@ impl GitHubClient {
         }
         Ok(())
     }
+
+    pub async fn remove_issue_label(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: u64,
+        label: &str,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/repos/{}/{}/issues/{}/labels/{}",
+            self.base_url, owner, repo, issue_number, label
+        );
+        let resp = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            Err(format!(
+                "DELETE /issues/{}/labels/{} failed ({}): {}",
+                issue_number, label, status, text
+            ))
+        }
+    }
 }
 
 pub async fn get_github_status(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {

@@ -3,7 +3,7 @@ use crate::api::submission::GitHubClient;
 use crate::db::{AllContributorsConfig, AllContributorsEntry, ContributorIssue, ContributorRecord};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
@@ -96,6 +96,57 @@ pub struct GenerateAllContributorsPrResponse {
     pub cli_commands: Vec<String>,
     pub pr_url: Option<String>,
     pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookUser {
+    pub login: String,
+    #[serde(default)]
+    pub id: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookLabel {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookIssue {
+    pub number: u64,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub assignees: Vec<GitHubWebhookUser>,
+    #[serde(default)]
+    pub labels: Vec<GitHubWebhookLabel>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookRepo {
+    #[serde(default)]
+    pub full_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct GitHubWebhookPayload {
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub issue: Option<GitHubWebhookIssue>,
+    #[serde(default)]
+    pub assignee: Option<GitHubWebhookUser>,
+    #[serde(default)]
+    pub repository: Option<GitHubWebhookRepo>,
+    #[serde(default)]
+    pub sender: Option<GitHubWebhookUser>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitHubWebhookResponse {
+    pub received: bool,
+    pub action: String,
+    pub matched_issue_id: Option<String>,
+    pub message: String,
 }
 
 pub async fn list_contributor_issues(
@@ -761,4 +812,200 @@ pub async fn verify_contributor(
         pr: pr_response,
         message: "Contributor verified successfully".to_string(),
     }))
+}
+
+pub async fn handle_github_webhook(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(payload): Json<GitHubWebhookPayload>,
+) -> (StatusCode, Json<GitHubWebhookResponse>) {
+    let event_header = headers
+        .get("x-github-event")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.trim());
+
+    if let Some("ping") = event_header {
+        return (
+            StatusCode::OK,
+            Json(GitHubWebhookResponse {
+                received: true,
+                action: "ping".to_string(),
+                matched_issue_id: None,
+                message: "pong".to_string(),
+            }),
+        );
+    }
+
+    let is_issues_event = match event_header {
+        Some("issues") => true,
+        None if !payload.action.is_empty() && payload.issue.is_some() => true,
+        Some(ev) if ev != "ping" && !payload.action.is_empty() && payload.issue.is_some() => true,
+        _ => false,
+    };
+
+    if !is_issues_event {
+        return (
+            StatusCode::OK,
+            Json(GitHubWebhookResponse {
+                received: true,
+                action: if payload.action.is_empty() {
+                    event_header.unwrap_or("unknown").to_string()
+                } else {
+                    payload.action.clone()
+                },
+                matched_issue_id: None,
+                message: "Event ignored (not an issues event)".to_string(),
+            }),
+        );
+    }
+
+    let issue_payload = match &payload.issue {
+        Some(i) => i,
+        None => {
+            return (
+                StatusCode::OK,
+                Json(GitHubWebhookResponse {
+                    received: true,
+                    action: payload.action.clone(),
+                    matched_issue_id: None,
+                    message: "No issue payload provided".to_string(),
+                }),
+            );
+        }
+    };
+
+    let payload_repo = payload
+        .repository
+        .as_ref()
+        .and_then(|r| r.full_name.as_deref());
+
+    let (matched_id, sync_msg, remove_label_info) = {
+        let mut state = ctx.state.write().await;
+        let target_issue = state.contributor_issues.iter_mut().find(|issue| {
+            if issue.github_issue_number != Some(issue_payload.number) {
+                return false;
+            }
+            if let (Some(pr), Some(ir)) = (payload_repo, issue.github_repo.as_deref()) {
+                ir.eq_ignore_ascii_case(pr)
+            } else {
+                true
+            }
+        });
+
+        match target_issue {
+            None => (
+                None,
+                format!(
+                    "No local contributor issue matched GitHub issue #{}",
+                    issue_payload.number
+                ),
+                None,
+            ),
+            Some(issue) => {
+                let id = issue.id.clone();
+                let mut remove_label = None;
+                let action_lower = payload.action.to_lowercase();
+
+                match action_lower.as_str() {
+                    "unassigned" => {
+                        let unassigned_login = payload.assignee.as_ref().map(|u| u.login.as_str());
+                        let matches_claim = match (&issue.claimed_by, unassigned_login) {
+                            (Some(claimed_by), Some(unassigned)) => {
+                                let clean_claimed = claimed_by.trim().trim_start_matches('@');
+                                let clean_unassigned = unassigned.trim().trim_start_matches('@');
+                                clean_claimed.eq_ignore_ascii_case(clean_unassigned)
+                            }
+                            _ => false,
+                        };
+                        let should_unassign = matches_claim || issue_payload.assignees.is_empty();
+
+                        if should_unassign {
+                            issue.claimed = false;
+                            issue.claimed_by = None;
+                            issue.claimed_at = None;
+                            issue.github_sync_status =
+                                Some("Unassigned (Webhook)".to_string());
+                            issue.github_sync_message =
+                                Some("Contributor unassigned externally on GitHub".to_string());
+
+                            let repo_target = issue
+                                .github_repo
+                                .as_deref()
+                                .or(payload_repo)
+                                .unwrap_or("SpaceCorps/GrowthHack");
+                            let (owner, repo_name) = match repo_target.split_once('/') {
+                                Some((o, r)) => (o.trim().to_string(), r.trim().to_string()),
+                                None => ("SpaceCorps".to_string(), "GrowthHack".to_string()),
+                            };
+                            remove_label = Some((owner, repo_name, issue_payload.number));
+                        }
+                    }
+                    "closed" => {
+                        issue.closed = true;
+                        issue.closed_at = Some(Utc::now());
+                        issue.github_sync_status = Some("Closed (Webhook)".to_string());
+                        issue.github_sync_message = Some(format!(
+                            "Issue #{} was closed externally on GitHub",
+                            issue_payload.number
+                        ));
+                    }
+                    "reopened" => {
+                        issue.closed = false;
+                        issue.closed_at = None;
+                        issue.github_sync_status = Some("Reopened (Webhook)".to_string());
+                        issue.github_sync_message = Some(format!(
+                            "Issue #{} was reopened on GitHub",
+                            issue_payload.number
+                        ));
+                    }
+                    "assigned" if !issue.claimed => {
+                        if let Some(assignee) = &payload.assignee {
+                            issue.claimed = true;
+                            issue.claimed_by = Some(assignee.login.clone());
+                            issue.claimed_at = Some(Utc::now());
+                            issue.github_sync_status = Some("Assigned (Webhook)".to_string());
+                            issue.github_sync_message =
+                                Some(format!("Assigned to @{} on GitHub", assignee.login));
+                        }
+                    }
+                    _ => {
+                        // Unhandled actions ignored
+                    }
+                }
+
+                let final_msg = issue.github_sync_message.clone().unwrap_or_else(|| {
+                    format!(
+                        "Processed action {} for issue #{}",
+                        payload.action, issue_payload.number
+                    )
+                });
+                let _ = state.save(&ctx.data_file);
+                (
+                    Some(id),
+                    final_msg,
+                    remove_label,
+                )
+            }
+        }
+    };
+
+    if let Some((owner, repo, num)) = remove_label_info {
+        if let Some(tok) = ctx.get_github_token().filter(|t| !t.trim().is_empty()) {
+            if let Ok(client) = GitHubClient::new(&tok) {
+                let _ = client
+                    .remove_issue_label(&owner, &repo, num, "claimed")
+                    .await;
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(GitHubWebhookResponse {
+            received: true,
+            action: payload.action,
+            matched_issue_id: matched_id,
+            message: sync_msg,
+        }),
+    )
 }
