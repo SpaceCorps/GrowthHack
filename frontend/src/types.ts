@@ -164,6 +164,21 @@ export interface PackageManagerTarget {
   updated_at: string;
 }
 
+export interface ReleaseAsset {
+  name: string;
+  browser_download_url: string;
+  digest?: string;
+  sha256?: string;
+}
+
+export interface ReleaseInfo {
+  tag_name: string;
+  version: string;
+  assets: ReleaseAsset[];
+  published_at?: string;
+  fetched_at: string;
+}
+
 export interface PackageManifestResponse {
   target_key: string;
   filename: string;
@@ -171,6 +186,8 @@ export interface PackageManifestResponse {
   content: string;
   install_command: string;
   instructions: string;
+  release_tag?: string;
+  fetched_at?: string;
 }
 
 export interface DispatchPackagePrResponse {
@@ -197,7 +214,111 @@ export type ActiveTab =
   | "agent"
   | "review"
   | "flywheel"
-  | "contributors";
+  | "contributors"
+  | "recipes"
+  | "doctor";
+
+export interface DiagnosticCheck {
+  id: string;
+  name: string;
+  category: "git" | "agent" | "keys" | "ports" | string;
+  status: "Pass" | "Warning" | "Fail";
+  message: string;
+  remediation_command?: string;
+  can_auto_fix: boolean;
+}
+
+export interface DiagnosticSummary {
+  total: number;
+  passed: number;
+  warnings: number;
+  failures: number;
+  ready_for_execution: boolean;
+}
+
+export interface DiagnosticReport {
+  timestamp: string;
+  checks: DiagnosticCheck[];
+  summary: DiagnosticSummary;
+}
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  description: string;
+  target_branch: string;
+  estimated_duration_sec: number;
+}
+
+export interface DemoRunState {
+  id: string;
+  status: "Idle" | "Running" | "Completed" | "Failed" | string;
+  current_step: number;
+  step_progress_pct: number;
+  logs: string[];
+  diff_preview?: string;
+  pr_summary?: string;
+  elapsed_seconds: number;
+}
+
+export interface OnboardingMetrics {
+  first_run_completed: boolean;
+  demo_completed_count: number;
+  diagnostic_runs_count: number;
+  time_to_first_pr_seconds?: number;
+  github_starred: boolean;
+}
+
+export interface RecipeParameter {
+  name: string;
+  description: string;
+  default_value: string;
+  required: boolean;
+  param_type: string;
+  options?: string[];
+}
+
+export interface Recipe {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  author: string;
+  author_avatar?: string;
+  version: string;
+  tags: string[];
+  promptware_template: string;
+  parameters: RecipeParameter[];
+  cli_snippet: string;
+  forks_count: number;
+  stars_count: number;
+  is_official: boolean;
+  badge?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitRecipeRequest {
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  author?: string;
+  author_avatar?: string;
+  version?: string;
+  tags?: string[];
+  promptware_template: string;
+  parameters?: RecipeParameter[];
+  cli_snippet?: string;
+}
+
+export interface RunRecipeResponse {
+  task_id: string;
+  recipe_id: string;
+  cli_command: string;
+  message: string;
+}
 
 export interface ContributorIssue {
   id: string;

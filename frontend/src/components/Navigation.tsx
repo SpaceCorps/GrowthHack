@@ -13,6 +13,7 @@ import {
   Cpu,
   CheckCheck,
   GitPullRequest,
+  Activity,
   Users,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ interface NavigationProps {
   listingsCount: number;
   packagesCount?: number;
   reviewCount?: number;
+  recipesCount?: number;
   contributorsCount?: number;
 }
 
@@ -39,6 +41,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   listingsCount,
   packagesCount,
   reviewCount,
+  recipesCount,
   contributorsCount,
 }) => {
   const navItems = [
@@ -59,6 +62,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Approval Deck",
       icon: CheckCheck,
       count: reviewCount,
+    },
+    {
+      id: "recipes" as ActiveTab,
+      label: "Recipe Hub & Packs",
+      icon: Sparkles,
+      count: recipesCount,
     },
     {
       id: "trends" as ActiveTab,
@@ -98,6 +107,11 @@ export const Navigation: React.FC<NavigationProps> = ({
       id: "agent" as ActiveTab,
       label: "Antigravity Console",
       icon: Terminal,
+    },
+    {
+      id: "doctor" as ActiveTab,
+      label: "Doctor & Demo",
+      icon: Activity,
     },
   ];
 

@@ -7,7 +7,9 @@ import type {
   GrowthIssue,
   Listing,
   PackageManagerTarget,
+  Recipe,
   ReviewItem,
+  RunRecipeResponse,
   TrendTopic,
   VideoDemo,
 } from "./types";
@@ -23,7 +25,9 @@ import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
 import { PrFlywheel } from "./views/PrFlywheel";
+import { RecipeHub } from "./views/RecipeHub";
 import { ContributorFlywheel } from "./views/ContributorFlywheel";
+import { DoctorDemo } from "./views/DoctorDemo";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -41,9 +45,11 @@ export const App: React.FC = () => {
       "listings",
       "packages",
       "contributors",
+      "recipes",
       "agent",
       "review",
       "flywheel",
+      "doctor",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -70,6 +76,7 @@ export const App: React.FC = () => {
       }
     | undefined
   >(undefined);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
 
   // Live Terminal & Modal State
@@ -92,6 +99,7 @@ export const App: React.FC = () => {
         resStatus,
         resDemos,
         resGithub,
+        resRecipes,
         resContributors,
       ] = await Promise.all([
         fetch("/api/issues").then((r) => r.json()),
@@ -104,6 +112,7 @@ export const App: React.FC = () => {
         fetch("/api/submissions/github-status")
           .then((r) => r.json())
           .catch(() => undefined),
+        fetch("/api/recipes").then((r) => r.json()),
         fetch("/api/contributors/issues").then((r) => r.json()),
       ]);
       setIssues(resIssues);
@@ -116,6 +125,7 @@ export const App: React.FC = () => {
       if (resGithub) {
         setGithubStatus(resGithub);
       }
+      setRecipes(resRecipes);
       setContributorIssues(resContributors);
 
       if (initialArticleId && !selectedArticle) {
@@ -142,6 +152,7 @@ export const App: React.FC = () => {
         "listings",
         "packages",
         "contributors",
+        "recipes",
         "agent",
         "review",
         "flywheel",
@@ -153,6 +164,26 @@ export const App: React.FC = () => {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  const handleRunRecipe = async (recipeId: string, parameters: Record<string, string>) => {
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parameters }),
+      });
+      if (res.ok) {
+        const data: RunRecipeResponse = await res.json();
+        if (data.task_id) {
+          setTerminalTitle(`Recipe: ${recipeId}`);
+          setActiveTaskId(data.task_id);
+          fetchAll();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to run recipe:", err);
+    }
+  };
 
   // Issue Handlers
   const handleRunIssue = async (id: string) => {
@@ -899,10 +930,14 @@ export const App: React.FC = () => {
         listingsCount={listings.length}
         packagesCount={packages.length}
         reviewCount={pendingReviewCount}
+        recipesCount={recipes.length}
         contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === "recipes" && (
+          <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
+        )}
         {activeTab === "issues" && (
           <IssuesHub
             issues={issues}
@@ -977,6 +1012,8 @@ export const App: React.FC = () => {
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
+
+        {activeTab === "doctor" && <DoctorDemo />}
       </main>
 
       {/* Footer */}
