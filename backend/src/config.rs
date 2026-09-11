@@ -178,6 +178,12 @@ impl Config {
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::load()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,6 +279,14 @@ mod tests {
         let config = Config::load();
         std::env::remove_var("GITHUB_PAT");
         assert_eq!(config.github_token, Some("ghp_pat_token_67890".to_string()));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let config = Config::default();
+        assert_eq!(config.port, 4200);
+        assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     }
 
     #[test]

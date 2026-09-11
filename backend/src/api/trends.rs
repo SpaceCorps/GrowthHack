@@ -51,43 +51,216 @@ pub struct ScoutedItem {
     pub tendril_tie_in: Option<String>,
 }
 
+fn extract_object_slices(slice: &str) -> Vec<&str> {
+    let mut objects = Vec::new();
+    let mut depth = 0;
+    let mut start_idx = None;
+    let mut in_string = false;
+    let mut escape = false;
+
+    for (idx, ch) in slice.char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            } else if ch == '\n' {
+                escape = false;
+            }
+        } else {
+            match ch {
+                '"' => in_string = true,
+                '{' => {
+                    if depth == 0 {
+                        start_idx = Some(idx);
+                    }
+                    depth += 1;
+                }
+                '}' if depth > 0 => {
+                    depth -= 1;
+                    if depth == 0 {
+                        if let Some(start) = start_idx.take() {
+                            objects.push(&slice[start..=idx]);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    objects
+}
+
+fn clean_trailing_commas(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_string = false;
+    let mut escape = false;
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let ch = chars[i];
+        if in_string {
+            out.push(ch);
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else {
+            if ch == '"' {
+                in_string = true;
+                out.push(ch);
+            } else if ch == ',' {
+                let mut j = i + 1;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                if j < chars.len() && (chars[j] == '}' || chars[j] == ']') {
+                    // Skip trailing comma before } or ]
+                } else {
+                    out.push(ch);
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+fn recover_individual_items(slice: &str) -> Vec<ScoutedItem> {
+    let mut items = Vec::new();
+    let objects = extract_object_slices(slice);
+    for obj_slice in objects {
+        let trimmed = obj_slice.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(item) = serde_json::from_str::<ScoutedItem>(trimmed) {
+            items.push(item);
+            continue;
+        }
+        let cleaned = clean_trailing_commas(trimmed);
+        if let Ok(item) = serde_json::from_str::<ScoutedItem>(&cleaned) {
+            items.push(item);
+            continue;
+        }
+        if let Ok(repaired) = jsonrepair::repair_json(&cleaned, &jsonrepair::Options::default()) {
+            if let Ok(item) = serde_json::from_str::<ScoutedItem>(&repaired) {
+                items.push(item);
+                continue;
+            }
+        }
+        if let Ok(repaired) = jsonrepair::repair_json(trimmed, &jsonrepair::Options::default()) {
+            if let Ok(item) = serde_json::from_str::<ScoutedItem>(&repaired) {
+                items.push(item);
+            }
+        }
+    }
+    items
+}
+
+fn try_parse_candidate_json(slice: &str) -> Option<Vec<ScoutedItem>> {
+    let trimmed = slice.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Locate array brackets if present
+    let candidate = if let Some(start) = trimmed.find('[') {
+        if let Some(end) = trimmed.rfind(']') {
+            if start < end {
+                &trimmed[start..=end]
+            } else {
+                &trimmed[start..]
+            }
+        } else {
+            &trimmed[start..]
+        }
+    } else {
+        trimmed
+    };
+
+    // 1. Direct parse
+    if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(candidate) {
+        if !items.is_empty() {
+            return Some(items);
+        }
+    }
+
+    // 1b. Cleaned trailing commas
+    let cleaned = clean_trailing_commas(candidate);
+    if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(&cleaned) {
+        if !items.is_empty() {
+            return Some(items);
+        }
+    }
+
+    // 2. Repair and parse array
+    if let Ok(repaired) = jsonrepair::repair_json(&cleaned, &jsonrepair::Options::default()) {
+        if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(&repaired) {
+            if !items.is_empty() {
+                return Some(items);
+            }
+        }
+    }
+    if let Ok(repaired) = jsonrepair::repair_json(candidate, &jsonrepair::Options::default()) {
+        if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(&repaired) {
+            if !items.is_empty() {
+                return Some(items);
+            }
+        }
+    }
+
+    // 3. Truncated item recovery: scan for individual { ... } blocks
+    let recovered = recover_individual_items(&cleaned);
+    if !recovered.is_empty() {
+        return Some(recovered);
+    }
+    let recovered_raw = recover_individual_items(candidate);
+    if !recovered_raw.is_empty() {
+        return Some(recovered_raw);
+    }
+
+    None
+}
+
 pub fn parse_scouted_topics(raw: &str) -> Vec<ScoutedItem> {
-    // 1. Try finding json inside ```json ... ```
+    // 1. Try finding json inside ```json ... ``` (or unclosed)
     if let Some(start) = raw.find("```json") {
         let after_start = &raw[start + 7..];
-        if let Some(end) = after_start.find("```") {
-            let json_slice = after_start[..end].trim();
-            if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(json_slice) {
-                if !items.is_empty() {
-                    return items;
-                }
-            }
+        let candidate = if let Some(end) = after_start.find("```") {
+            &after_start[..end]
+        } else {
+            after_start
+        };
+        if let Some(items) = try_parse_candidate_json(candidate) {
+            return items;
         }
     }
 
-    // 2. Try finding json inside ``` ... ```
+    // 2. Try finding json inside ``` ... ``` (or unclosed)
     if let Some(start) = raw.find("```") {
         let after_start = &raw[start + 3..];
-        if let Some(end) = after_start.find("```") {
-            let json_slice = after_start[..end].trim();
-            if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(json_slice) {
-                if !items.is_empty() {
-                    return items;
-                }
-            }
+        let candidate = if let Some(end) = after_start.find("```") {
+            &after_start[..end]
+        } else {
+            after_start
+        };
+        if let Some(items) = try_parse_candidate_json(candidate) {
+            return items;
         }
     }
 
-    // 3. Try finding [ ... ]
-    if let (Some(start), Some(end)) = (raw.find('['), raw.rfind(']')) {
-        if start < end {
-            let json_slice = &raw[start..=end];
-            if let Ok(items) = serde_json::from_str::<Vec<ScoutedItem>>(json_slice) {
-                if !items.is_empty() {
-                    return items;
-                }
-            }
-        }
+    // 3. Try finding JSON in raw text (e.g. bracketed or unclosed array)
+    if let Some(items) = try_parse_candidate_json(raw) {
+        return items;
     }
 
     // 4. Fallback heuristic parsing: line by line

@@ -154,4 +154,157 @@ describe("Review Queue Listing Blurb Approval Flow", () => {
       body: JSON.stringify({ blurb_status: "Approved" }),
     });
   });
+
+  it("batch publish triggers submit-pr for approved listing blurbs and updates listing status to PR Submitted", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.endsWith("/submit-pr")) {
+        return {
+          ok: true,
+          json: async () => ({
+            task_id: "task-pr-123",
+            message: "PR submission initiated",
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      };
+    });
+    global.fetch = fetchMock;
+
+    const mockApprovedItem: ReviewItem = {
+      id: "listing-list-1",
+      type: "listing_blurb",
+      title: "awesome-ai-agents",
+      subtitle: "Awesome Repo • https://github.com/e2b-dev/awesome-ai-agents",
+      channel: "GitHub PR",
+      summary: "High authority repo",
+      content:
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://github.com/e2b-dev/awesome-ai-agents"],
+      status: "Approved",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "list-1",
+    };
+
+    let publishedItems: ReviewItem[] = [];
+    const handleBatchPublish = async (items: ReviewItem[]) => {
+      for (const it of items) {
+        if (it.type === "listing_blurb") {
+          await fetch(`/api/listings/${it.rawId}/submit-pr`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+      publishedItems = items;
+    };
+
+    render(<ReviewQueue items={[mockApprovedItem]} onBatchPublish={handleBatchPublish} />);
+
+    // Open Export Approved modal
+    const exportBtn = screen.getByText(/Export Approved/);
+    fireEvent.click(exportBtn);
+
+    // Verify modal shows "PR Submission & Antigravity Generation" badge
+    expect(screen.getByText("PR Submission & Antigravity Generation")).toBeDefined();
+
+    // Click Publish All
+    const publishAllBtn = screen.getByText("Publish All");
+    await act(async () => {
+      fireEvent.click(publishAllBtn);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/listings/list-1/submit-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(publishedItems.length).toBe(1);
+    expect(publishedItems[0].id).toBe("listing-list-1");
+  });
+
+  it("refining listing blurb resets status to Pending when text is modified", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "list-1", blurb_status: "Pending" }),
+    });
+    global.fetch = fetchMock;
+
+    const mockReviewItem: ReviewItem = {
+      id: "listing-list-1",
+      type: "listing_blurb",
+      title: "awesome-ai-agents",
+      subtitle: "Awesome Repo • https://github.com/e2b-dev/awesome-ai-agents",
+      channel: "GitHub PR",
+      summary: "High authority repo",
+      content:
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.",
+      backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+      citations: ["https://github.com/e2b-dev/awesome-ai-agents"],
+      status: "Pending",
+      createdAt: "2026-09-10T12:00:00Z",
+      rawId: "list-1",
+    };
+
+    const handleRefine = vi.fn(async (item: ReviewItem, updated: Partial<ReviewItem>) => {
+      if (item.type === "listing_blurb") {
+        const isModified = updated.content !== undefined && updated.content !== item.content;
+        const blurbStatus = updated.status ?? (isModified ? "Pending" : undefined);
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            submission_blurb: updated.content,
+            notes: updated.summary,
+            ...(blurbStatus ? { blurb_status: blurbStatus } : {}),
+          }),
+        });
+      }
+    });
+
+    render(<ReviewQueue items={[mockReviewItem]} onRefine={handleRefine} />);
+
+    // Open refine modal
+    const refineBtn = screen.getByTestId("refine-btn");
+    fireEvent.click(refineBtn);
+
+    // Modal should be open with textarea
+    const contentTextarea = screen.getByDisplayValue(
+      "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.",
+    );
+    fireEvent.change(contentTextarea, {
+      target: {
+        value:
+          "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Refined blurb text.",
+      },
+    });
+
+    // Save refinement
+    const saveBtn = screen.getByText("Save & Update Card");
+    fireEvent.click(saveBtn);
+
+    expect(handleRefine).toHaveBeenCalledTimes(1);
+    expect(handleRefine).toHaveBeenCalledWith(
+      mockReviewItem,
+      expect.objectContaining({
+        content:
+          "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Refined blurb text.",
+        status: "Pending",
+      }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/listings/list-1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        submission_blurb:
+          "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Refined blurb text.",
+        notes: "High authority repo",
+        blurb_status: "Pending",
+      }),
+    });
+  });
 });

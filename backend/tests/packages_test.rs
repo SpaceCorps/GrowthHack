@@ -145,7 +145,7 @@ async fn test_update_package_status_and_persistence() {
 
 #[tokio::test]
 async fn test_build_upstream_pr_commands_syntax() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let state = ctx.state.read().await;
     let winget = state.packages.iter().find(|p| p.target_key == "winget").unwrap();
     let scoop = state.packages.iter().find(|p| p.target_key == "scoop").unwrap();
@@ -182,7 +182,7 @@ async fn test_build_upstream_pr_commands_syntax() {
 
 #[tokio::test]
 async fn test_dispatch_package_pr_endpoint_spawns_task() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     let payload = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
@@ -208,7 +208,7 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
 
 #[tokio::test]
 async fn test_pr_url_extraction_updates_state() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // 1. Verify extract_pr_url with [PR_URL] marker
     let output_with_marker = "Some agent log...\nCreating PR...\n[PR_URL] https://github.com/microsoft/winget-pkgs/pull/189204\nDone.";

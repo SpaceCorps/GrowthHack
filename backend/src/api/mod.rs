@@ -130,6 +130,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/submissions/github-status",
             get(submission::get_github_status),
         )
+        .route(
+            "/api/listings/{id}/submit-pr",
+            post(listings::submit_listing_pr),
+        )
+        .route(
+            "/api/listings/batch-submit-pr",
+            post(listings::batch_submit_listing_prs),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route("/api/packages/{target}/manifest", get(packages::get_manifest))
