@@ -154,6 +154,10 @@ async fn test_get_workflows_endpoint() {
     assert!(res.action_yml.contains("inputs:"));
     assert!(res.action_yml.contains("<!-- tendril-flywheel-badge -->"));
     assert!(res.action_yml.contains("EXISTING_COMMENT_ID"));
+    assert!(
+        res.action_yml.contains("Resource not accessible")
+            || res.action_yml.contains("Fork PR Read-Only Permissions")
+    );
     assert!(res
         .action_yml
         .contains("gh api \"repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}\""));
@@ -165,4 +169,15 @@ async fn test_get_workflows_endpoint() {
     assert!(res.workflow_yml.contains("pull_request:"));
     assert!(res.workflow_yml.contains("pull-requests: write"));
     assert!(res.workflow_yml.contains("issues: write"));
+
+    assert!(res.companion_workflow_yml.is_some());
+    let companion = res.companion_workflow_yml.unwrap();
+    assert!(companion.contains("workflow_run:"));
+    assert!(companion.contains("workflows: [\"Tendril Verification & PR Flywheel\"]"));
+    assert!(companion.contains("pull-requests: write"));
+
+    assert!(res.fork_guide_md.is_some());
+    let guide = res.fork_guide_md.unwrap();
+    assert!(guide.contains("GitHub Actions Fork Security"));
+    assert!(guide.contains("workflow_run"));
 }

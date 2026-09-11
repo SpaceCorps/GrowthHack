@@ -1,10 +1,10 @@
+use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::api::packages::ReleaseInfo;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthIssue {
@@ -125,6 +125,8 @@ pub struct SyndicationSettings {
     pub hashnode_publication_id: Option<String>,
     #[serde(default)]
     pub github_token: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
     #[serde(default = "default_publish_as_draft")]
     pub publish_as_draft: bool,
 }
@@ -136,6 +138,7 @@ impl Default for SyndicationSettings {
             hashnode_api_key: None,
             hashnode_publication_id: None,
             github_token: None,
+            webhook_secret: None,
             publish_as_draft: true,
         }
     }
@@ -158,11 +161,11 @@ pub struct VideoDemo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageManagerTarget {
     pub id: String,
-    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub target_key: String,    // "homebrew", "winget", "scoop", "npx"
     pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
-    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub os: String,   // "macOS / Linux", "Windows", "Cross-Platform"
     pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
-    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub package_id: String,    // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
     pub install_command: String,
     pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
     pub pr_url: Option<String>,
@@ -215,7 +218,7 @@ pub struct Recipe {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ContributorIssue {
     pub id: String,
     pub title: String,
@@ -230,6 +233,14 @@ pub struct ContributorIssue {
     pub claimed_by: Option<String>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub pr_url: Option<String>,
+    #[serde(default)]
+    pub github_issue_number: Option<u64>,
+    #[serde(default)]
+    pub github_repo: Option<String>,
+    #[serde(default)]
+    pub github_sync_status: Option<String>,
+    #[serde(default)]
+    pub github_sync_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -238,6 +249,15 @@ pub struct ContributorRecord {
     pub avatar_url: String,
     pub profile_url: String,
     pub contributions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PlaygroundMetrics {
+    pub total_sessions: u32,
+    pub walkthroughs_completed: u32,
+    pub issues_imported: u32,
+    pub github_stars_clicked: u32,
+    pub avg_completion_seconds: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -259,6 +279,8 @@ pub struct GrowthState {
     pub recipes: Vec<Recipe>,
     #[serde(default)]
     pub onboarding_metrics: OnboardingMetrics,
+    #[serde(default)]
+    pub playground_metrics: PlaygroundMetrics,
     #[serde(default)]
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
@@ -288,6 +310,10 @@ impl GrowthState {
                     }
                     if !state.issues.iter().any(|i| i.number == 11) {
                         state.issues.push(Self::seed_issue_11(Utc::now()));
+                        let _ = state.save(path);
+                    }
+                    if !state.issues.iter().any(|i| i.number == 16) {
+                        state.issues.push(Self::seed_issue_16(Utc::now()));
                         let _ = state.save(path);
                     }
                     if state.contributor_issues.is_empty() {
@@ -517,6 +543,7 @@ impl GrowthState {
                 updated_at: now,
             },
             Self::seed_issue_11(now),
+            Self::seed_issue_16(now),
         ];
 
         let articles = vec![
@@ -760,6 +787,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             latest_release: None,
             recipes,
             onboarding_metrics: OnboardingMetrics::default(),
+            playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
         }
@@ -779,6 +807,31 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 "Implement 1-click remediation command copying for quick developer fix execution".to_string(),
                 "Create replayable zero-config demo simulator modeling intake, isolated worktree, verification gates, and PR diff".to_string(),
                 "Add celebration modal with GitHub star call-to-action on successful first-run completion".to_string(),
+            ],
+            routine_schedule: None,
+            run_count: 1,
+            last_run_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn seed_issue_16(now: DateTime<Utc>) -> GrowthIssue {
+        GrowthIssue {
+            id: "issue-16".to_string(),
+            number: 16,
+            title: "Interactive Browser Web Playground (tendril.run)".to_string(),
+            category: "Developer Experience".to_string(),
+            status: "In Progress".to_string(),
+            priority: "Critical".to_string(),
+            description: "Zero-barrier interactive simulation sandbox (tendril.run) demonstrating Tendril's issue-to-verified-PR workflow in 30 seconds with simulated worktrees, live terminal logs, verification gates, diff viewer, and embeddable README banners.".to_string(),
+            direct_actions: vec![
+                "Build zero-barrier interactive browser playground simulation engine in backend/src/api/playground.rs".to_string(),
+                "Support curated developer scenarios and custom GitHub issue intake (POST /api/playground/import-issue)".to_string(),
+                "Implement simulated worktree filesystem tree state with file status badges (GET /api/playground/tree)".to_string(),
+                "Create live agent terminal execution, verification gate inspection, and syntax-highlighted diff viewer".to_string(),
+                "Add embed banner generator for README and website with Markdown and HTML snippets".to_string(),
+                "Provide high-conversion 1-click GitHub star CTA upon walkthrough completion with conversion metrics".to_string(),
             ],
             routine_schedule: None,
             run_count: 1,
@@ -1796,6 +1849,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(14),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-2".to_string(),
@@ -1815,6 +1871,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(15),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-3".to_string(),
@@ -1834,6 +1893,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-4".to_string(),
@@ -1853,6 +1913,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-5".to_string(),
@@ -1872,6 +1933,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-6".to_string(),
@@ -1891,6 +1953,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-7".to_string(),
@@ -1910,6 +1973,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-8".to_string(),
@@ -1929,6 +1993,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-9".to_string(),
@@ -1948,6 +2013,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-10".to_string(),
@@ -1967,6 +2033,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-11".to_string(),
@@ -1986,6 +2053,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-12".to_string(),
@@ -2005,6 +2073,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-13".to_string(),
@@ -2024,6 +2093,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-14".to_string(),
@@ -2043,6 +2113,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-15".to_string(),
@@ -2062,6 +2133,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
         ]
     }
@@ -2072,25 +2144,41 @@ steps:
                 name: "Rory Chatt".to_string(),
                 avatar_url: "https://github.com/rorychatt.png".to_string(),
                 profile_url: "https://github.com/rorychatt".to_string(),
-                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "architecture".to_string(),
+                    "review".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Alex Vance".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
                 profile_url: "https://github.com/alex-spacecorps".to_string(),
-                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "backend".to_string(),
+                    "test".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Sarah Jenkins".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
                 profile_url: "https://github.com/sarah-ui".to_string(),
-                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+                contributions: vec![
+                    "design".to_string(),
+                    "frontend".to_string(),
+                    "a11y".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Elena Rostova".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
                 profile_url: "https://github.com/dev-elena".to_string(),
-                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "doc".to_string(),
+                    "maintenance".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Marcus Chen".to_string(),

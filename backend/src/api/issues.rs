@@ -21,6 +21,7 @@ pub struct AppContext {
     pub ivy_web_content_path: std::path::PathBuf,
     pub ivy_web_images_path: std::path::PathBuf,
     pub config: Config,
+    pub rate_limiter: std::sync::Arc<crate::api::middleware::rate_limit::IpRateLimiter>,
 }
 
 impl Default for AppContext {
@@ -39,6 +40,9 @@ impl Default for AppContext {
             ivy_web_content_path: temp_dir.clone(),
             ivy_web_images_path: temp_dir,
             config: crate::config::Config::default(),
+            rate_limiter: std::sync::Arc::new(
+                crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
         }
     }
 }
@@ -54,6 +58,18 @@ impl AppContext {
             }
         }
         self.config.github_token.clone()
+    }
+
+    pub fn get_webhook_secret(&self) -> Option<String> {
+        if let Ok(state) = self.state.try_read() {
+            if let Some(ref secret) = state.syndication_settings.webhook_secret {
+                let trimmed = secret.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        self.config.syndication_webhook_secret.clone()
     }
 
     pub fn new_test() -> Self {

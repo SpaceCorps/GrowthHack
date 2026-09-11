@@ -223,7 +223,8 @@ export type ActiveTab =
   | "flywheel"
   | "contributors"
   | "recipes"
-  | "doctor";
+  | "doctor"
+  | "playground";
 
 export interface DiagnosticCheck {
   id: string;
@@ -341,6 +342,10 @@ export interface ContributorIssue {
   claimed_by?: string;
   claimed_at?: string;
   pr_url?: string;
+  github_issue_number?: number;
+  github_repo?: string;
+  github_sync_status?: string;
+  github_sync_message?: string;
 }
 
 export interface ContributorRecord {
@@ -366,6 +371,7 @@ export interface SyndicationSettings {
   devto_api_key?: string;
   hashnode_api_key?: string;
   hashnode_publication_id?: string;
+  webhook_secret?: string;
   publish_as_draft: boolean;
 }
 
@@ -375,5 +381,71 @@ export interface SyndicationStatusResponse {
   hashnode_configured: boolean;
   hashnode_key_preview?: string;
   hashnode_publication_id?: string;
+  webhook_secret_configured: boolean;
+  webhook_secret_preview?: string;
   publish_as_draft: boolean;
+}
+
+export interface WorktreeFileNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  children?: WorktreeFileNode[];
+}
+
+export interface PlaygroundScenario {
+  id: string;
+  title: string;
+  description: string;
+  target_branch: string;
+  estimated_seconds: number;
+  file_tree: WorktreeFileNode[];
+  diff: string;
+  pr_summary: string;
+}
+
+export interface VerificationGateItem {
+  name: string;
+  command: string;
+  status: "Pending" | "Running" | "Passed" | "Failed" | string;
+  duration_ms: number;
+  output: string;
+}
+
+export interface PlaygroundRunState {
+  id: string;
+  scenario_id: string;
+  status: "Idle" | "Running" | "Completed" | "Failed" | string;
+  current_step: number;
+  step_progress_pct: number;
+  logs: string[];
+  verification_gates: VerificationGateItem[];
+  diff_preview?: string;
+  pr_summary?: string;
+  elapsed_seconds: number;
+  speed_multiplier: number;
+}
+
+export interface PlaygroundMetrics {
+  total_sessions: number;
+  walkthroughs_completed: number;
+  issues_imported: number;
+  github_stars_clicked: number;
+  avg_completion_seconds: number;
+}
+
+export interface BannerEmbedInfo {
+  title: string;
+  badge_url: string;
+  target_url: string;
+  markdown_snippet: string;
+  html_snippet: string;
+  raw_svg: string;
+}
+
+export interface ImportIssueRequest {
+  issue_url?: string;
+  title?: string;
+  description?: string;
 }

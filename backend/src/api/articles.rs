@@ -1201,6 +1201,8 @@ pub struct SyndicationSettingsResponse {
     pub hashnode_key_preview: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: bool,
+    pub webhook_secret_configured: bool,
+    pub webhook_secret_preview: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -1209,6 +1211,7 @@ pub struct UpdateSyndicationSettingsRequest {
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: Option<bool>,
+    pub webhook_secret: Option<String>,
 }
 
 fn mask_api_key(key: Option<&str>) -> (bool, Option<String>) {
@@ -1244,9 +1247,15 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1255,6 +1264,8 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -1289,6 +1300,13 @@ pub async fn update_syndication_settings(
     if let Some(pad) = payload.publish_as_draft {
         state.syndication_settings.publish_as_draft = pad;
     }
+    if let Some(ref sec) = payload.webhook_secret {
+        state.syndication_settings.webhook_secret = if sec.trim().is_empty() {
+            None
+        } else {
+            Some(sec.trim().to_string())
+        };
+    }
 
     let _ = state.save(&ctx.data_file);
 
@@ -1308,9 +1326,15 @@ pub async fn update_syndication_settings(
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1319,6 +1343,8 @@ pub async fn update_syndication_settings(
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -2337,6 +2363,9 @@ mod tests {
             ivy_web_content_path: content_dir.clone(),
             ivy_web_images_path: images_dir.clone(),
             config: crate::config::Config::load(),
+            rate_limiter: std::sync::Arc::new(
+                crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
         });
 
         let req = ExportIvyWebRequest {
@@ -2767,6 +2796,7 @@ mod tests {
         assert_eq!(parsed.devto_api_key, None);
         assert_eq!(parsed.hashnode_api_key, None);
         assert_eq!(parsed.hashnode_publication_id, None);
+        assert_eq!(parsed.webhook_secret, None);
         assert!(parsed.publish_as_draft);
 
         // Verify round-trip persistence
@@ -2775,6 +2805,7 @@ mod tests {
             hashnode_api_key: Some("hashnode_pat_456".to_string()),
             hashnode_publication_id: Some("pub_789".to_string()),
             github_token: Some("ghp_roundtrip_test_999".to_string()),
+            webhook_secret: Some("whsec_roundtrip_test_123".to_string()),
             publish_as_draft: false,
         };
         let serialized = serde_json::to_string(&populated).expect("serialize");

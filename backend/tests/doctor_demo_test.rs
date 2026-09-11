@@ -6,6 +6,7 @@ use growthhack_backend::api;
 use serde_json::Value;
 use tower::ServiceExt;
 
+
 #[tokio::test]
 async fn test_doctor_diagnose_endpoint() {
     let guard = common::create_test_context();
@@ -38,6 +39,7 @@ async fn test_doctor_diagnose_endpoint() {
         report["summary"]["total"].as_u64().unwrap(),
         checks.len() as u64
     );
+
 }
 
 #[tokio::test]
