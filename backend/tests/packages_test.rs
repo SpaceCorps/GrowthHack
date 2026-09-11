@@ -4,7 +4,8 @@ use axum::Json;
 use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::packages::{
-    generate_manifest_content, get_manifest, list_packages, update_package_status,
+    build_upstream_pr_commands, dispatch_package_pr, extract_pr_url, generate_manifest_content,
+    get_manifest, list_packages, update_package_status, DispatchPackagePrRequest,
     UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
@@ -163,4 +164,112 @@ async fn test_update_package_status_and_persistence() {
     let persisted_state: GrowthState = serde_json::from_str(&saved_content).expect("Valid JSON state");
     let persisted_winget = persisted_state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
     assert_eq!(persisted_winget.status, "Merged");
+}
+
+#[tokio::test]
+async fn test_build_upstream_pr_commands_syntax() {
+    let ctx = create_test_context();
+    let state = ctx.state.read().await;
+    let winget = state.packages.iter().find(|p| p.target_key == "winget").unwrap();
+    let scoop = state.packages.iter().find(|p| p.target_key == "scoop").unwrap();
+    let homebrew = state.packages.iter().find(|p| p.target_key == "homebrew").unwrap();
+
+    let winget_manifest = generate_manifest_content("winget").unwrap();
+    let scoop_manifest = generate_manifest_content("scoop").unwrap();
+    let homebrew_manifest = generate_manifest_content("homebrew").unwrap();
+
+    // 1. Winget
+    let winget_cmds = build_upstream_pr_commands(winget, &winget_manifest, "0.8.4");
+    assert!(winget_cmds.iter().any(|c| c.contains("gh repo fork microsoft/winget-pkgs --clone=false")));
+    assert!(winget_cmds.iter().any(|c| c.contains("git checkout -b ivy-tendril-v0.8.4")));
+    assert!(winget_cmds.iter().any(|c| c.contains("manifests/i/Ivy/Tendril/0.8.4/Ivy.Tendril.yaml")));
+    assert!(winget_cmds.iter().any(|c| c.contains("New version: Ivy.Tendril version 0.8.4")));
+    assert!(winget_cmds.iter().any(|c| c.contains("gh pr create --repo microsoft/winget-pkgs")));
+
+    // 2. Scoop
+    let scoop_cmds = build_upstream_pr_commands(scoop, &scoop_manifest, "0.8.4");
+    assert!(scoop_cmds.iter().any(|c| c.contains("gh repo fork ScoopInstaller/Extras --clone=false")));
+    assert!(scoop_cmds.iter().any(|c| c.contains("git checkout -b tendril-v0.8.4")));
+    assert!(scoop_cmds.iter().any(|c| c.contains("bucket/tendril.json")));
+    assert!(scoop_cmds.iter().any(|c| c.contains("tendril: Update to version 0.8.4")));
+    assert!(scoop_cmds.iter().any(|c| c.contains("gh pr create --repo ScoopInstaller/Extras")));
+
+    // 3. Homebrew
+    let homebrew_cmds = build_upstream_pr_commands(homebrew, &homebrew_manifest, "0.8.4");
+    assert!(homebrew_cmds.iter().any(|c| c.contains("gh repo fork ivy-interactive/homebrew-tap --clone=false")));
+    assert!(homebrew_cmds.iter().any(|c| c.contains("git checkout -b tendril-v0.8.4")));
+    assert!(homebrew_cmds.iter().any(|c| c.contains("Formula/tendril.rb")));
+    assert!(homebrew_cmds.iter().any(|c| c.contains("tendril 0.8.4")));
+    assert!(homebrew_cmds.iter().any(|c| c.contains("gh pr create --repo ivy-interactive/homebrew-tap")));
+}
+
+#[tokio::test]
+async fn test_dispatch_package_pr_endpoint_spawns_task() {
+    let ctx = create_test_context();
+
+    let payload = DispatchPackagePrRequest {
+        version: Some("0.8.5".to_string()),
+        notes: Some("Dispatching test PR for scoop".to_string()),
+    };
+
+    let (status, Json(response)) = dispatch_package_pr(
+        Path("pkg-scoop".to_string()),
+        State(ctx.clone()),
+        Json(payload),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let resp = response.expect("Expected DispatchPackagePrResponse");
+    assert!(resp.task_id.starts_with("task-pkg-pr-"));
+    assert_eq!(resp.target_key, "scoop");
+    assert_eq!(resp.upstream_repo, "ScoopInstaller/Extras");
+    assert!(!resp.commands.is_empty());
+    assert!(resp.commands.iter().any(|c| c.contains("gh repo fork ScoopInstaller/Extras")));
+    assert!(resp.commands.iter().any(|c| c.contains("0.8.5")));
+}
+
+#[tokio::test]
+async fn test_pr_url_extraction_updates_state() {
+    let ctx = create_test_context();
+
+    // 1. Verify extract_pr_url with [PR_URL] marker
+    let output_with_marker = "Some agent log...\nCreating PR...\n[PR_URL] https://github.com/microsoft/winget-pkgs/pull/189204\nDone.";
+    let extracted = extract_pr_url(output_with_marker);
+    assert_eq!(
+        extracted,
+        Some("https://github.com/microsoft/winget-pkgs/pull/189204".to_string())
+    );
+
+    // 2. Verify extract_pr_url with inline link
+    let output_with_link = "Command finished: https://github.com/ScoopInstaller/Extras/pull/14522 created successfully.";
+    let extracted_link = extract_pr_url(output_with_link);
+    assert_eq!(
+        extracted_link,
+        Some("https://github.com/ScoopInstaller/Extras/pull/14522".to_string())
+    );
+
+    // 3. Test state update and persistence with extracted URL
+    let found_url = extracted.unwrap();
+    {
+        let mut state = ctx.state.write().await;
+        let pkg = state.packages.iter_mut().find(|p| p.id == "pkg-winget").unwrap();
+        pkg.status = "PR Submitted".to_string();
+        pkg.pr_url = Some(found_url.clone());
+        pkg.updated_at = chrono::Utc::now();
+        let _ = state.save(&ctx.data_file);
+    }
+
+    // Verify in-memory state
+    let state = ctx.state.read().await;
+    let winget = state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    assert_eq!(winget.status, "PR Submitted");
+    assert_eq!(winget.pr_url.as_deref(), Some("https://github.com/microsoft/winget-pkgs/pull/189204"));
+
+    // Verify persisted file
+    let saved_content = std::fs::read_to_string(&ctx.data_file).expect("File exists");
+    let persisted_state: GrowthState = serde_json::from_str(&saved_content).expect("Valid JSON");
+    let persisted_pkg = persisted_state.packages.iter().find(|p| p.id == "pkg-winget").unwrap();
+    assert_eq!(persisted_pkg.status, "PR Submitted");
+    assert_eq!(persisted_pkg.pr_url.as_deref(), Some("https://github.com/microsoft/winget-pkgs/pull/189204"));
 }
