@@ -839,6 +839,7 @@ Requirements:
                     slug: Some(slug),
                     exports: Vec::new(),
                     engagement: None,
+                    engagement_snapshots: Vec::new(),
                 };
                 state.articles.insert(0, article);
 

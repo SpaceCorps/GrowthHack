@@ -245,6 +245,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_direct);
 
@@ -265,6 +266,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_subtle);
 
@@ -285,6 +287,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         slug: None,
         exports: vec![],
         engagement: None,
+        engagement_snapshots: vec![],
     };
     state.articles.insert(0, article_none);
 
