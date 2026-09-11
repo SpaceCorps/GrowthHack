@@ -5,7 +5,6 @@ use axum::http::{Request, StatusCode};
 use growthhack_backend::api;
 use growthhack_backend::db::{GrowthState, VideoDemo};
 use tower::ServiceExt;
-
 #[tokio::test]
 async fn test_get_demos_returns_seeded() {
     let (ctx, data_file) = common::create_test_context_with_file();

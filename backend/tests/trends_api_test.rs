@@ -5,7 +5,6 @@ use axum::http::{Request, StatusCode};
 use growthhack_backend::api;
 use growthhack_backend::db::{GrowthState, TrendTopic};
 use tower::ServiceExt;
-
 #[tokio::test]
 async fn test_put_trend_updates_status_and_persists() {
     let (ctx, data_file) = common::create_test_context_with_file();
