@@ -330,6 +330,252 @@ pub async fn claim_contributor_issue(
     Ok((StatusCode::OK, Json(updated_issue)))
 }
 
+pub async fn unclaim_issue_internal(
+    issue: &mut ContributorIssue,
+    token: Option<&str>,
+    reason: &str,
+) {
+    issue.claimed = false;
+    let previous_claimer = issue.claimed_by.take();
+    issue.claimed_at = None;
+    issue.github_sync_status = Some("Unclaimed".to_string());
+    issue.github_sync_message = Some(reason.to_string());
+
+    if let Some(num) = issue.github_issue_number {
+        if let Some(tok) = token {
+            if !tok.trim().is_empty() {
+                if let Ok(client) = GitHubClient::new(tok) {
+                    let repo_target = issue
+                        .github_repo
+                        .as_deref()
+                        .unwrap_or("SpaceCorps/GrowthHack");
+                    let (owner, repo_name) = match repo_target.split_once('/') {
+                        Some((o, r)) => (o.trim(), r.trim()),
+                        None => ("SpaceCorps", "GrowthHack"),
+                    };
+
+                    let mut sync_errors = Vec::new();
+
+                    // 1. Remove label 'claimed'
+                    if let Err(e) = client.remove_issue_label(owner, repo_name, num, "claimed").await {
+                        sync_errors.push(format!("Label removal failed: {}", e));
+                    }
+
+                    // 2. Remove assignee if handle exists
+                    let clean_handle = previous_claimer
+                        .as_deref()
+                        .unwrap_or("")
+                        .trim()
+                        .trim_start_matches('@')
+                        .trim();
+                    if !clean_handle.is_empty() {
+                        if let Err(e) = client
+                            .remove_issue_assignees(owner, repo_name, num, &[clean_handle])
+                            .await
+                        {
+                            sync_errors.push(format!("Assignee removal failed: {}", e));
+                        }
+                    }
+
+                    // 3. Post notification comment
+                    let comment_body = if !clean_handle.is_empty() {
+                        format!(
+                            "Issue claim by @{} released: {}.",
+                            clean_handle, reason
+                        )
+                    } else {
+                        format!("Issue claim released: {}.", reason)
+                    };
+                    if let Err(e) = client
+                        .create_issue_comment(owner, repo_name, num, &comment_body)
+                        .await
+                    {
+                        sync_errors.push(format!("Comment notification failed: {}", e));
+                    }
+
+                    if !sync_errors.is_empty() {
+                        issue.github_sync_message = Some(format!(
+                            "{}; GitHub sync issues: {}",
+                            reason,
+                            sync_errors.join("; ")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn check_claim_timeouts_internal(
+    ctx: &AppContext,
+    timeout_days: i64,
+) -> Result<Vec<String>, String> {
+    let now = Utc::now();
+    let token = ctx.get_github_token();
+
+    let candidate_ids: Vec<String> = {
+        let state = ctx.state.read().await;
+        state
+            .contributor_issues
+            .iter()
+            .filter(|issue| {
+                if !issue.claimed || issue.pr_url.is_some() {
+                    return false;
+                }
+                if let Some(claimed_at) = issue.claimed_at {
+                    let elapsed = now.signed_duration_since(claimed_at);
+                    elapsed.num_seconds() >= timeout_days * 86400
+                } else {
+                    false
+                }
+            })
+            .map(|i| i.id.clone())
+            .collect()
+    };
+
+    if candidate_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut unclaimed_ids = Vec::new();
+    let client_opt = match &token {
+        Some(tok) if !tok.trim().is_empty() => GitHubClient::new(tok).ok(),
+        _ => None,
+    };
+
+    let mut state = ctx.state.write().await;
+
+    for id in candidate_ids {
+        if let Some(issue) = state.contributor_issues.iter_mut().find(|i| i.id == id) {
+            if !issue.claimed || issue.pr_url.is_some() {
+                continue;
+            }
+
+            let mut pr_found = None;
+            if let (Some(client), Some(num)) = (&client_opt, issue.github_issue_number) {
+                let repo_target = issue
+                    .github_repo
+                    .as_deref()
+                    .unwrap_or("SpaceCorps/GrowthHack");
+                let (owner, repo_name) = match repo_target.split_once('/') {
+                    Some((o, r)) => (o.trim(), r.trim()),
+                    None => ("SpaceCorps", "GrowthHack"),
+                };
+                if let Ok(found_url) = client.check_issue_pull_request(owner, repo_name, num).await {
+                    pr_found = found_url;
+                }
+            }
+
+            if let Some(pr_url) = pr_found {
+                issue.pr_url = Some(pr_url);
+                tracing::info!(
+                    "Issue {} has linked PR {}, preserving claim.",
+                    issue.id,
+                    issue.pr_url.as_deref().unwrap_or("")
+                );
+                continue;
+            }
+
+            let reason = format!("Claim released after {} days without a pull request", timeout_days);
+            unclaim_issue_internal(issue, token.as_deref(), &reason).await;
+            unclaimed_ids.push(id);
+        }
+    }
+
+    if !unclaimed_ids.is_empty() {
+        let _ = state.save(&ctx.data_file);
+    }
+
+    Ok(unclaimed_ids)
+}
+
+pub async fn unclaim_contributor_issue(
+    State(ctx): State<Arc<AppContext>>,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<ContributorIssue>), (StatusCode, Json<ErrorResponse>)> {
+    let mut state = ctx.state.write().await;
+
+    let issue = state
+        .contributor_issues
+        .iter_mut()
+        .find(|item| item.id == id);
+
+    let issue = match issue {
+        Some(i) => i,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Contributor issue with id '{}' not found", id),
+                }),
+            ));
+        }
+    };
+
+    if !issue.claimed {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Issue '{}' is not currently claimed", id),
+            }),
+        ));
+    }
+
+    let token = ctx.get_github_token();
+    unclaim_issue_internal(issue, token.as_deref(), "Claim released manually by maintainer").await;
+
+    let updated_issue = issue.clone();
+    let _ = state.save(&ctx.data_file);
+
+    Ok((StatusCode::OK, Json(updated_issue)))
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct CheckClaimTimeoutsQuery {
+    pub timeout_days: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CheckClaimTimeoutsResponse {
+    pub success: bool,
+    pub unclaimed_count: usize,
+    pub unclaimed_issue_ids: Vec<String>,
+    pub message: String,
+}
+
+pub async fn check_claim_timeouts(
+    State(ctx): State<Arc<AppContext>>,
+    Query(query): Query<CheckClaimTimeoutsQuery>,
+) -> Result<(StatusCode, Json<CheckClaimTimeoutsResponse>), (StatusCode, Json<ErrorResponse>)> {
+    let timeout_days = query.timeout_days.unwrap_or(7);
+
+    match check_claim_timeouts_internal(&ctx, timeout_days).await {
+        Ok(unclaimed_ids) => {
+            let count = unclaimed_ids.len();
+            let msg = if count > 0 {
+                format!("Successfully evaluated timeouts: {} issue(s) unclaimed", count)
+            } else {
+                "No issues met the claim timeout threshold".to_string()
+            };
+            Ok((
+                StatusCode::OK,
+                Json(CheckClaimTimeoutsResponse {
+                    success: true,
+                    unclaimed_count: count,
+                    unclaimed_issue_ids: unclaimed_ids,
+                    message: msg,
+                }),
+            ))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Failed to evaluate claim timeouts: {}", e),
+            }),
+        )),
+    }
+}
+
 pub async fn link_github_issue(
     State(ctx): State<Arc<AppContext>>,
     Path(id): Path<String>,
