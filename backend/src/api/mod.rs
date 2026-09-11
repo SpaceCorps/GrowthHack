@@ -94,6 +94,20 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/articles/{id}/engagement-history",
             get(articles::get_article_engagement_history),
         )
+        // Milestone Alerts
+        .route("/api/articles/alerts", get(articles::get_engagement_alerts))
+        .route(
+            "/api/articles/alerts/acknowledge-all",
+            post(articles::acknowledge_all_engagement_alerts),
+        )
+        .route(
+            "/api/articles/alerts/{id}/acknowledge",
+            post(articles::acknowledge_engagement_alert),
+        )
+        .route(
+            "/api/articles/{id}/alerts",
+            get(articles::get_article_alerts),
+        )
         .route(
             "/api/webhooks/syndication",
             post(articles::handle_syndication_webhook)

@@ -1,5 +1,7 @@
 use crate::api::issues::AppContext;
-use crate::db::{Article, EngagementMetrics, EngagementSnapshot, ExportRecord};
+use crate::db::{
+    Article, EngagementMetrics, EngagementMilestoneAlert, EngagementSnapshot, ExportRecord,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -102,6 +104,8 @@ pub async fn create_article(
         exports: Vec::new(),
         engagement: None,
         engagement_snapshots: Vec::new(),
+        engagement_badges: Vec::new(),
+        milestone_alerts: Vec::new(),
     };
     state.articles.push(new_article.clone());
     let _ = state.save(&ctx.data_file);
@@ -480,6 +484,8 @@ pub async fn generate_article(
                     exports: Vec::new(),
                     engagement: None,
                     engagement_snapshots: Vec::new(),
+                    engagement_badges: Vec::new(),
+                    milestone_alerts: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -555,6 +561,8 @@ pub async fn generate_spotlight(
                     exports: Vec::new(),
                     engagement: None,
                     engagement_snapshots: Vec::new(),
+                    engagement_badges: Vec::new(),
+                    milestone_alerts: Vec::new(),
                 };
                 state.articles.insert(0, article);
                 let _ = state.save(&data_file);
@@ -1870,6 +1878,8 @@ pub struct SyncMetricsSummary {
     pub total_reactions: u32,
     pub total_comments: u32,
     pub total_views: u32,
+    #[serde(default)]
+    pub new_alerts_count: usize,
 }
 
 pub async fn sync_all_metrics_internal(
@@ -2006,6 +2016,7 @@ pub async fn sync_all_metrics_internal(
     let mut total_comments = 0;
     let mut total_views = 0;
     let mut synced_count = 0;
+    let mut all_new_alerts = Vec::new();
 
     for article in state.articles.iter_mut() {
         let mut article_had_sync = false;
@@ -2113,6 +2124,9 @@ pub async fn sync_all_metrics_internal(
                 MAX_ARTICLE_SNAPSHOTS,
             );
         }
+
+        let article_alerts = evaluate_article_milestones(article, now);
+        all_new_alerts.extend(article_alerts);
     }
 
     if synced_count > 0 || !state.articles.is_empty() {
@@ -2126,6 +2140,14 @@ pub async fn sync_all_metrics_internal(
         );
     }
 
+    let new_alerts_count = all_new_alerts.len();
+    if !all_new_alerts.is_empty() {
+        let mut combined = all_new_alerts;
+        combined.append(&mut state.engagement_alerts);
+        combined.truncate(200);
+        state.engagement_alerts = combined;
+    }
+
     let _ = state.save(&ctx.data_file);
 
     Ok(SyncMetricsSummary {
@@ -2134,7 +2156,99 @@ pub async fn sync_all_metrics_internal(
         total_reactions,
         total_comments,
         total_views,
+        new_alerts_count,
     })
+}
+
+pub fn evaluate_article_milestones(
+    article: &mut Article,
+    now: DateTime<Utc>,
+) -> Vec<EngagementMilestoneAlert> {
+    let mut new_alerts = Vec::new();
+    let eng = match &article.engagement {
+        Some(e) => e.clone(),
+        None => return new_alerts,
+    };
+
+    let view_thresholds: &[(u32, &str)] = &[
+        (100, "100+ Views"),
+        (500, "500+ Views"),
+        (1000, "1K+ Views"),
+        (5000, "5K+ Views"),
+        (10000, "10K+ Views"),
+    ];
+
+    let reaction_thresholds: &[(u32, &str)] = &[
+        (25, "25+ Reactions"),
+        (50, "50+ Reactions"),
+        (100, "100+ Reactions"),
+        (250, "250+ Reactions"),
+    ];
+
+    let comment_thresholds: &[(u32, &str)] = &[
+        (10, "10+ Comments"),
+        (25, "25+ Comments"),
+        (50, "50+ Comments"),
+    ];
+
+    for &(threshold, badge) in view_thresholds {
+        if eng.views >= threshold && !article.engagement_badges.iter().any(|b| b == badge) {
+            article.engagement_badges.push(badge.to_string());
+            let alert = EngagementMilestoneAlert {
+                id: format!("alert-{}", Uuid::new_v4().simple()),
+                article_id: article.id.clone(),
+                article_title: article.title.clone(),
+                milestone_type: "views".to_string(),
+                threshold,
+                message: format!("'{}' reached {}!", article.title, badge),
+                badge_awarded: badge.to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            };
+            article.milestone_alerts.push(alert.clone());
+            new_alerts.push(alert);
+        }
+    }
+
+    for &(threshold, badge) in reaction_thresholds {
+        if eng.reactions >= threshold && !article.engagement_badges.iter().any(|b| b == badge) {
+            article.engagement_badges.push(badge.to_string());
+            let alert = EngagementMilestoneAlert {
+                id: format!("alert-{}", Uuid::new_v4().simple()),
+                article_id: article.id.clone(),
+                article_title: article.title.clone(),
+                milestone_type: "reactions".to_string(),
+                threshold,
+                message: format!("'{}' reached {}!", article.title, badge),
+                badge_awarded: badge.to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            };
+            article.milestone_alerts.push(alert.clone());
+            new_alerts.push(alert);
+        }
+    }
+
+    for &(threshold, badge) in comment_thresholds {
+        if eng.comments >= threshold && !article.engagement_badges.iter().any(|b| b == badge) {
+            article.engagement_badges.push(badge.to_string());
+            let alert = EngagementMilestoneAlert {
+                id: format!("alert-{}", Uuid::new_v4().simple()),
+                article_id: article.id.clone(),
+                article_title: article.title.clone(),
+                milestone_type: "comments".to_string(),
+                threshold,
+                message: format!("'{}' reached {}!", article.title, badge),
+                badge_awarded: badge.to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            };
+            article.milestone_alerts.push(alert.clone());
+            new_alerts.push(alert);
+        }
+    }
+
+    new_alerts
 }
 
 pub const MAX_ARTICLE_SNAPSHOTS: usize = 500;
@@ -2403,11 +2517,116 @@ pub async fn handle_syndication_webhook(
     )
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct GetAlertsQuery {
+    pub unacknowledged: Option<bool>,
+}
+
+pub async fn get_engagement_alerts(
+    State(ctx): State<Arc<AppContext>>,
+    Query(query): Query<GetAlertsQuery>,
+) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    let alerts = if query.unacknowledged.unwrap_or(false) {
+        state
+            .engagement_alerts
+            .iter()
+            .filter(|a| !a.acknowledged)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        state.engagement_alerts.clone()
+    };
+    Json(alerts)
+}
+
+pub async fn acknowledge_engagement_alert(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let mut state = ctx.state.write().await;
+    let mut found = false;
+
+    for alert in state.engagement_alerts.iter_mut() {
+        if alert.id == id {
+            alert.acknowledged = true;
+            found = true;
+        }
+    }
+
+    for article in state.articles.iter_mut() {
+        for alert in article.milestone_alerts.iter_mut() {
+            if alert.id == id {
+                alert.acknowledged = true;
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        let _ = state.save(&ctx.data_file);
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "id": id,
+            })),
+        )
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Alert not found",
+                "id": id,
+            })),
+        )
+    }
+}
+
+pub async fn acknowledge_all_engagement_alerts(
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let mut state = ctx.state.write().await;
+    let count = state.engagement_alerts.len();
+
+    for alert in state.engagement_alerts.iter_mut() {
+        alert.acknowledged = true;
+    }
+
+    for article in state.articles.iter_mut() {
+        for alert in article.milestone_alerts.iter_mut() {
+            alert.acknowledged = true;
+        }
+    }
+
+    let _ = state.save(&ctx.data_file);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "count": count,
+        })),
+    )
+}
+
+pub async fn get_article_alerts(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<Vec<EngagementMilestoneAlert>>) {
+    let state = ctx.state.read().await;
+    if let Some(article) = state.articles.iter().find(|a| a.id == id) {
+        (StatusCode::OK, Json(article.milestone_alerts.clone()))
+    } else {
+        (StatusCode::NOT_FOUND, Json(Vec::new()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::Article;
     use chrono::Utc;
+    use tower::ServiceExt;
 
     #[test]
     fn test_slug_generation() {
@@ -2446,6 +2665,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let fm = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2480,6 +2701,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let fm_default = generate_ivy_web_frontmatter(&article, "test-article");
@@ -2512,6 +2735,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let fm_svg =
@@ -2540,6 +2765,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let fm_png =
@@ -2574,6 +2801,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -2636,6 +2865,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let (devto, t1) = format_for_channel(&article, "Dev.to", "test-article");
@@ -2693,6 +2924,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2728,6 +2961,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let rec = ExportRecord {
@@ -2935,6 +3170,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let payload =
@@ -2978,6 +3215,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         let payload = format_hashnode_publish_mutation(
@@ -3098,6 +3337,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3158,6 +3399,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3262,6 +3505,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3319,6 +3564,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
         growth_state.articles.push(article);
 
@@ -3731,6 +3978,8 @@ mod tests {
             exports: vec![],
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         };
 
         {
@@ -3820,5 +4069,293 @@ mod tests {
         assert!(updated3.published_at.is_some());
 
         let _ = std::fs::remove_file(&ctx.data_file);
+    }
+
+    #[test]
+    fn test_evaluate_article_milestones_views_and_reactions() {
+        let now = Utc::now();
+        let mut article = Article {
+            id: "art-milestone-test".to_string(),
+            title: "Testing Milestone Alerts".to_string(),
+            feature: "Multi-Agent Orchestration".to_string(),
+            channel: "Dev.to".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "Testing milestones".to_string(),
+            content: "Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Published".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("testing-milestone-alerts".to_string()),
+            exports: vec![],
+            engagement: Some(EngagementMetrics {
+                views: 120,
+                reactions: 30,
+                comments: 5,
+                last_synced_at: Some(now),
+            }),
+            engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
+        };
+
+        let alerts = evaluate_article_milestones(&mut article, now);
+        assert_eq!(alerts.len(), 2);
+        assert_eq!(article.milestone_alerts.len(), 2);
+        assert!(article.engagement_badges.contains(&"100+ Views".to_string()));
+        assert!(article.engagement_badges.contains(&"25+ Reactions".to_string()));
+        assert!(!article.engagement_badges.contains(&"10+ Comments".to_string()));
+
+        let view_alert = alerts.iter().find(|a| a.milestone_type == "views").unwrap();
+        assert_eq!(view_alert.threshold, 100);
+        assert_eq!(view_alert.badge_awarded, "100+ Views");
+        assert!(!view_alert.acknowledged);
+
+        let reaction_alert = alerts.iter().find(|a| a.milestone_type == "reactions").unwrap();
+        assert_eq!(reaction_alert.threshold, 25);
+        assert_eq!(reaction_alert.badge_awarded, "25+ Reactions");
+        assert!(!reaction_alert.acknowledged);
+    }
+
+    #[test]
+    fn test_evaluate_article_milestones_deduplication() {
+        let now = Utc::now();
+        let mut article = Article {
+            id: "art-dedup-test".to_string(),
+            title: "Testing Deduplication".to_string(),
+            feature: "Multi-Agent Orchestration".to_string(),
+            channel: "Dev.to".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "Testing dedup".to_string(),
+            content: "Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Published".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("testing-deduplication".to_string()),
+            exports: vec![],
+            engagement: Some(EngagementMetrics {
+                views: 150,
+                reactions: 35,
+                comments: 12,
+                last_synced_at: Some(now),
+            }),
+            engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
+        };
+
+        let first_alerts = evaluate_article_milestones(&mut article, now);
+        assert_eq!(first_alerts.len(), 3);
+        assert_eq!(article.engagement_badges.len(), 3);
+        assert_eq!(article.milestone_alerts.len(), 3);
+
+        // Re-evaluating with identical metrics should yield no duplicate badges or alerts
+        let second_alerts = evaluate_article_milestones(&mut article, now);
+        assert!(second_alerts.is_empty());
+        assert_eq!(article.engagement_badges.len(), 3);
+        assert_eq!(article.milestone_alerts.len(), 3);
+    }
+
+    #[test]
+    fn test_evaluate_article_milestones_progressive_tiers() {
+        let now = Utc::now();
+        let mut article = Article {
+            id: "art-progressive-test".to_string(),
+            title: "Testing Progressive Tiers".to_string(),
+            feature: "Multi-Agent Orchestration".to_string(),
+            channel: "Dev.to".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "Testing tiers".to_string(),
+            content: "Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Published".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("testing-progressive-tiers".to_string()),
+            exports: vec![],
+            engagement: Some(EngagementMetrics {
+                views: 120,
+                reactions: 10,
+                comments: 2,
+                last_synced_at: Some(now),
+            }),
+            engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
+        };
+
+        let initial_alerts = evaluate_article_milestones(&mut article, now);
+        assert_eq!(initial_alerts.len(), 1);
+        assert_eq!(initial_alerts[0].badge_awarded, "100+ Views");
+
+        // Advancing from 120 to 600 views triggers 500+ Views while retaining 100+ Views
+        article.engagement.as_mut().unwrap().views = 600;
+        let next_alerts = evaluate_article_milestones(&mut article, now);
+        assert_eq!(next_alerts.len(), 1);
+        assert_eq!(next_alerts[0].badge_awarded, "500+ Views");
+        assert_eq!(next_alerts[0].threshold, 500);
+
+        assert!(article.engagement_badges.contains(&"100+ Views".to_string()));
+        assert!(article.engagement_badges.contains(&"500+ Views".to_string()));
+        assert_eq!(article.milestone_alerts.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_engagement_alerts_endpoints() {
+        let guard = crate::api::issues::AppContext::new_test_context();
+        let ctx = guard.ctx();
+        let now = Utc::now();
+
+        let alert1 = EngagementMilestoneAlert {
+            id: "alert-101".to_string(),
+            article_id: "art-api-test".to_string(),
+            article_title: "API Test Article".to_string(),
+            milestone_type: "views".to_string(),
+            threshold: 100,
+            message: "Reached 100+ Views!".to_string(),
+            badge_awarded: "100+ Views".to_string(),
+            triggered_at: now,
+            acknowledged: false,
+        };
+        let alert2 = EngagementMilestoneAlert {
+            id: "alert-102".to_string(),
+            article_id: "art-api-test".to_string(),
+            article_title: "API Test Article".to_string(),
+            milestone_type: "reactions".to_string(),
+            threshold: 25,
+            message: "Reached 25+ Reactions!".to_string(),
+            badge_awarded: "25+ Reactions".to_string(),
+            triggered_at: now,
+            acknowledged: false,
+        };
+
+        let article = Article {
+            id: "art-api-test".to_string(),
+            title: "API Test Article".to_string(),
+            feature: "Multi-Agent Orchestration".to_string(),
+            channel: "Dev.to".to_string(),
+            angle: "Tutorial".to_string(),
+            summary: "API test article summary".to_string(),
+            content: "Content".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Published".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("api-test-article".to_string()),
+            exports: vec![],
+            engagement: None,
+            engagement_snapshots: Vec::new(),
+            engagement_badges: vec!["100+ Views".to_string(), "25+ Reactions".to_string()],
+            milestone_alerts: vec![alert1.clone(), alert2.clone()],
+        };
+
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.push(article);
+            state.engagement_alerts.push(alert1.clone());
+            state.engagement_alerts.push(alert2.clone());
+        }
+
+        // Test GET /api/articles/alerts (all alerts)
+        let app = crate::api::router(ctx.clone());
+        let res = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/alerts")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(alerts.len(), 2);
+
+        // Test GET /api/articles/{id}/alerts
+        let res = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/art-api-test/alerts")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let art_alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(art_alerts.len(), 2);
+
+        // Test POST /api/articles/alerts/{id}/acknowledge
+        let res = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/alerts/alert-101/acknowledge")
+                    .method("POST")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Test GET /api/articles/alerts?unacknowledged=true (should now only return alert-102)
+        let res = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/alerts?unacknowledged=true")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let unack_alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
+        assert_eq!(unack_alerts.len(), 1);
+        assert_eq!(unack_alerts[0].id, "alert-102");
+
+        // Test POST /api/articles/alerts/acknowledge-all
+        let res = app
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/alerts/acknowledge-all")
+                    .method("POST")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Now unacknowledged query returns empty list
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/articles/alerts?unacknowledged=true")
+                    .method("GET")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let remaining_unack: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
+        assert!(remaining_unack.is_empty());
     }
 }

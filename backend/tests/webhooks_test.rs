@@ -10,7 +10,9 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_webhook_without_secret_allows_request() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     // Ensure no secret is set
     {
         let mut state = ctx.state.write().await;
@@ -46,7 +48,9 @@ async fn test_webhook_without_secret_allows_request() {
 
 #[tokio::test]
 async fn test_webhook_with_valid_hmac_passes() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     let secret = "test_webhook_signing_secret_99";
     {
         let mut state = ctx.state.write().await;
@@ -86,7 +90,9 @@ async fn test_webhook_with_valid_hmac_passes() {
 
 #[tokio::test]
 async fn test_webhook_with_raw_hex_signature_passes() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     let secret = "test_raw_hex_secret_77";
     {
         let mut state = ctx.state.write().await;
@@ -125,7 +131,9 @@ async fn test_webhook_with_raw_hex_signature_passes() {
 
 #[tokio::test]
 async fn test_webhook_with_invalid_signature_rejected() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     let secret = "secure_production_secret";
     {
         let mut state = ctx.state.write().await;
@@ -161,7 +169,9 @@ async fn test_webhook_with_invalid_signature_rejected() {
 
 #[tokio::test]
 async fn test_webhook_missing_signature_when_secret_set_rejected() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     let secret = "mandatory_secret_key";
     {
         let mut state = ctx.state.write().await;
@@ -194,7 +204,9 @@ async fn test_webhook_missing_signature_when_secret_set_rejected() {
 
 #[tokio::test]
 async fn test_webhook_rate_limiting_enforcement() {
-    let (ctx, data_file) = common::create_test_context_with_file();
+    let guard = common::create_test_context_with_file();
+    let ctx = guard.ctx();
+    let data_file = &guard.data_file;
     let test_ip = "198.51.100.99";
 
     // Initial requests within burst capacity (10) should succeed (assuming no secret configured)

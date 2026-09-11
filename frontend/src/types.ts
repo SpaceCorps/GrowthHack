@@ -35,12 +35,27 @@ export interface EngagementVelocity {
   views_delta_24h: number;
   reactions_delta_24h: number;
   comments_delta_24h: number;
+  views_24h?: number;
+  reactions_24h?: number;
+  comments_24h?: number;
   trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
 }
 
 export interface EngagementHistoryResponse {
   snapshots: EngagementSnapshot[];
   velocity: EngagementVelocity;
+}
+
+export interface EngagementMilestoneAlert {
+  id: string;
+  article_id: string;
+  article_title: string;
+  milestone_type: "views" | "reactions" | "comments" | "viral" | string;
+  threshold: number;
+  message: string;
+  badge_awarded: string;
+  triggered_at: string;
+  acknowledged: boolean;
 }
 
 export interface ExportRecord {
@@ -70,6 +85,8 @@ export interface Article {
   exports?: ExportRecord[];
   engagement?: EngagementMetrics;
   engagement_snapshots?: EngagementSnapshot[];
+  engagement_badges?: string[];
+  milestone_alerts?: EngagementMilestoneAlert[];
 }
 
 export interface ExportIvyWebRequest {

@@ -840,6 +840,8 @@ Requirements:
                     exports: Vec::new(),
                     engagement: None,
                     engagement_snapshots: Vec::new(),
+                    engagement_badges: Vec::new(),
+                    milestone_alerts: Vec::new(),
                 };
                 state.articles.insert(0, article);
 
