@@ -1,7 +1,8 @@
 use crate::api::issues::AppContext;
 pub use crate::api::packages::extract_pr_url;
 use crate::api::submission::{
-    extract_github_repo, insert_listing_entry, GitHubClient, SubmitBatchRequest,
+    extract_github_repo, insert_listing_entry, parse_github_pr_url, GitHubClient,
+    SubmitBatchRequest,
 };
 use crate::db::Listing;
 use axum::{
@@ -66,6 +67,24 @@ pub struct VerifyBacklinkResponse {
     pub id: String,
     pub url: String,
     pub verified: bool,
+    pub status: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPrStatusSummary {
+    pub checked_count: usize,
+    pub merged_count: usize,
+    pub transitioned_ids: Vec<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListingPrCheckResponse {
+    pub id: String,
+    pub pr_url: Option<String>,
+    pub state: String,
+    pub merged: bool,
     pub status: String,
     pub message: String,
 }
@@ -1100,4 +1119,319 @@ pub async fn batch_submit_listing_prs(
             message: format!("Started PR submission for {} listings", targeted_count),
         }),
     )
+}
+
+pub async fn sync_listing_pr_statuses_internal(
+    ctx: &Arc<AppContext>,
+) -> Result<SyncPrStatusSummary, String> {
+    let candidates: Vec<(String, String)> = {
+        let state = ctx.state.read().await;
+        state
+            .listings
+            .iter()
+            .filter(|l| {
+                (l.status == "PR Submitted" || l.status == "Under Review") && l.pr_url.is_some()
+            })
+            .map(|l| (l.id.clone(), l.pr_url.clone().unwrap()))
+            .collect()
+    };
+
+    if candidates.is_empty() {
+        return Ok(SyncPrStatusSummary {
+            checked_count: 0,
+            merged_count: 0,
+            transitioned_ids: Vec::new(),
+            message: "No submitted or under-review listings with PR URLs found.".to_string(),
+        });
+    }
+
+    let token = ctx.get_github_token();
+    let client = match match token {
+        Some(t) if !t.trim().is_empty() => GitHubClient::new(&t),
+        _ => GitHubClient::new_unauthenticated(),
+    } {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Failed to create GitHub client: {}", e)),
+    };
+
+    let mut checked_count = 0;
+    let mut merged_count = 0;
+    let mut transitioned_ids = Vec::new();
+
+    for (id, pr_url) in candidates {
+        if let Some((owner, repo, number)) = parse_github_pr_url(&pr_url) {
+            checked_count += 1;
+            match client.get_pull_request(&owner, &repo, number).await {
+                Ok(details) => {
+                    let is_merged = details.merged || details.merged_at.is_some();
+                    if is_merged {
+                        transitioned_ids.push(id);
+                        merged_count += 1;
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to query PR status for listing {} ({}): {}",
+                        id,
+                        pr_url,
+                        err
+                    );
+                }
+            }
+        }
+    }
+
+    if !transitioned_ids.is_empty() {
+        let mut state = ctx.state.write().await;
+        for l in state.listings.iter_mut() {
+            if transitioned_ids.contains(&l.id) {
+                l.status = "Live".to_string();
+                l.updated_at = Utc::now();
+            }
+        }
+        let _ = state.save(&ctx.data_file);
+    }
+
+    Ok(SyncPrStatusSummary {
+        checked_count,
+        merged_count,
+        transitioned_ids,
+        message: format!(
+            "Checked {} listings: {} merged PRs transitioned to Live",
+            checked_count, merged_count
+        ),
+    })
+}
+
+pub async fn sync_all_listing_prs(
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<SyncPrStatusSummary>) {
+    match sync_listing_pr_statuses_internal(&ctx).await {
+        Ok(summary) => (StatusCode::OK, Json(summary)),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(SyncPrStatusSummary {
+                checked_count: 0,
+                merged_count: 0,
+                transitioned_ids: Vec::new(),
+                message: format!("Failed to sync PR statuses: {}", e),
+            }),
+        ),
+    }
+}
+
+pub async fn check_single_listing_pr(
+    Path(id): Path<String>,
+    State(ctx): State<Arc<AppContext>>,
+) -> (StatusCode, Json<ListingPrCheckResponse>) {
+    let listing_opt = {
+        let state = ctx.state.read().await;
+        state.listings.iter().find(|l| l.id == id).cloned()
+    };
+
+    let listing = match listing_opt {
+        Some(l) => l,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ListingPrCheckResponse {
+                    id,
+                    pr_url: None,
+                    state: "not_found".to_string(),
+                    merged: false,
+                    status: "unknown".to_string(),
+                    message: "Listing not found".to_string(),
+                }),
+            );
+        }
+    };
+
+    let pr_url = match &listing.pr_url {
+        Some(url) if !url.trim().is_empty() => url.clone(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ListingPrCheckResponse {
+                    id: listing.id,
+                    pr_url: None,
+                    state: "none".to_string(),
+                    merged: false,
+                    status: listing.status,
+                    message: "Listing has no PR URL registered".to_string(),
+                }),
+            );
+        }
+    };
+
+    let (owner, repo, number) = match parse_github_pr_url(&pr_url) {
+        Some(parsed) => parsed,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ListingPrCheckResponse {
+                    id: listing.id,
+                    pr_url: Some(pr_url),
+                    state: "invalid_url".to_string(),
+                    merged: false,
+                    status: listing.status,
+                    message: "Could not parse GitHub PR URL".to_string(),
+                }),
+            );
+        }
+    };
+
+    let token = ctx.get_github_token();
+    let client = match match token {
+        Some(t) if !t.trim().is_empty() => GitHubClient::new(&t),
+        _ => GitHubClient::new_unauthenticated(),
+    } {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ListingPrCheckResponse {
+                    id: listing.id,
+                    pr_url: Some(pr_url),
+                    state: "error".to_string(),
+                    merged: false,
+                    status: listing.status,
+                    message: format!("Failed to create GitHub client: {}", e),
+                }),
+            );
+        }
+    };
+
+    match client.get_pull_request(&owner, &repo, number).await {
+        Ok(details) => {
+            let is_merged = details.merged || details.merged_at.is_some();
+            if is_merged {
+                let mut state = ctx.state.write().await;
+                if let Some(l) = state.listings.iter_mut().find(|l| l.id == id) {
+                    l.status = "Live".to_string();
+                    l.updated_at = Utc::now();
+                }
+                let _ = state.save(&ctx.data_file);
+
+                (
+                    StatusCode::OK,
+                    Json(ListingPrCheckResponse {
+                        id,
+                        pr_url: Some(pr_url),
+                        state: details.state,
+                        merged: true,
+                        status: "Live".to_string(),
+                        message: "Pull request merged! Listing transitioned to Live.".to_string(),
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::OK,
+                    Json(ListingPrCheckResponse {
+                        id,
+                        pr_url: Some(pr_url),
+                        state: details.state.clone(),
+                        merged: false,
+                        status: listing.status.clone(),
+                        message: format!(
+                            "PR state is '{}'. Listing remains in '{}'.",
+                            details.state, listing.status
+                        ),
+                    }),
+                )
+            }
+        }
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(ListingPrCheckResponse {
+                id,
+                pr_url: Some(pr_url),
+                state: "error".to_string(),
+                merged: false,
+                status: listing.status,
+                message: format!("GitHub API query failed: {}", e),
+            }),
+        ),
+    }
+}
+
+pub async fn handle_github_pr_webhook(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let action = payload.get("action").and_then(|a| a.as_str()).unwrap_or("");
+    let pr_val = payload.get("pull_request");
+    let is_merged = pr_val
+        .and_then(|pr| pr.get("merged").and_then(|m| m.as_bool()))
+        .unwrap_or(false)
+        || pr_val
+            .and_then(|pr| pr.get("merged_at").and_then(|m| m.as_str()))
+            .is_some();
+
+    let pr_html_url = pr_val
+        .and_then(|pr| pr.get("html_url").and_then(|u| u.as_str()))
+        .unwrap_or("");
+
+    if !is_merged || pr_html_url.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "received": true,
+                "action": action,
+                "merged": is_merged,
+                "message": "Webhook received; no merged PR action to process"
+            })),
+        );
+    }
+
+    let parsed_target = parse_github_pr_url(pr_html_url);
+    let mut transitioned_id: Option<String> = None;
+
+    {
+        let mut state = ctx.state.write().await;
+        for l in state.listings.iter_mut() {
+            let matches = if let Some(ref l_url) = l.pr_url {
+                if l_url == pr_html_url {
+                    true
+                } else if let (Some(ref target), Some(existing)) = (&parsed_target, parse_github_pr_url(l_url)) {
+                    target == &existing
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if matches {
+                l.status = "Live".to_string();
+                l.updated_at = Utc::now();
+                transitioned_id = Some(l.id.clone());
+                break;
+            }
+        }
+        if transitioned_id.is_some() {
+            let _ = state.save(&ctx.data_file);
+        }
+    }
+
+    if let Some(id) = transitioned_id {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "success": true,
+                "listing_id": id,
+                "pr_url": pr_html_url,
+                "status": "Live",
+                "message": "Listing successfully transitioned to Live via GitHub webhook."
+            })),
+        )
+    } else {
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "received": true,
+                "pr_url": pr_html_url,
+                "message": "Merged PR received, but no matching listing was found."
+            })),
+        )
+    }
 }

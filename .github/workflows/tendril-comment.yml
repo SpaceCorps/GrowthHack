@@ -4,18 +4,34 @@ on:
   workflow_run:
     workflows: ["Tendril Verification & PR Flywheel"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to comment on"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run simulation without mutating GitHub API"
+        required: false
+        type: boolean
+        default: false
+      mock_comment:
+        description: "Custom mock comment markdown text"
+        required: false
+        default: ""
 
 jobs:
   comment:
     runs-on: ubuntu-latest
     if: >
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')
     permissions:
       pull-requests: write
       issues: write
     steps:
       - name: Download Verification Artifact
+        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
           name: tendril-verification-summary
@@ -28,19 +44,52 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_MOCK_COMMENT: ${{ inputs.mock_comment }}
         run: |
-          if [ ! -f "tendril-attribution/pr_number.txt" ]; then
-            echo "No PR attribution metadata artifact found. Skipping fork comment."
+          DRY_RUN="${DRY_RUN:-${INPUT_DRY_RUN:-false}}"
+
+          PR_NUMBER=""
+          if [ -f "tendril-attribution/pr_number.txt" ] && [ -s "tendril-attribution/pr_number.txt" ]; then
+            PR_NUMBER=$(cat tendril-attribution/pr_number.txt | tr -d '[:space:]')
+          elif [ -n "$INPUT_PR_NUMBER" ]; then
+            PR_NUMBER="$INPUT_PR_NUMBER"
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning title=Missing PR Metadata::No PR attribution metadata artifact found and no PR number provided. Skipping fork comment."
             exit 0
           fi
-          PR_NUMBER=$(cat tendril-attribution/pr_number.txt)
+
+          if [ ! -f "tendril-attribution/comment.md" ] || [ ! -s "tendril-attribution/comment.md" ]; then
+            if [ -n "$INPUT_MOCK_COMMENT" ]; then
+              mkdir -p tendril-attribution
+              echo "$INPUT_MOCK_COMMENT" > tendril-attribution/comment.md
+            else
+              echo "::warning title=Missing Comment Body::tendril-attribution/comment.md missing or empty. Skipping fork comment."
+              exit 0
+            fi
+          fi
+
           MARKER="<!-- tendril-flywheel-badge -->"
-          EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+          EXISTING_COMMENT_ID=""
+          if [ -n "$GH_REPO" ]; then
+            EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>/dev/null | head -n 1 || true)
+          fi
 
           if [ -n "$EXISTING_COMMENT_ID" ]; then
             echo "Updating comment $EXISTING_COMMENT_ID on PR #$PR_NUMBER"
-            gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@tendril-attribution/comment.md
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would update comment $EXISTING_COMMENT_ID on PR #$PR_NUMBER via gh api PATCH"
+            else
+              gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@tendril-attribution/comment.md
+            fi
           else
             echo "Creating new comment on PR #$PR_NUMBER"
-            gh pr comment "${PR_NUMBER}" --body-file tendril-attribution/comment.md
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would create new comment on PR #$PR_NUMBER via gh pr comment POST"
+            else
+              gh pr comment "${PR_NUMBER}" --body-file tendril-attribution/comment.md
+            fi
           fi

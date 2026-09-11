@@ -175,6 +175,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/batch-submit-pr",
             post(listings::batch_submit_listing_prs),
         )
+        .route("/api/listings/sync-prs", post(listings::sync_all_listing_prs))
+        .route(
+            "/api/listings/{id}/sync-pr",
+            post(listings::check_single_listing_pr),
+        )
+        .route(
+            "/api/webhooks/github/pr",
+            post(listings::handle_github_pr_webhook),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route(
@@ -245,6 +254,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route(
             "/api/contributors/generate-pr",
             post(contributors::generate_all_contributors_pr),
+        )
+        .route(
+            "/api/webhooks/github",
+            post(contributors::handle_github_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
         )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))

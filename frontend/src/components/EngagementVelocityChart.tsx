@@ -11,8 +11,50 @@ export interface EngagementVelocityChartProps {
   title?: string;
 }
 
+export type ViewMode = "aggregate" | "channels";
 type TimeFrame = "24h" | "7d" | "30d" | "All";
 type MetricFilter = "all" | "views" | "reactions" | "comments";
+export type ChannelMetric = "views" | "reactions" | "comments";
+
+export interface ChannelConfig {
+  id: string;
+  name: string;
+  color: string;
+  gradId: string;
+  badgeBg: string;
+  badgeBorder: string;
+  badgeText: string;
+}
+
+export const CHANNELS: ChannelConfig[] = [
+  {
+    id: "Dev.to",
+    name: "Dev.to",
+    color: "#818cf8",
+    gradId: "devtoGrad",
+    badgeBg: "bg-indigo-950/80",
+    badgeBorder: "border-indigo-800",
+    badgeText: "text-indigo-300",
+  },
+  {
+    id: "Hashnode",
+    name: "Hashnode",
+    color: "#38bdf8",
+    gradId: "hashnodeGrad",
+    badgeBg: "bg-sky-950/80",
+    badgeBorder: "border-sky-800",
+    badgeText: "text-sky-300",
+  },
+  {
+    id: "Medium",
+    name: "Medium",
+    color: "#34d399",
+    gradId: "mediumGrad",
+    badgeBg: "bg-emerald-950/80",
+    badgeBorder: "border-emerald-800",
+    badgeText: "text-emerald-300",
+  },
+];
 
 export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = ({
   snapshots = [],
@@ -22,8 +64,10 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
   compact = false,
   title = "Engagement Velocity & Trend Trajectory",
 }) => {
+  const [viewMode, setViewMode] = useState<ViewMode>("aggregate");
   const [timeframe, setTimeframe] = useState<TimeFrame>("All");
   const [metricFilter, setMetricFilter] = useState<MetricFilter>("all");
+  const [channelMetric, setChannelMetric] = useState<ChannelMetric>("views");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   // Sort snapshots chronologically
@@ -67,15 +111,24 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
     }
 
     let highest = 0;
-    for (const s of filteredSnapshots) {
-      if (metricFilter === "all" || metricFilter === "views") {
-        highest = Math.max(highest, s.views);
+    if (viewMode === "aggregate") {
+      for (const s of filteredSnapshots) {
+        if (metricFilter === "all" || metricFilter === "views") {
+          highest = Math.max(highest, s.views);
+        }
+        if (metricFilter === "all" || metricFilter === "reactions") {
+          highest = Math.max(highest, s.reactions);
+        }
+        if (metricFilter === "all" || metricFilter === "comments") {
+          highest = Math.max(highest, s.comments);
+        }
       }
-      if (metricFilter === "all" || metricFilter === "reactions") {
-        highest = Math.max(highest, s.reactions);
-      }
-      if (metricFilter === "all" || metricFilter === "comments") {
-        highest = Math.max(highest, s.comments);
+    } else {
+      for (const s of filteredSnapshots) {
+        for (const ch of CHANNELS) {
+          const val = s.channels?.[ch.id]?.[channelMetric] ?? 0;
+          highest = Math.max(highest, val);
+        }
       }
     }
     const safeMax = highest > 0 ? Math.ceil(highest * 1.15) : 10;
@@ -95,18 +148,34 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
       const yReactions = padding.top + innerHeight - (s.reactions / safeMax) * innerHeight;
       const yComments = padding.top + innerHeight - (s.comments / safeMax) * innerHeight;
 
+      const yChannels: Record<string, number> = {};
+      for (const ch of CHANNELS) {
+        const chVal = s.channels?.[ch.id]?.[channelMetric] ?? 0;
+        yChannels[ch.id] = padding.top + innerHeight - (chVal / safeMax) * innerHeight;
+      }
+
       return {
         snapshot: s,
         x,
         yViews,
         yReactions,
         yComments,
+        yChannels,
         idx,
       };
     });
 
     return { maxVal: safeMax, points: calculatedPoints };
-  }, [filteredSnapshots, metricFilter, innerWidth, innerHeight, padding.left, padding.top]);
+  }, [
+    filteredSnapshots,
+    viewMode,
+    metricFilter,
+    channelMetric,
+    innerWidth,
+    innerHeight,
+    padding.left,
+    padding.top,
+  ]);
 
   // Path generators
   const generateLinePath = (yKey: "yViews" | "yReactions" | "yComments") => {
@@ -120,6 +189,23 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
     if (points.length < 2) return "";
     const bottomY = padding.top + innerHeight;
     const linePart = generateLinePath(yKey);
+    const lastX = points[points.length - 1].x;
+    const firstX = points[0].x;
+    return `${linePart} L ${lastX},${bottomY} L ${firstX},${bottomY} Z`;
+  };
+
+  const generateChannelLinePath = (channelId: string) => {
+    if (points.length < 2) return "";
+    return points.reduce((acc, pt, i) => {
+      const y = pt.yChannels[channelId] ?? padding.top + innerHeight;
+      return i === 0 ? `M ${pt.x},${y}` : `${acc} L ${pt.x},${y}`;
+    }, "");
+  };
+
+  const generateChannelAreaPath = (channelId: string) => {
+    if (points.length < 2) return "";
+    const bottomY = padding.top + innerHeight;
+    const linePart = generateChannelLinePath(channelId);
     const lastX = points[points.length - 1].x;
     const firstX = points[0].x;
     return `${linePart} L ${lastX},${bottomY} L ${firstX},${bottomY} Z`;
@@ -219,87 +305,181 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
 
         {/* Velocity Summary Pills */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {velocity && (
-            <>
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${trendBadge.bg}`}
-              >
-                <TrendIcon className="w-3 h-3" />
-                <span>Trend: {trendBadge.label}</span>
-              </span>
+          {viewMode === "aggregate"
+            ? velocity && (
+                <>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${trendBadge.bg}`}
+                  >
+                    <TrendIcon className="w-3 h-3" />
+                    <span>Trend: {trendBadge.label}</span>
+                  </span>
 
-              <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800">
-                +{velocity.views_per_day} views/day
-              </span>
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-800">
+                    +{velocity.views_per_day} views/day
+                  </span>
 
-              {velocity.reactions_per_day > 0 && (
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-pink-950/80 text-pink-300 border border-pink-800">
-                  +{velocity.reactions_per_day} reactions/day
-                </span>
-              )}
+                  {velocity.reactions_per_day > 0 && (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-pink-950/80 text-pink-300 border border-pink-800">
+                      +{velocity.reactions_per_day} reactions/day
+                    </span>
+                  )}
 
-              {velocity.views_delta_24h !== 0 && (
-                <span className="px-2 py-0.5 rounded text-[11px] font-mono text-slate-300 bg-slate-900 border border-slate-800">
-                  24h:{" "}
-                  {velocity.views_delta_24h > 0
-                    ? `+${velocity.views_delta_24h}`
-                    : velocity.views_delta_24h}{" "}
-                  views
-                </span>
-              )}
-            </>
-          )}
+                  {velocity.views_delta_24h !== 0 && (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-mono text-slate-300 bg-slate-900 border border-slate-800">
+                      24h:{" "}
+                      {velocity.views_delta_24h > 0
+                        ? `+${velocity.views_delta_24h}`
+                        : velocity.views_delta_24h}{" "}
+                      views
+                    </span>
+                  )}
+                </>
+              )
+            : CHANNELS.map((ch) => {
+                const chVel = velocity?.channels?.[ch.id];
+                const vpd =
+                  channelMetric === "views"
+                    ? (chVel?.views_per_day ?? 0)
+                    : channelMetric === "reactions"
+                      ? (chVel?.reactions_per_day ?? 0)
+                      : (chVel?.comments_per_day ?? 0);
+                const chTrend = chVel?.trend ?? "Flat";
+                return (
+                  <span
+                    key={ch.id}
+                    data-testid={`channel-pill-${ch.id}`}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-semibold border ${ch.badgeBg} ${ch.badgeBorder} ${ch.badgeText}`}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: ch.color }}
+                    />
+                    <span>
+                      {ch.name}: +{vpd}/d ({chTrend})
+                    </span>
+                  </span>
+                );
+              })}
         </div>
       </div>
 
-      {/* Controls: Timeframe and Metric Filters */}
+      {/* Controls: Mode Switcher, Metric Selectors, Timeframe */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        {/* Metric Toggles */}
-        <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
-          <button
-            type="button"
-            onClick={() => setMetricFilter("all")}
-            className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all ${
-              metricFilter === "all"
-                ? "bg-slate-800 text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            All Metrics
-          </button>
-          <button
-            type="button"
-            onClick={() => setMetricFilter("views")}
-            className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-              metricFilter === "views"
-                ? "bg-cyan-950 text-cyan-300 border border-cyan-800"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            Views
-          </button>
-          <button
-            type="button"
-            onClick={() => setMetricFilter("reactions")}
-            className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-              metricFilter === "reactions"
-                ? "bg-pink-950 text-pink-300 border border-pink-800"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            Reactions
-          </button>
-          <button
-            type="button"
-            onClick={() => setMetricFilter("comments")}
-            className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
-              metricFilter === "comments"
-                ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            Comments
-          </button>
+        {/* Left Controls: View Mode & Metric Toggles */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setViewMode("aggregate")}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all ${
+                viewMode === "aggregate"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Aggregate View
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("channels")}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all ${
+                viewMode === "channels"
+                  ? "bg-indigo-950 text-indigo-300 border border-indigo-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Channel Comparison (Dev.to vs Hashnode vs Medium)
+            </button>
+          </div>
+
+          {/* Metric Selector based on mode */}
+          {viewMode === "aggregate" ? (
+            <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setMetricFilter("all")}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-all ${
+                  metricFilter === "all"
+                    ? "bg-slate-800 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                All Metrics
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricFilter("views")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  metricFilter === "views"
+                    ? "bg-cyan-950 text-cyan-300 border border-cyan-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Views
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricFilter("reactions")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  metricFilter === "reactions"
+                    ? "bg-pink-950 text-pink-300 border border-pink-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Reactions
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricFilter("comments")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  metricFilter === "comments"
+                    ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Comments
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+              <span className="text-[11px] text-slate-500 font-semibold px-1">Metric:</span>
+              <button
+                type="button"
+                onClick={() => setChannelMetric("views")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  channelMetric === "views"
+                    ? "bg-indigo-950 text-indigo-300 border border-indigo-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Views
+              </button>
+              <button
+                type="button"
+                onClick={() => setChannelMetric("reactions")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  channelMetric === "reactions"
+                    ? "bg-indigo-950 text-indigo-300 border border-indigo-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Reactions
+              </button>
+              <button
+                type="button"
+                onClick={() => setChannelMetric("comments")}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                  channelMetric === "comments"
+                    ? "bg-indigo-950 text-indigo-300 border border-indigo-800"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Comments
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Timeframe Selectors */}
@@ -343,6 +523,19 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
             <linearGradient id="commentsGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
               <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+            </linearGradient>
+            {/* Channel Gradients */}
+            <linearGradient id="devtoGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#818cf8" stopOpacity="0.30" />
+              <stop offset="100%" stopColor="#818cf8" stopOpacity="0.0" />
+            </linearGradient>
+            <linearGradient id="hashnodeGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.30" />
+              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
+            </linearGradient>
+            <linearGradient id="mediumGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity="0.30" />
+              <stop offset="100%" stopColor="#34d399" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -427,48 +620,69 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
             </>
           )}
 
-          {/* Areas */}
-          {(metricFilter === "all" || metricFilter === "views") && (
-            <path d={generateAreaPath("yViews")} fill="url(#viewsGrad)" />
-          )}
-          {(metricFilter === "all" || metricFilter === "reactions") && (
-            <path d={generateAreaPath("yReactions")} fill="url(#reactionsGrad)" />
-          )}
-          {(metricFilter === "all" || metricFilter === "comments") && (
-            <path d={generateAreaPath("yComments")} fill="url(#commentsGrad)" />
+          {/* Aggregate Mode Areas & Lines */}
+          {viewMode === "aggregate" && (
+            <>
+              {(metricFilter === "all" || metricFilter === "views") && (
+                <path d={generateAreaPath("yViews")} fill="url(#viewsGrad)" />
+              )}
+              {(metricFilter === "all" || metricFilter === "reactions") && (
+                <path d={generateAreaPath("yReactions")} fill="url(#reactionsGrad)" />
+              )}
+              {(metricFilter === "all" || metricFilter === "comments") && (
+                <path d={generateAreaPath("yComments")} fill="url(#commentsGrad)" />
+              )}
+
+              {(metricFilter === "all" || metricFilter === "views") && (
+                <path
+                  d={generateLinePath("yViews")}
+                  fill="none"
+                  stroke="#06b6d4"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              {(metricFilter === "all" || metricFilter === "reactions") && (
+                <path
+                  d={generateLinePath("yReactions")}
+                  fill="none"
+                  stroke="#ec4899"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              {(metricFilter === "all" || metricFilter === "comments") && (
+                <path
+                  d={generateLinePath("yComments")}
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+            </>
           )}
 
-          {/* Lines */}
-          {(metricFilter === "all" || metricFilter === "views") && (
-            <path
-              d={generateLinePath("yViews")}
-              fill="none"
-              stroke="#06b6d4"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-          {(metricFilter === "all" || metricFilter === "reactions") && (
-            <path
-              d={generateLinePath("yReactions")}
-              fill="none"
-              stroke="#ec4899"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-          {(metricFilter === "all" || metricFilter === "comments") && (
-            <path
-              d={generateLinePath("yComments")}
-              fill="none"
-              stroke="#10b981"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
+          {/* Channel Comparison Mode Areas & Lines */}
+          {viewMode === "channels" &&
+            CHANNELS.map((ch) => (
+              <React.Fragment key={ch.id}>
+                <path d={generateChannelAreaPath(ch.id)} fill={`url(#${ch.gradId})`} />
+                <path
+                  data-channel={ch.id}
+                  data-testid={`channel-line-${ch.id}`}
+                  d={generateChannelLinePath(ch.id)}
+                  fill="none"
+                  stroke={ch.color}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </React.Fragment>
+            ))}
 
           {/* Data Points */}
           {points.map((pt) => {
@@ -488,50 +702,70 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
                   />
                 )}
 
-                {/* Views Dot */}
-                {(metricFilter === "all" || metricFilter === "views") && (
-                  <circle
-                    cx={pt.x}
-                    cy={pt.yViews}
-                    r={isHovered ? 5 : 3}
-                    fill="#06b6d4"
-                    stroke="#020617"
-                    strokeWidth="1.5"
-                    className="cursor-pointer transition-all"
-                    onMouseEnter={() => setHoveredIndex(pt.idx)}
-                    onMouseLeave={() => setHoveredIndex(null)}
-                  />
+                {/* Aggregate Mode Dots */}
+                {viewMode === "aggregate" && (
+                  <>
+                    {(metricFilter === "all" || metricFilter === "views") && (
+                      <circle
+                        cx={pt.x}
+                        cy={pt.yViews}
+                        r={isHovered ? 5 : 3}
+                        fill="#06b6d4"
+                        stroke="#020617"
+                        strokeWidth="1.5"
+                        className="cursor-pointer transition-all"
+                        onMouseEnter={() => setHoveredIndex(pt.idx)}
+                        onMouseLeave={() => setHoveredIndex(null)}
+                      />
+                    )}
+                    {(metricFilter === "all" || metricFilter === "reactions") && (
+                      <circle
+                        cx={pt.x}
+                        cy={pt.yReactions}
+                        r={isHovered ? 4.5 : 2.5}
+                        fill="#ec4899"
+                        stroke="#020617"
+                        strokeWidth="1.5"
+                        className="cursor-pointer transition-all"
+                        onMouseEnter={() => setHoveredIndex(pt.idx)}
+                        onMouseLeave={() => setHoveredIndex(null)}
+                      />
+                    )}
+                    {(metricFilter === "all" || metricFilter === "comments") && (
+                      <circle
+                        cx={pt.x}
+                        cy={pt.yComments}
+                        r={isHovered ? 4.5 : 2.5}
+                        fill="#10b981"
+                        stroke="#020617"
+                        strokeWidth="1.5"
+                        className="cursor-pointer transition-all"
+                        onMouseEnter={() => setHoveredIndex(pt.idx)}
+                        onMouseLeave={() => setHoveredIndex(null)}
+                      />
+                    )}
+                  </>
                 )}
 
-                {/* Reactions Dot */}
-                {(metricFilter === "all" || metricFilter === "reactions") && (
-                  <circle
-                    cx={pt.x}
-                    cy={pt.yReactions}
-                    r={isHovered ? 4.5 : 2.5}
-                    fill="#ec4899"
-                    stroke="#020617"
-                    strokeWidth="1.5"
-                    className="cursor-pointer transition-all"
-                    onMouseEnter={() => setHoveredIndex(pt.idx)}
-                    onMouseLeave={() => setHoveredIndex(null)}
-                  />
-                )}
-
-                {/* Comments Dot */}
-                {(metricFilter === "all" || metricFilter === "comments") && (
-                  <circle
-                    cx={pt.x}
-                    cy={pt.yComments}
-                    r={isHovered ? 4.5 : 2.5}
-                    fill="#10b981"
-                    stroke="#020617"
-                    strokeWidth="1.5"
-                    className="cursor-pointer transition-all"
-                    onMouseEnter={() => setHoveredIndex(pt.idx)}
-                    onMouseLeave={() => setHoveredIndex(null)}
-                  />
-                )}
+                {/* Channel Comparison Mode Dots */}
+                {viewMode === "channels" &&
+                  CHANNELS.map((ch) => {
+                    const cy = pt.yChannels[ch.id] ?? padding.top + innerHeight;
+                    return (
+                      <circle
+                        key={ch.id}
+                        cx={pt.x}
+                        cy={cy}
+                        r={isHovered ? 5 : 3}
+                        fill={ch.color}
+                        stroke="#020617"
+                        strokeWidth="1.5"
+                        className="cursor-pointer transition-all"
+                        onMouseEnter={() => setHoveredIndex(pt.idx)}
+                        onMouseLeave={() => setHoveredIndex(null)}
+                      />
+                    );
+                  })}
               </g>
             );
           })}
@@ -540,41 +774,90 @@ export const EngagementVelocityChart: React.FC<EngagementVelocityChartProps> = (
         {/* Hover Tooltip Overlay */}
         {hoveredPoint && (
           <div className="absolute top-3 right-3 p-2.5 rounded-lg bg-slate-950/95 border border-slate-700 shadow-xl text-[11px] font-mono space-y-1 pointer-events-none z-10">
-            <div className="text-slate-400 pb-1 border-b border-slate-800">
-              {new Date(hoveredPoint.snapshot.timestamp).toLocaleString()}
-            </div>
-            <div className="flex items-center justify-between gap-4 text-cyan-400 font-bold">
-              <span>Views:</span>
-              <span>{hoveredPoint.snapshot.views}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-pink-400 font-bold">
-              <span>Reactions:</span>
-              <span>{hoveredPoint.snapshot.reactions}</span>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-emerald-400 font-bold">
-              <span>Comments:</span>
-              <span>{hoveredPoint.snapshot.comments}</span>
-            </div>
+            {viewMode === "aggregate" ? (
+              <>
+                <div className="text-slate-400 pb-1 border-b border-slate-800">
+                  {new Date(hoveredPoint.snapshot.timestamp).toLocaleString()}
+                </div>
+                <div className="flex items-center justify-between gap-4 text-cyan-400 font-bold">
+                  <span>Views:</span>
+                  <span>{hoveredPoint.snapshot.views}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-pink-400 font-bold">
+                  <span>Reactions:</span>
+                  <span>{hoveredPoint.snapshot.reactions}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-emerald-400 font-bold">
+                  <span>Comments:</span>
+                  <span>{hoveredPoint.snapshot.comments}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-slate-400 pb-1 border-b border-slate-800 flex items-center justify-between gap-4">
+                  <span>{new Date(hoveredPoint.snapshot.timestamp).toLocaleString()}</span>
+                  <span className="capitalize text-slate-400 text-[10px]">({channelMetric})</span>
+                </div>
+                {CHANNELS.map((ch) => {
+                  const val = hoveredPoint.snapshot.channels?.[ch.id]?.[channelMetric] ?? 0;
+                  const chVel = velocity?.channels?.[ch.id];
+                  const rate =
+                    channelMetric === "views"
+                      ? chVel?.views_per_day
+                      : channelMetric === "reactions"
+                        ? chVel?.reactions_per_day
+                        : chVel?.comments_per_day;
+                  return (
+                    <div
+                      key={ch.id}
+                      className="flex items-center justify-between gap-4 font-bold"
+                      style={{ color: ch.color }}
+                    >
+                      <span>{ch.name}:</span>
+                      <span>
+                        {val}
+                        {rate !== undefined && (
+                          <span className="text-[10px] opacity-80 ml-1 font-normal font-mono">
+                            (+{rate}/d)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
 
       {/* Legend */}
       <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-        <div className="flex items-center space-x-4 font-semibold">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
-            <span className="text-cyan-300">Views</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-pink-400" />
-            <span className="text-pink-300">Reactions</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <span className="text-emerald-300">Comments</span>
-          </span>
-        </div>
+        {viewMode === "aggregate" ? (
+          <div className="flex items-center space-x-4 font-semibold">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+              <span className="text-cyan-300">Views</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-pink-400" />
+              <span className="text-pink-300">Reactions</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <span className="text-emerald-300">Comments</span>
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center space-x-4 font-semibold">
+            {CHANNELS.map((ch) => (
+              <span key={ch.id} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ch.color }} />
+                <span style={{ color: ch.color }}>{ch.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <span className="text-slate-500 font-mono">
           {filteredSnapshots.length} data point{filteredSnapshots.length === 1 ? "" : "s"}

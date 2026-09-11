@@ -5,7 +5,8 @@ use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::listings::submit_upstream;
 use growthhack_backend::api::submission::{
-    extract_github_repo, get_github_status, insert_listing_entry,
+    extract_github_repo, get_github_status, insert_listing_entry, parse_github_pr_url,
+    PullRequestDetails,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::path::PathBuf;
@@ -202,4 +203,84 @@ async fn test_get_github_status_endpoint_contract() {
         ctx_with_token.get_github_token(),
         Some("ghp_dummy_token_for_tests".to_string())
     );
+}
+
+#[test]
+fn test_parse_github_pr_url() {
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412/"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412/files"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412/commits"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412?diff=unified"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo/pull/412#issuecomment-99"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("github.com/owner/repo/pull/412"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(
+        parse_github_pr_url("https://github.com/owner/repo.git/pull/412"),
+        Some(("owner".to_string(), "repo".to_string(), 412))
+    );
+    assert_eq!(parse_github_pr_url("https://gitlab.com/owner/repo/pull/412"), None);
+    assert_eq!(parse_github_pr_url("https://github.com/owner/repo/issues/412"), None);
+    assert_eq!(parse_github_pr_url("https://github.com/owner/repo/pull/notanumber"), None);
+    assert_eq!(parse_github_pr_url("https://example.com"), None);
+    assert_eq!(parse_github_pr_url(""), None);
+}
+
+#[test]
+fn test_get_pull_request_details() {
+    let open_json = serde_json::json!({
+        "number": 42,
+        "state": "open",
+        "merged": false,
+        "merged_at": null,
+        "html_url": "https://github.com/owner/repo/pull/42"
+    });
+    let open_pr: PullRequestDetails = serde_json::from_value(open_json).unwrap();
+    assert_eq!(open_pr.number, 42);
+    assert_eq!(open_pr.state, "open");
+    assert!(!open_pr.merged);
+    assert!(open_pr.merged_at.is_none());
+
+    let closed_json = serde_json::json!({
+        "number": 43,
+        "state": "closed",
+        "merged": false,
+        "merged_at": null,
+        "html_url": "https://github.com/owner/repo/pull/43"
+    });
+    let closed_pr: PullRequestDetails = serde_json::from_value(closed_json).unwrap();
+    assert_eq!(closed_pr.state, "closed");
+    assert!(!closed_pr.merged);
+
+    let merged_json = serde_json::json!({
+        "number": 44,
+        "state": "closed",
+        "merged": true,
+        "merged_at": "2026-09-11T05:00:00Z",
+        "html_url": "https://github.com/owner/repo/pull/44"
+    });
+    let merged_pr: PullRequestDetails = serde_json::from_value(merged_json).unwrap();
+    assert_eq!(merged_pr.state, "closed");
+    assert!(merged_pr.merged);
+    assert_eq!(merged_pr.merged_at.as_deref(), Some("2026-09-11T05:00:00Z"));
 }
