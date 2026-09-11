@@ -667,3 +667,14 @@ export interface ImportIssueRequest {
   title?: string;
   description?: string;
 }
+
+export interface PlaygroundFileInspection {
+  scenario_id: string;
+  path: string;
+  name: string;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  content: string;
+  file_diff?: string;
+  language: string;
+  line_count: number;
+}
