@@ -14,11 +14,20 @@ export interface GrowthIssue {
   updated_at: string;
 }
 
+export interface EngagementMetrics {
+  reactions: number;
+  comments: number;
+  views: number;
+  last_synced_at?: string;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
   target_path?: string;
   status: "Success" | "Copied" | string;
+  external_id?: string;
+  engagement?: EngagementMetrics;
 }
 
 export interface Article {
@@ -37,6 +46,7 @@ export interface Article {
   slug?: string;
   image_path?: string;
   exports?: ExportRecord[];
+  engagement?: EngagementMetrics;
 }
 
 export interface ExportIvyWebRequest {
@@ -62,6 +72,27 @@ export interface SyncAssetsResponse {
   success: boolean;
   image_path: string;
   slug: string;
+}
+
+export interface UploadHeroImageRequest {
+  image_data: string;
+  target_images_dir?: string;
+}
+
+export interface UploadHeroImageResponse {
+  success: boolean;
+  image_path: string;
+  slug: string;
+  bytes_written: number;
+}
+
+export type HeroBannerTheme = "dark-cyan" | "midnight-emerald" | "indigo-violet" | "amber-glow";
+
+export interface HeroBannerOptions {
+  theme?: HeroBannerTheme;
+  titleOverride?: string;
+  categoryOverride?: string;
+  summaryOverride?: string;
 }
 
 export interface ReviewItem {
@@ -114,7 +145,40 @@ export interface Listing {
   pr_url?: string;
   submission_blurb: string;
   notes: string;
+  blurb_status?: "Pending" | "Approved" | "Rejected" | string;
   updated_at: string;
+}
+
+export interface PackageManagerTarget {
+  id: string;
+  target_key: string;
+  name: string;
+  os: string;
+  registry_repo: string;
+  package_id: string;
+  install_command: string;
+  status: "Targeted" | "PR Submitted" | "Under Review" | "Merged" | "Live";
+  pr_url?: string;
+  manifest_filename: string;
+  notes: string;
+  updated_at: string;
+}
+
+export interface PackageManifestResponse {
+  target_key: string;
+  filename: string;
+  language: string;
+  content: string;
+  install_command: string;
+  instructions: string;
+}
+
+export interface DispatchPackagePrResponse {
+  task_id: string;
+  message: string;
+  target_key: string;
+  upstream_repo: string;
+  commands: string[];
 }
 
 export interface AgentStatus {
@@ -129,5 +193,59 @@ export type ActiveTab =
   | "trends"
   | "demos"
   | "listings"
+  | "packages"
   | "agent"
-  | "review";
+  | "review"
+  | "flywheel"
+  | "contributors";
+
+export interface ContributorIssue {
+  id: string;
+  title: string;
+  description: string;
+  category: "Documentation" | "CLI" | "Frontend" | "Backend" | "Tests" | string;
+  difficulty: "Good First Issue" | "Help Wanted" | string;
+  estimated_minutes: number;
+  affected_files: string[];
+  reproduction_steps: string[];
+  mentor: string;
+  claimed: boolean;
+  claimed_by?: string;
+  claimed_at?: string;
+  pr_url?: string;
+}
+
+export interface ContributorRecord {
+  name: string;
+  avatar_url: string;
+  profile_url: string;
+  contributions: string[];
+}
+
+export interface ContributingGuideResponse {
+  content: string;
+  filename: string;
+}
+
+export interface AllContributorsResponse {
+  contributors: ContributorRecord[];
+  markdown_table: string;
+  html_grid: string;
+  badge_markdown: string;
+}
+
+export interface SyndicationSettings {
+  devto_api_key?: string;
+  hashnode_api_key?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}
+
+export interface SyndicationStatusResponse {
+  devto_configured: boolean;
+  devto_key_preview?: string;
+  hashnode_configured: boolean;
+  hashnode_key_preview?: string;
+  hashnode_publication_id?: string;
+  publish_as_draft: boolean;
+}

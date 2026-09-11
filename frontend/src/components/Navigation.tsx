@@ -6,11 +6,14 @@ import {
   Radio,
   Clapperboard,
   ListTree,
+  Package,
   Terminal,
   Sparkles,
   Star,
   Cpu,
   CheckCheck,
+  GitPullRequest,
+  Users,
 } from "lucide-react";
 
 interface NavigationProps {
@@ -21,7 +24,9 @@ interface NavigationProps {
   articlesCount: number;
   trendsCount: number;
   listingsCount: number;
+  packagesCount?: number;
   reviewCount?: number;
+  contributorsCount?: number;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -32,7 +37,9 @@ export const Navigation: React.FC<NavigationProps> = ({
   articlesCount,
   trendsCount,
   listingsCount,
+  packagesCount,
   reviewCount,
+  contributorsCount,
 }) => {
   const navItems = [
     {
@@ -69,6 +76,23 @@ export const Navigation: React.FC<NavigationProps> = ({
       label: "Listing & Repo Blitz",
       icon: ListTree,
       count: listingsCount,
+    },
+    {
+      id: "packages" as ActiveTab,
+      label: "Package Blitz",
+      icon: Package,
+      count: packagesCount,
+    },
+    {
+      id: "contributors" as ActiveTab,
+      label: "Contributor Flywheel",
+      icon: Users,
+      count: contributorsCount,
+    },
+    {
+      id: "flywheel" as ActiveTab,
+      label: "PR Flywheel",
+      icon: GitPullRequest,
     },
     {
       id: "agent" as ActiveTab,

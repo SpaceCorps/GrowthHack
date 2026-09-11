@@ -431,6 +431,115 @@ Respond with a JSON array wrapped in ```json ... ```:
     )
 }
 
+pub fn build_discussions_prompt(sources: Option<&[String]>) -> String {
+    let clean_sources: Vec<String> = sources
+        .map(|s| {
+            s.iter()
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if clean_sources.is_empty() {
+        let default_targets = "Reddit (r/LocalLLaMA, r/programming, r/ClaudeAI), Hacker News";
+        return format!(
+            r#"You are an AI developer relations radar scout specializing in real-time social discussion harvesting.
+Investigate developer discussions, complaints, and pain points across {default_targets} (focusing on r/LocalLLaMA, r/programming, r/ClaudeAI, Hacker News).
+Specifically target discussions around:
+- "Claude Code worktree"
+- "OpenHands vs"
+- "coding agent sandbox"
+- "agent git merge conflict"
+
+Identify 3 high-impact developer discussions. For each topic provide:
+- source: e.g. "Reddit" or "Hacker News"
+- topic: clear, engaging title of the debate or complaint
+- url: direct link or reference thread
+- engagement: engagement metrics (upvotes, comment count, sentiment)
+- summary: root cause technical analysis of why developers are struggling with agent workspace collisions or lack of verification
+- tendril_tie_in: "direct", "subtle", or "none"
+
+Respond with a JSON array wrapped in ```json ... ```:
+[
+  {{
+    "source": "Reddit",
+    "topic": "Developers hitting git lock collisions running concurrent Claude Code instances",
+    "url": "https://reddit.com/r/LocalLLaMA/comments/agent_workspace_collision",
+    "engagement": "450 upvotes, 120 comments",
+    "summary": "Engineers are complaining about dirty index corruption when multiple agent loops share one checked-out repo.",
+    "tendril_tie_in": "direct"
+  }}
+]"#
+        );
+    }
+
+    let mut subreddits = Vec::new();
+    let mut forums = Vec::new();
+
+    for s in &clean_sources {
+        let lower = s.to_lowercase();
+        if lower.starts_with("r/") || lower == "reddit" || lower.contains("reddit.com") {
+            subreddits.push(s.as_str());
+        } else {
+            forums.push(s.as_str());
+        }
+    }
+
+    let mut target_sections = Vec::new();
+    if !subreddits.is_empty() {
+        target_sections.push(format!("subreddits ({})", subreddits.join(", ")));
+    }
+    if !forums.is_empty() {
+        target_sections.push(format!("developer forums & platforms ({})", forums.join(", ")));
+    }
+    let targets_desc = target_sections.join(" and ");
+    let sources_str = clean_sources.join(", ");
+
+    let example_source = clean_sources.first().map(|s| s.as_str()).unwrap_or("Reddit");
+    let example_url = if example_source.to_lowercase().starts_with("r/") {
+        format!("https://reddit.com/{}/comments/example_thread", example_source)
+    } else if example_source.to_lowercase().contains("lobste.rs") {
+        "https://lobste.rs/s/example_topic".to_string()
+    } else if example_source.to_lowercase().contains("hacker news") {
+        "https://news.ycombinator.com/item?id=example".to_string()
+    } else {
+        format!("https://{}/example_thread", example_source.to_lowercase().replace(' ', ""))
+    };
+
+    format!(
+        r#"You are an AI developer relations radar scout specializing in real-time social discussion harvesting.
+Investigate developer discussions, complaints, and pain points across {sources_str} specifically targeting {targets_desc}.
+Specifically target discussions around:
+- "Claude Code worktree"
+- "OpenHands vs"
+- "coding agent sandbox"
+- "agent git merge conflict"
+
+Focus your search specifically on discussions, complaints, and bottlenecks reported by developers on {sources_str}.
+
+Identify 3 high-impact developer discussions. For each topic provide:
+- source: ({sources_str})
+- topic: clear, engaging title of the debate or complaint
+- url: direct link or reference thread
+- engagement: engagement metrics (upvotes, comment count, sentiment)
+- summary: root cause technical analysis of why developers are struggling with agent workspace collisions or lack of verification
+- tendril_tie_in: "direct", "subtle", or "none"
+
+Respond with a JSON array wrapped in ```json ... ```:
+[
+  {{
+    "source": "{example_source}",
+    "topic": "Developers discussing agent workspace collisions and tool bottlenecks",
+    "url": "{example_url}",
+    "engagement": "Active debate, high sentiment",
+    "summary": "Engineers discussing challenges with agent isolation and lack of verification gates.",
+    "tendril_tie_in": "direct"
+  }}
+]"#
+    )
+}
+
 pub async fn list_trends(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
     let state = ctx.state.read().await;
     Json(state.trends.clone())
@@ -508,49 +617,29 @@ pub async fn scout_trends(
 
     let message = match &payload.sources {
         Some(sources) if !sources.is_empty() => {
-            format!(
-                "Trend scout started for {} with Antigravity",
-                sources.join(", ")
-            )
+            if mode == "discussions" {
+                format!(
+                    "Discussions harvester started for {} with Antigravity",
+                    sources.join(", ")
+                )
+            } else {
+                format!(
+                    "Trend scout started for {} with Antigravity",
+                    sources.join(", ")
+                )
+            }
         }
-        _ => "Trend scout started with Antigravity".to_string(),
+        _ => {
+            if mode == "discussions" {
+                "Discussions harvester started with Antigravity".to_string()
+            } else {
+                "Trend scout started with Antigravity".to_string()
+            }
+        }
     };
 
     let prompt = if mode == "discussions" {
-        let sources = payload
-            .sources
-            .clone()
-            .unwrap_or_else(|| vec!["Reddit".to_string(), "Hacker News".to_string()]);
-        let sources_str = sources.join(", ");
-        format!(
-            r#"You are an AI developer relations radar scout specializing in real-time social discussion harvesting.
-Investigate developer discussions, complaints, and pain points across {sources_str} (focusing on r/LocalLLaMA, r/programming, r/ClaudeAI, Hacker News).
-Specifically target discussions around:
-- "Claude Code worktree"
-- "OpenHands vs"
-- "coding agent sandbox"
-- "agent git merge conflict"
-
-Identify 3 high-impact developer discussions. For each topic provide:
-- source: e.g. "Reddit" or "Hacker News"
-- topic: clear, engaging title of the debate or complaint
-- url: direct link or reference thread
-- engagement: engagement metrics (upvotes, comment count, sentiment)
-- summary: root cause technical analysis of why developers are struggling with agent workspace collisions or lack of verification
-- tendril_tie_in: "direct", "subtle", or "none"
-
-Respond with a JSON array wrapped in ```json ... ```:
-[
-  {{
-    "source": "Reddit",
-    "topic": "Developers hitting git lock collisions running concurrent Claude Code instances",
-    "url": "https://reddit.com/r/LocalLLaMA/comments/agent_workspace_collision",
-    "engagement": "450 upvotes, 120 comments",
-    "summary": "Engineers are complaining about dirty index corruption when multiple agent loops share one checked-out repo.",
-    "tendril_tie_in": "direct"
-  }}
-]"#
-        )
+        build_discussions_prompt(payload.sources.as_deref())
     } else {
         build_scout_prompt(payload.sources.as_deref())
     };
@@ -749,6 +838,7 @@ Requirements:
                     published_at: None,
                     slug: Some(slug),
                     exports: Vec::new(),
+                    engagement: None,
                 };
                 state.articles.insert(0, article);
 
@@ -811,5 +901,39 @@ mod tests {
         assert!(!prompt.contains("GitHub"));
         assert!(prompt.contains("Reddit"));
         assert!(prompt.contains("LinkedIn"));
+    }
+
+    #[test]
+    fn test_build_discussions_prompt_default() {
+        let prompt_none = build_discussions_prompt(None);
+        assert!(prompt_none.contains("r/LocalLLaMA"));
+        assert!(prompt_none.contains("r/programming"));
+        assert!(prompt_none.contains("r/ClaudeAI"));
+        assert!(prompt_none.contains("Hacker News"));
+
+        let empty: Vec<String> = vec![];
+        let prompt_empty = build_discussions_prompt(Some(&empty));
+        assert!(prompt_empty.contains("r/LocalLLaMA"));
+        assert!(prompt_empty.contains("r/programming"));
+        assert!(prompt_empty.contains("r/ClaudeAI"));
+        assert!(prompt_empty.contains("Hacker News"));
+    }
+
+    #[test]
+    fn test_build_discussions_prompt_custom_subreddits() {
+        let sources = vec!["r/rust".to_string(), "r/ChatGPTCoding".to_string()];
+        let prompt = build_discussions_prompt(Some(&sources));
+        assert!(prompt.contains("r/rust"));
+        assert!(prompt.contains("r/ChatGPTCoding"));
+        assert!(prompt.contains("subreddits (r/rust, r/ChatGPTCoding)"));
+    }
+
+    #[test]
+    fn test_build_discussions_prompt_developer_forums() {
+        let sources = vec!["Lobste.rs".to_string(), "forum.cursor.com".to_string()];
+        let prompt = build_discussions_prompt(Some(&sources));
+        assert!(prompt.contains("Lobste.rs"));
+        assert!(prompt.contains("forum.cursor.com"));
+        assert!(prompt.contains("developer forums & platforms (Lobste.rs, forum.cursor.com)"));
     }
 }

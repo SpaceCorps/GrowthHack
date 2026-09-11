@@ -1,34 +1,13 @@
+mod common;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::trends::{
     list_trends, parse_scouted_topics, scout_trends, synthesize_trend, ScoutTrendsRequest,
     SynthesizeTrendRequest,
 };
-use growthhack_backend::db::GrowthState;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-    })
-}
 
 #[tokio::test]
 async fn test_parse_scouted_topics_json_block() {
@@ -182,14 +161,14 @@ async fn test_parse_scouted_topics_truncated_mid_item() {
 
 #[tokio::test]
 async fn test_list_trends() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let response = list_trends(State(ctx)).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_scout_trends_accepts_modes_and_sources() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // 1. Discussions mode
     let req_discussions = ScoutTrendsRequest {
@@ -209,8 +188,20 @@ async fn test_scout_trends_accepts_modes_and_sources() {
 }
 
 #[tokio::test]
+async fn test_scout_trends_discussions_with_custom_sources() {
+    let ctx = common::create_test_context();
+
+    let req = ScoutTrendsRequest {
+        sources: Some(vec!["r/rust".to_string(), "Lobste.rs".to_string()]),
+        mode: Some("discussions".to_string()),
+    };
+    let res = scout_trends(State(ctx.clone()), Json(req)).await.into_response();
+    assert_eq!(res.status(), StatusCode::ACCEPTED);
+}
+
+#[tokio::test]
 async fn test_synthesize_trend_validation_and_modes() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // Verify 404 for unknown trend
     let req = SynthesizeTrendRequest {
@@ -231,7 +222,7 @@ async fn test_synthesize_trend_validation_and_modes() {
 
 #[tokio::test]
 async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // Test direct tie-in vs subtle vs none article generation properties
     let mut state = ctx.state.write().await;
@@ -253,6 +244,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         published_at: None,
         slug: None,
         exports: vec![],
+        engagement: None,
     };
     state.articles.insert(0, article_direct);
 
@@ -272,6 +264,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         published_at: None,
         slug: None,
         exports: vec![],
+        engagement: None,
     };
     state.articles.insert(0, article_subtle);
 
@@ -291,6 +284,7 @@ async fn test_synthesize_trend_approval_queue_and_tie_in_modes() {
         published_at: None,
         slug: None,
         exports: vec![],
+        engagement: None,
     };
     state.articles.insert(0, article_none);
 

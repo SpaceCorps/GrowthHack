@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Article, ExportRecord } from "./types";
+import type {
+  Article,
+  ExportRecord,
+  SyndicationSettings,
+  SyndicationStatusResponse,
+  UploadHeroImageRequest,
+  UploadHeroImageResponse,
+} from "./types";
+import { BANNER_THEMES, getThemeForCategory, wrapBannerTitle } from "./utils/banner";
 
 describe("Article & Export Pipeline Types", () => {
   it("supports ExportRecord structure with channels and status", () => {
@@ -54,6 +62,58 @@ describe("Article & Export Pipeline Types", () => {
     expect(channels).toContain("X Thread");
   });
 
+  it("test_syndication_settings_interface: validates SyndicationSettings typing and configuration state", () => {
+    const settings: SyndicationSettings = {
+      devto_api_key: "devto_test_key",
+      hashnode_api_key: "hashnode_test_token",
+      hashnode_publication_id: "pub_123",
+      publish_as_draft: true,
+    };
+
+    expect(settings.devto_api_key).toBe("devto_test_key");
+    expect(settings.hashnode_api_key).toBe("hashnode_test_token");
+    expect(settings.hashnode_publication_id).toBe("pub_123");
+    expect(settings.publish_as_draft).toBe(true);
+
+    const status: SyndicationStatusResponse = {
+      devto_configured: true,
+      devto_key_preview: "..._key",
+      hashnode_configured: true,
+      hashnode_key_preview: "...oken",
+      hashnode_publication_id: "pub_123",
+      publish_as_draft: true,
+    };
+
+    expect(status.devto_configured).toBe(true);
+    expect(status.hashnode_configured).toBe(true);
+    expect(status.devto_key_preview).toBe("..._key");
+  });
+
+  it("test_export_record_with_external_url: verifies export records with remote URLs and published status", () => {
+    const devtoExport: ExportRecord = {
+      channel: "Dev.to",
+      exported_at: new Date().toISOString(),
+      target_path: "https://dev.to/ivy/scaling-autonomous-agents-with-worktrees",
+      status: "Published",
+    };
+
+    expect(devtoExport.channel).toBe("Dev.to");
+    expect(devtoExport.status).toBe("Published");
+    expect(devtoExport.target_path?.startsWith("https://")).toBe(true);
+    expect(devtoExport.target_path).toContain("dev.to/ivy");
+
+    const hashnodeExport: ExportRecord = {
+      channel: "Hashnode",
+      exported_at: new Date().toISOString(),
+      target_path: "https://blog.ivy.interactive/15-minute-issue-to-pr",
+      status: "Published",
+    };
+
+    expect(hashnodeExport.channel).toBe("Hashnode");
+    expect(hashnodeExport.status).toBe("Published");
+    expect(hashnodeExport.target_path?.startsWith("https://")).toBe(true);
+  });
+
   it("verifies Ivy Web export payload serialization includes sync_hero_image and target_images_dir", () => {
     const payload = {
       target_dir: "/Users/rorychatt/git/ivy-web/apps/web-new/content/posts",
@@ -103,5 +163,65 @@ describe("Article & Export Pipeline Types", () => {
     expect(syncResponse.success).toBe(true);
     expect(syncResponse.image_path).toContain("autonomous-worktrees-hero.png");
     expect(syncResponse.slug).toBe("autonomous-worktrees");
+  });
+
+  it("verifies category badge color theme mapping for different article angles", () => {
+    expect(getThemeForCategory("Architecture")).toBe("dark-cyan");
+    expect(getThemeForCategory("System Design")).toBe("dark-cyan");
+    expect(getThemeForCategory("Benchmark")).toBe("midnight-emerald");
+    expect(getThemeForCategory("Performance Metrics")).toBe("midnight-emerald");
+    expect(getThemeForCategory("Multi-Agent Workflows")).toBe("indigo-violet");
+    expect(getThemeForCategory("Ecosystem Integration")).toBe("indigo-violet");
+    expect(getThemeForCategory("Tutorial")).toBe("amber-glow");
+    expect(getThemeForCategory("How-To Guide")).toBe("amber-glow");
+
+    expect(BANNER_THEMES["dark-cyan"].primaryAccent).toBe("#06b6d4");
+    expect(BANNER_THEMES["midnight-emerald"].primaryAccent).toBe("#10b981");
+    expect(BANNER_THEMES["indigo-violet"].primaryAccent).toBe("#8b5cf6");
+    expect(BANNER_THEMES["amber-glow"].primaryAccent).toBe("#f59e0b");
+  });
+
+  it("verifies title word-wrapping logic for 1200x630 social banner layout", () => {
+    const shortTitle = "Short Title";
+    expect(wrapBannerTitle(shortTitle, 34, 3)).toEqual(["Short Title"]);
+
+    const multiLineTitle =
+      "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
+    const lines = wrapBannerTitle(multiLineTitle, 34, 3);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(lines.length).toBeLessThanOrEqual(3);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(38);
+    }
+
+    const veryLongTitle =
+      "One Two Three Four Five Six Seven Eight Nine Ten Eleven Twelve Thirteen Fourteen Fifteen Sixteen Seventeen Eighteen Nineteen Twenty";
+    const cappedLines = wrapBannerTitle(veryLongTitle, 30, 3);
+    expect(cappedLines.length).toBe(3);
+    expect(cappedLines[2]).toContain("...");
+  });
+
+  it("verifies upload hero image payload serialization and response parsing", () => {
+    const uploadPayload: UploadHeroImageRequest = {
+      image_data:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      target_images_dir: "/site/images",
+    };
+
+    const serialized = JSON.stringify(uploadPayload);
+    const parsed: UploadHeroImageRequest = JSON.parse(serialized);
+    expect(parsed.image_data).toContain("data:image/png;base64,");
+    expect(parsed.target_images_dir).toBe("/site/images");
+
+    const rawUploadResponse: UploadHeroImageResponse = {
+      success: true,
+      image_path: "/site/images/blog/dynamic-hero-banner-hero.png",
+      slug: "dynamic-hero-banner",
+      bytes_written: 68,
+    };
+
+    expect(rawUploadResponse.success).toBe(true);
+    expect(rawUploadResponse.image_path).toContain("dynamic-hero-banner-hero.png");
+    expect(rawUploadResponse.bytes_written).toBe(68);
   });
 });

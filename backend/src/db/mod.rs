@@ -11,7 +11,7 @@ pub struct GrowthIssue {
     pub number: u32,
     pub title: String,
     pub category: String,
-    pub status: String, // "Todo", "In Progress", "Active Routine", "Done"
+    pub status: String,   // "Todo", "In Progress", "Active Routine", "Done"
     pub priority: String, // "Critical", "High", "Medium"
     pub description: String,
     pub direct_actions: Vec<String>,
@@ -22,12 +22,28 @@ pub struct GrowthIssue {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementMetrics {
+    #[serde(default)]
+    pub reactions: u32,
+    #[serde(default)]
+    pub comments: u32,
+    #[serde(default)]
+    pub views: u32,
+    #[serde(default)]
+    pub last_synced_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExportRecord {
     pub channel: String, // "ivy-web", "Dev.to", "Hashnode", "Medium", "Substack", "LinkedIn", "XThread"
     pub exported_at: DateTime<Utc>,
     pub target_path: Option<String>,
     pub status: String, // "Success", "Copied"
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub engagement: Option<EngagementMetrics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -48,6 +64,8 @@ pub struct Article {
     pub slug: Option<String>,
     #[serde(default)]
     pub exports: Vec<ExportRecord>,
+    #[serde(default)]
+    pub engagement: Option<EngagementMetrics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,7 +77,7 @@ pub struct TrendTopic {
     pub engagement: String, // e.g. "2.4k stars today", "480 comments on r/LocalLLaMA"
     pub summary: String,
     pub tendril_tie_in: String, // "direct", "subtle", "none"
-    pub status: String, // "Scouted", "Synthesizing", "Published"
+    pub status: String,         // "Scouted", "Synthesizing", "Published"
     pub generated_article_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -74,6 +92,8 @@ pub struct Listing {
     pub pr_url: Option<String>,
     pub submission_blurb: String,
     pub notes: String,
+    #[serde(default)]
+    pub blurb_status: Option<String>, // "Pending", "Approved", "Rejected"
     pub updated_at: DateTime<Utc>,
 }
 
@@ -88,6 +108,33 @@ pub struct AgentTask {
     pub result: Option<String>,
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+}
+
+fn default_publish_as_draft() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyndicationSettings {
+    #[serde(default)]
+    pub devto_api_key: Option<String>,
+    #[serde(default)]
+    pub hashnode_api_key: Option<String>,
+    #[serde(default)]
+    pub hashnode_publication_id: Option<String>,
+    #[serde(default = "default_publish_as_draft")]
+    pub publish_as_draft: bool,
+}
+
+impl Default for SyndicationSettings {
+    fn default() -> Self {
+        Self {
+            devto_api_key: None,
+            hashnode_api_key: None,
+            hashnode_publication_id: None,
+            publish_as_draft: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -105,6 +152,47 @@ pub struct VideoDemo {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PackageManagerTarget {
+    pub id: String,
+    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
+    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
+    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub install_command: String,
+    pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
+    pub pr_url: Option<String>,
+    pub manifest_filename: String, // "tendril.rb", "Ivy.Tendril.yaml", "tendril.json", "package.json"
+    pub notes: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContributorIssue {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub category: String, // "Documentation", "CLI", "Frontend", "Backend", "Tests"
+    pub difficulty: String, // "Good First Issue", "Help Wanted"
+    pub estimated_minutes: u32,
+    pub affected_files: Vec<String>,
+    pub reproduction_steps: Vec<String>,
+    pub mentor: String,
+    pub claimed: bool,
+    pub claimed_by: Option<String>,
+    pub claimed_at: Option<DateTime<Utc>>,
+    pub pr_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContributorRecord {
+    pub name: String,
+    pub avatar_url: String,
+    pub profile_url: String,
+    pub contributions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
     pub articles: Vec<Article>,
@@ -113,6 +201,14 @@ pub struct GrowthState {
     pub tasks: Vec<AgentTask>,
     #[serde(default)]
     pub video_demos: Vec<VideoDemo>,
+    #[serde(default)]
+    pub syndication_settings: SyndicationSettings,
+    #[serde(default)]
+    pub packages: Vec<PackageManagerTarget>,
+    #[serde(default)]
+    pub contributor_issues: Vec<ContributorIssue>,
+    #[serde(default)]
+    pub contributors: Vec<ContributorRecord>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -128,6 +224,18 @@ impl GrowthState {
                         let _ = state.save(path);
                     }
                     tracing::info!("Loaded growth database from {}", path.display());
+                    if state.packages.is_empty() {
+                        state.packages = Self::seed_packages(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if state.contributor_issues.is_empty() {
+                        state.contributor_issues = Self::seed_contributor_issues(Utc::now());
+                        let _ = state.save(path);
+                    }
+                    if state.contributors.is_empty() {
+                        state.contributors = Self::seed_contributors();
+                        let _ = state.save(path);
+                    }
                     return state;
                 }
             }
@@ -404,8 +512,11 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                         exported_at: now,
                         target_path: Some("/Users/rorychatt/git/ivy-web/apps/web-new/content/posts/how-git-worktrees-solve-agent-hallucination-and-workspace-collisions-in-multi-agent-coding.mdoc".to_string()),
                         status: "Success".to_string(),
+                        external_id: None,
+                        engagement: None,
                     },
                 ],
+                engagement: None,
             },
             Article {
                 id: "art-2".to_string(),
@@ -455,8 +566,11 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                         exported_at: now,
                         target_path: None,
                         status: "Copied".to_string(),
+                        external_id: None,
+                        engagement: None,
                     },
                 ],
+                engagement: None,
             },
         ];
 
@@ -499,76 +613,10 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             },
         ];
 
-        let listings = vec![
-            Listing {
-                id: "list-1".to_string(),
-                name: "awesome-ai-agents (e2b-dev)".to_string(),
-                category: "Awesome Repo".to_string(),
-                url: "https://github.com/e2b-dev/awesome-ai-agents".to_string(),
-                status: "PR Submitted".to_string(),
-                pr_url: Some("https://github.com/e2b-dev/awesome-ai-agents/pull/412".to_string()),
-                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory that plans tasks, orchestrates agents in isolated Git worktrees, and produces verified PRs.".to_string(),
-                notes: "High authority repo (18k+ stars). PR pending merge in 'Coding Agents' category.".to_string(),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-2".to_string(),
-                name: "awesome-devtools (frenck)".to_string(),
-                category: "Awesome Repo".to_string(),
-                url: "https://github.com/frenck/awesome-devtools".to_string(),
-                status: "Targeted".to_string(),
-                pr_url: None,
-                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Run multiple coding agents (Claude Code, Gemini, Codex) safely in parallel worktrees.".to_string(),
-                notes: "Targeting 'Git Utilities & Automation' section.".to_string(),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-3".to_string(),
-                name: "awesome-software-engineering-ai (youssefHosni)".to_string(),
-                category: "Awesome Repo".to_string(),
-                url: "https://github.com/youssefHosni/awesome-software-engineering-ai".to_string(),
-                status: "Targeted".to_string(),
-                pr_url: None,
-                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent development environment with automated verification gates.".to_string(),
-                notes: "Curated AI for SE list.".to_string(),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-4".to_string(),
-                name: "OpenAlternative".to_string(),
-                category: "Dev Directory".to_string(),
-                url: "https://openalternative.co/".to_string(),
-                status: "Targeted".to_string(),
-                pr_url: None,
-                submission_blurb: "Ivy-Tendril is an open-source alternative to Cursor and proprietary software factories, offering Git worktree isolation and multi-agent orchestration.".to_string(),
-                notes: "Submit as open-source alternative to Cursor, Devin, and CodeRabbit.".to_string(),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-5".to_string(),
-                name: "AlternativeTo (Cursor / Cline)".to_string(),
-                category: "Dev Directory".to_string(),
-                url: "https://alternativeto.net/software/cursor/".to_string(),
-                status: "Live".to_string(),
-                pr_url: None,
-                submission_blurb: "Ivy-Tendril is an open-source multi-agent software factory that automates issue-to-verified PR workflows.".to_string(),
-                notes: "Listed on AlternativeTo Cursor and Cline pages.".to_string(),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-6".to_string(),
-                name: "DevHunt".to_string(),
-                category: "Dev Directory".to_string(),
-                url: "https://devhunt.org/".to_string(),
-                status: "Targeted".to_string(),
-                pr_url: None,
-                submission_blurb: "Ivy-Tendril: Turn GitHub issues into verified pull requests using isolated agent worktrees.".to_string(),
-                notes: "Launch scheduled for Phase 1 campaign.".to_string(),
-                updated_at: now,
-            },
-        ];
+        let listings = Self::seed_listings(now);
 
         let tasks = Vec::new();
+        let packages = Self::seed_packages(now);
 
         let video_demos = vec![
             VideoDemo {
@@ -633,6 +681,9 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             },
         ];
 
+        let contributor_issues = Self::seed_contributor_issues(now);
+        let contributors = Self::seed_contributors();
+
         Self {
             issues,
             articles,
@@ -640,6 +691,1034 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             listings,
             tasks,
             video_demos,
+            syndication_settings: SyndicationSettings::default(),
+            packages,
+            contributor_issues,
+            contributors,
         }
+    }
+
+    pub fn seed_listings(now: DateTime<Utc>) -> Vec<Listing> {
+        vec![
+            // Awesome Repo (20 targets)
+            Listing {
+                id: "list-1".to_string(),
+                name: "awesome-ai-agents (e2b-dev)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/e2b-dev/awesome-ai-agents".to_string(),
+                status: "PR Submitted".to_string(),
+                pr_url: Some("https://github.com/e2b-dev/awesome-ai-agents/pull/412".to_string()),
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous multi-agent coding factory that plans tasks, orchestrates agents in isolated Git worktrees, and produces verified PRs.".to_string(),
+                notes: "High authority repo (18k+ stars). PR pending merge in 'Coding Agents' category.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-2".to_string(),
+                name: "awesome-devtools (frenck)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/frenck/awesome-devtools".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Run multiple coding agents (Claude Code, Gemini, Codex) safely in parallel worktrees.".to_string(),
+                notes: "Targeting 'Git Utilities & Automation' section.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-3".to_string(),
+                name: "awesome-software-engineering-ai (youssefHosni)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/youssefHosni/awesome-software-engineering-ai".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent development environment with automated verification gates.".to_string(),
+                notes: "Curated AI for SE list.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-4".to_string(),
+                name: "awesome-generative-ai (steven2358)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/steven2358/awesome-generative-ai".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous software factory implementing tasks through autonomous agents and verification gates.".to_string(),
+                notes: "Curated Generative AI list.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-5".to_string(),
+                name: "awesome-chatgpt (humanloop)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/humanloop/awesome-chatgpt".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent coding orchestration with isolated Git worktrees.".to_string(),
+                notes: "Developer tools and coding agents section.".to_string(),
+                blurb_status: Some("Approved".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-6".to_string(),
+                name: "awesome-copilot (github)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/github/awesome-copilot".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Issue-to-PR workflow automation with automated build and test gates.".to_string(),
+                notes: "Ecosystem extension and coding agent tools.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-7".to_string(),
+                name: "awesome-developer-first (akash13s)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/akash13s/awesome-developer-first".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Developer-first autonomous software factory orchestrating agents in worktrees.".to_string(),
+                notes: "Developer tooling and infrastructure.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-8".to_string(),
+                name: "awesome-devops (jondot)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/jondot/awesome-devops".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Automated issue triage, plan creation, and branch verification pipeline.".to_string(),
+                notes: "Automation and CI/CD tools section.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-9".to_string(),
+                name: "awesome-cli (agarrharr)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/agarrharr/awesome-cli".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Command-line interface for managing plans, running agents, and verifying worktrees.".to_string(),
+                notes: "Development CLI utilities.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-10".to_string(),
+                name: "awesome-rust (rust-unofficial)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/rust-unofficial/awesome-rust".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - High performance plan execution and agent orchestration runtime.".to_string(),
+                notes: "Development tools and workflows.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-11".to_string(),
+                name: "awesome-mac (dkhamsing)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/dkhamsing/awesome-mac".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Developer productivity suite for autonomous software engineering.".to_string(),
+                notes: "Developer utilities on macOS.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-12".to_string(),
+                name: "awesome-python (vinta)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/vinta/awesome-python".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Full-lifecycle software factory integrating Python linters and test suites.".to_string(),
+                notes: "Development environments.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-13".to_string(),
+                name: "awesome (sindresorhus)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/sindresorhus/awesome".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - The root awesome directory listing for autonomous AI software factories.".to_string(),
+                notes: "Primary entry point for awesome list submission.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-14".to_string(),
+                name: "awesome-slack (matiassingers)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/matiassingers/awesome-slack".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Slack notification hooks and human-in-the-loop review actions.".to_string(),
+                notes: "Integrations and bots section.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-15".to_string(),
+                name: "awesome-linux (inputsh)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/inputsh/awesome-linux".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Linux-compatible background daemon and CLI orchestration.".to_string(),
+                notes: "Linux developer utilities.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-16".to_string(),
+                name: "static-analysis (analysis-tools-dev)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/analysis-tools-dev/static-analysis".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Automated multi-language verification gates including Clippy, ESLint, and oxlint.".to_string(),
+                notes: "Automated code review and static analysis.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-17".to_string(),
+                name: "awesome-selfhosted (awesome-selfhosted)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/awesome-selfhosted/awesome-selfhosted".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Self-hosted autonomous software engineering factory with local SQLite and git.".to_string(),
+                notes: "Self-hosted developer platforms.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-18".to_string(),
+                name: "awesome-software-architecture (flettre)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/flettre/awesome-software-architecture".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Architecture for multi-agent coordination, immutable plans, and ephemeral worktrees.".to_string(),
+                notes: "Architectural patterns for AI systems.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-19".to_string(),
+                name: "awesome-swe-bench (rohit-lakhotia)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/rohit-lakhotia/awesome-swe-bench".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Autonomous issue resolution engine benchmarked on real-world repository challenges.".to_string(),
+                notes: "SWE-bench agent implementations.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-20".to_string(),
+                name: "awesome-test-automation (punkpeye)".to_string(),
+                category: "Awesome Repo".to_string(),
+                url: "https://github.com/punkpeye/awesome-test-automation".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Pre-commit and post-execution verification gates with screenshot capture.".to_string(),
+                notes: "Testing and verification automation.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+
+            // Dev Directory (12 targets)
+            Listing {
+                id: "list-21".to_string(),
+                name: "AlternativeTo (Cursor / Cline)".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://alternativeto.net/software/cursor/".to_string(),
+                status: "Live".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril is an open-source multi-agent software factory that automates issue-to-verified PR workflows.".to_string(),
+                notes: "Listed on AlternativeTo Cursor and Cline pages.".to_string(),
+                blurb_status: Some("Approved".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-22".to_string(),
+                name: "OpenAlternative".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://openalternative.co/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril is an open-source alternative to Cursor and proprietary software factories, offering Git worktree isolation and multi-agent orchestration.".to_string(),
+                notes: "Submit as open-source alternative to Cursor, Devin, and CodeRabbit.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-23".to_string(),
+                name: "DevHunt".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://devhunt.org/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril: Turn GitHub issues into verified pull requests using isolated agent worktrees.".to_string(),
+                notes: "Launch scheduled for Phase 1 campaign.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-24".to_string(),
+                name: "LibHunt".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.libhunt.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril: Autonomous plan management and multi-agent orchestration engine.".to_string(),
+                notes: "Developer tool discovery catalog.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-25".to_string(),
+                name: "ProductHunt".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.producthunt.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril is an autonomous engineering software factory that writes code, runs tests, and opens PRs.".to_string(),
+                notes: "Product Hunt upcoming launch.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-26".to_string(),
+                name: "SaaSHub".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.saashub.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril compares favorably to closed-source coding agents by offering self-hosted Git worktree isolation.".to_string(),
+                notes: "SaaS directory alternative index.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-27".to_string(),
+                name: "Slant".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.slant.co/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "What are the best open source coding agents? Ivy-Tendril features isolated worktrees and automated verification.".to_string(),
+                notes: "Recommendation voting community.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-28".to_string(),
+                name: "StackShare".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://stackshare.io/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril in Developer Tools: Autonomous agent orchestration and execution verification.".to_string(),
+                notes: "Tech stack tracker and registry.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-29".to_string(),
+                name: "SourceForge".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://sourceforge.net/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril Open Source Project: Multi-agent software factory for GitHub repositories.".to_string(),
+                notes: "Open source directory index.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-30".to_string(),
+                name: "Alternative.me".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://alternative.me/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Best alternatives to Devin and Cursor: Ivy-Tendril provides local execution and verification gates.".to_string(),
+                notes: "Software alternatives portal.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-31".to_string(),
+                name: "Toolify.ai".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.toolify.ai/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril - AI Coding Agent and Autonomous Software Factory.".to_string(),
+                notes: "AI tool discovery platform.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-32".to_string(),
+                name: "Futurepedia".to_string(),
+                category: "Dev Directory".to_string(),
+                url: "https://www.futurepedia.io/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril: The largest open-source agentic software development system.".to_string(),
+                notes: "Comprehensive AI tool encyclopedia.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+
+            // Software Factory & Coding Agent Registries (8 targets)
+            Listing {
+                id: "list-33".to_string(),
+                name: "SWE-bench Leaderboard / Registry".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://www.swebench.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril autonomous agent factory: verified evaluations on SWE-bench benchmark.".to_string(),
+                notes: "SWE-bench official directory.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-34".to_string(),
+                name: "OpenHands Integrations".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://github.com/All-Hands-AI/OpenHands".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril connector for OpenHands: orchestrate OpenHands inside isolated git worktrees.".to_string(),
+                notes: "OpenHands ecosystem partner directory.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-35".to_string(),
+                name: "CodeRabbit Community Catalog".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://coderabbit.ai/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril integration with CodeRabbit: automated PR reviews coupled with agent worktree fixes.".to_string(),
+                notes: "Code review ecosystem catalog.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-36".to_string(),
+                name: "Aider Partner Extensions".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://github.com/paul-gauthier/aider".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Tendril orchestration runner for Aider: coordinate multiple Aider sessions across parallel plans.".to_string(),
+                notes: "Aider tools and extensions list.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-37".to_string(),
+                name: "Continue.dev Hub".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://github.com/continuedev/continue".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril backend for Continue.dev: trigger autonomous background plans directly from IDE.".to_string(),
+                notes: "Continue extension registry.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-38".to_string(),
+                name: "Devin Alternative Tracker".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://github.com/cognition-labs/devin-alternatives".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril: The open-source, self-hosted alternative to Devin with full verification gates.".to_string(),
+                notes: "Devin comparison tracker.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-39".to_string(),
+                name: "Agentic Workflows Directory".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://agenticworkflows.org/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Task -> Plan -> Execution -> Verification -> PR: The Ivy-Tendril autonomous workflow pattern.".to_string(),
+                notes: "Agentic design pattern repository.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-40".to_string(),
+                name: "LangChain Agent Ecosystem".to_string(),
+                category: "Software Factory".to_string(),
+                url: "https://github.com/langchain-ai/langchain".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril multi-agent system built for production code manipulation and tool execution.".to_string(),
+                notes: "LangChain ecosystem integrations.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+
+            // Package Manager & Installer Registries (6 targets)
+            Listing {
+                id: "list-41".to_string(),
+                name: "Homebrew Core & Tap".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://github.com/Homebrew/homebrew-core".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "brew install ivy-tendril - Formula for installing Ivy-Tendril CLI across macOS and Linux.".to_string(),
+                notes: "Homebrew official tap / core formula.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-42".to_string(),
+                name: "Scoop Extras".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://github.com/ScoopInstaller/Extras".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "scoop install ivy-tendril - Windows package manager manifest for Ivy-Tendril CLI.".to_string(),
+                notes: "Scoop extras bucket.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-43".to_string(),
+                name: "Windows Package Manager (winget-pkgs)".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://github.com/microsoft/winget-pkgs".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "winget install Ivy.Tendril - Microsoft Winget submission for Windows developer workstations.".to_string(),
+                notes: "Winget community repository.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-44".to_string(),
+                name: "Arch AUR".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://aur.archlinux.org/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "yay -S ivy-tendril-bin - Arch User Repository PKGBUILD for Tendril binary distribution.".to_string(),
+                notes: "Arch Linux AUR catalog.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-45".to_string(),
+                name: "Crates.io".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://crates.io/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "cargo install tendril-cli - Rust crate distribution for high-performance agent orchestration.".to_string(),
+                notes: "Rust package registry.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-46".to_string(),
+                name: "npm Registry".to_string(),
+                category: "Package Manager".to_string(),
+                url: "https://www.npmjs.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "npx @ivy/tendril - Zero-install CLI runner for Ivy-Tendril plan execution.".to_string(),
+                notes: "Node.js npm registry.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+
+            // Community Platforms (6 targets)
+            Listing {
+                id: "list-47".to_string(),
+                name: "Reddit r/LocalLLaMA Tool Showcase".to_string(),
+                category: "Community".to_string(),
+                url: "https://reddit.com/r/LocalLLaMA".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Show LocalLLaMA: Ivy-Tendril - How we solved agent workspace collisions using Git worktrees.".to_string(),
+                notes: "Bi-weekly community tool showcase thread.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-48".to_string(),
+                name: "Hacker News Show HN Directory".to_string(),
+                category: "Community".to_string(),
+                url: "https://news.ycombinator.com/show".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Show HN: Ivy-Tendril – Open-source autonomous software factory with verification gates.".to_string(),
+                notes: "Show HN submission tracking.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-49".to_string(),
+                name: "Dev.to Tool Directory".to_string(),
+                category: "Community".to_string(),
+                url: "https://dev.to/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril: An autonomous coding agent factory you can run on your local machine.".to_string(),
+                notes: "Dev.to tool spotlight articles.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-50".to_string(),
+                name: "Hashnode AI Hackers".to_string(),
+                category: "Community".to_string(),
+                url: "https://hashnode.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Building software factories with Ivy-Tendril: From GitHub issues to merged pull requests.".to_string(),
+                notes: "Hashnode AI hacker publication.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-51".to_string(),
+                name: "Twitter/X AI Agent Curators".to_string(),
+                category: "Community".to_string(),
+                url: "https://x.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "Ivy-Tendril launch announcement: Parallel agent orchestration with zero git collisions.".to_string(),
+                notes: "AI engineering influencer outreach list.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+            Listing {
+                id: "list-52".to_string(),
+                name: "Indie Hackers Tech Stack".to_string(),
+                category: "Community".to_string(),
+                url: "https://www.indiehackers.com/".to_string(),
+                status: "Targeted".to_string(),
+                pr_url: None,
+                submission_blurb: "How we built an open source software factory: Ivy-Tendril product stack.".to_string(),
+                notes: "Indie Hackers product directory.".to_string(),
+                blurb_status: Some("Pending".to_string()),
+                updated_at: now,
+            },
+        ]
+    }
+
+    pub fn seed_packages(now: DateTime<Utc>) -> Vec<PackageManagerTarget> {
+        vec![
+            PackageManagerTarget {
+                id: "pkg-homebrew".to_string(),
+                target_key: "homebrew".to_string(),
+                name: "Homebrew (tap & core)".to_string(),
+                os: "macOS / Linux".to_string(),
+                registry_repo: "ivy-interactive/homebrew-tap".to_string(),
+                package_id: "tendril".to_string(),
+                install_command: "brew install ivy-interactive/tap/tendril".to_string(),
+                status: "PR Submitted".to_string(),
+                pr_url: Some("https://github.com/ivy-interactive/homebrew-tap/pull/1".to_string()),
+                manifest_filename: "tendril.rb".to_string(),
+                notes: "Official tap formula with dual arm64/x86_64 bottles and shell completions. homebrew-core submission pending 50 stars.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-winget".to_string(),
+                target_key: "winget".to_string(),
+                name: "Windows Package Manager (winget)".to_string(),
+                os: "Windows".to_string(),
+                registry_repo: "microsoft/winget-pkgs".to_string(),
+                package_id: "Ivy.Tendril".to_string(),
+                install_command: "winget install Ivy.Tendril".to_string(),
+                status: "PR Submitted".to_string(),
+                pr_url: Some("https://github.com/microsoft/winget-pkgs/pull/189204".to_string()),
+                manifest_filename: "Ivy.Tendril.yaml".to_string(),
+                notes: "Singleton manifest schema v1.6.0 with MSIX/portable zip installers.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-scoop".to_string(),
+                target_key: "scoop".to_string(),
+                name: "Scoop (Extras)".to_string(),
+                os: "Windows".to_string(),
+                registry_repo: "ScoopInstaller/Extras".to_string(),
+                package_id: "tendril".to_string(),
+                install_command: "scoop bucket add extras && scoop install tendril".to_string(),
+                status: "Under Review".to_string(),
+                pr_url: Some("https://github.com/ScoopInstaller/Extras/pull/14522".to_string()),
+                manifest_filename: "tendril.json".to_string(),
+                notes: "Submitted to Scoop Extras bucket with autoupdate checkver hashes.".to_string(),
+                updated_at: now,
+            },
+            PackageManagerTarget {
+                id: "pkg-npx".to_string(),
+                target_key: "npx".to_string(),
+                name: "npx Zero-Install".to_string(),
+                os: "Cross-Platform".to_string(),
+                registry_repo: "npm".to_string(),
+                package_id: "@ivy-interactive/tendril".to_string(),
+                install_command: "npx @ivy-interactive/tendril".to_string(),
+                status: "Live".to_string(),
+                pr_url: None,
+                manifest_filename: "package.json".to_string(),
+                notes: "Sub-60-second time-to-first-run zero-install launcher published on npm.".to_string(),
+                updated_at: now,
+            },
+        ]
+    }
+
+    pub fn seed_contributor_issues(_now: DateTime<Utc>) -> Vec<ContributorIssue> {
+        vec![
+            ContributorIssue {
+                id: "cf-issue-1".to_string(),
+                title: "Add CLI shell completion for zsh".to_string(),
+                description: "Implement zsh completion generator in the CLI completions module to allow tab completion for commands and flags.".to_string(),
+                category: "CLI".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["src/cli/completions.rs".to_string(), "Cargo.toml".to_string()],
+                reproduction_steps: vec![
+                    "Run cargo run -- completion --help".to_string(),
+                    "Observe missing zsh completion script generator".to_string(),
+                    "Add clap_complete zsh target generation".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-2".to_string(),
+                title: "Add loopback host check validator in server startup".to_string(),
+                description: "Ensure server socket binding restricts to 127.0.0.1 or localhost in dev mode to prevent sandbox EPERM errors.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["backend/src/main.rs".to_string(), "backend/src/config.rs".to_string()],
+                reproduction_steps: vec![
+                    "Inspect server socket binding in main.rs".to_string(),
+                    "Ensure binding restricts to 127.0.0.1 or localhost".to_string(),
+                    "Log error if 0.0.0.0 is configured in sandboxed dev mode".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-3".to_string(),
+                title: "Improve empty state message on Plan Review view".to_string(),
+                description: "Display an intuitive empty state illustration and quick action buttons when no items are pending review.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/ReviewQueue.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open Approval Deck with zero pending review items".to_string(),
+                    "Observe generic no items text".to_string(),
+                    "Add an illustration and quick action link to generate sample articles".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-4".to_string(),
+                title: "Add keyboard shortcut ? to open navigation hotkeys modal".to_string(),
+                description: "Add a global keydown handler for '?' to open a modal describing navigation and quick action hotkeys.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/components/Navigation.tsx".to_string(), "frontend/src/App.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Press ? on keyboard in any view".to_string(),
+                    "No shortcut modal opens".to_string(),
+                    "Add global keydown listener and hotkey overview overlay".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-5".to_string(),
+                title: "Add copy-as-curl action to API error alerts".to_string(),
+                description: "Add a convenient Copy as cURL button to error banners and alerts in the terminal console.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/components/LiveTerminal.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Trigger a failed API request or simulated error".to_string(),
+                    "Notice lack of copyable curl command".to_string(),
+                    "Render a Copy as cURL button using navigator.clipboard".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-6".to_string(),
+                title: "Add format filter dropdown in ArticleEngine".to_string(),
+                description: "Allow users to filter generated articles by channel (Website, Dev.to, Medium, etc.) or angle.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["frontend/src/views/ArticleEngine.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Navigate to 10x Content Engine".to_string(),
+                    "Articles list lacks quick filtering by channel or archetype".to_string(),
+                    "Add filter select dropdown above article grid".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-7".to_string(),
+                title: "Add badge markdown preview tab in PR Flywheel".to_string(),
+                description: "Provide a tab toggle showing the raw Markdown badge snippet alongside rendered preview.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/PrFlywheel.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open PR Flywheel view".to_string(),
+                    "Observe single preview mode for GitHub badges".to_string(),
+                    "Add raw Markdown and HTML tab toggle with syntax highlighting".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-8".to_string(),
+                title: "Normalize repository URL trailing slashes in database loader".to_string(),
+                description: "Strip trailing slashes from repository and listing URLs during database load to avoid duplicate comparisons.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["backend/src/db/mod.rs".to_string()],
+                reproduction_steps: vec![
+                    "Add a listing or repo with trailing slash e.g. https://github.com/foo/bar/".to_string(),
+                    "Query comparisons fail due to trailing slash mismatch".to_string(),
+                    "Trim trailing slashes in normalization helper".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-9".to_string(),
+                title: "Add test coverage for trend topic tie-in serialization".to_string(),
+                description: "Add comprehensive unit and integration tests verifying serde serialization for trend topics.".to_string(),
+                category: "Tests".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["backend/tests/trends_test.rs".to_string(), "backend/src/db/mod.rs".to_string()],
+                reproduction_steps: vec![
+                    "Inspect tests in backend/tests/trends_test.rs".to_string(),
+                    "Notice missing serde roundtrip test for direct, subtle, and none tie-in values".to_string(),
+                    "Add test validating JSON serialization".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-10".to_string(),
+                title: "Add dark mode contrast test helper for buttons".to_string(),
+                description: "Add automated contrast ratio assertions to verify button accessibility compliance in dark mode.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["frontend/src/views/IssuesHub.tsx".to_string(), "frontend/src/index.css".to_string()],
+                reproduction_steps: vec![
+                    "Audit color contrast for low-emphasis action buttons".to_string(),
+                    "Notice some borders blend into dark slate background".to_string(),
+                    "Add high-contrast focus rings and test helper".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-11".to_string(),
+                title: "Add uptime and memory usage metrics to Agent Status response".to_string(),
+                description: "Extend GET /api/agent/status with process uptime and approximate memory consumption statistics.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 30,
+                affected_files: vec!["backend/src/api/agent.rs".to_string()],
+                reproduction_steps: vec![
+                    "Invoke GET /api/agent/status".to_string(),
+                    "Response only contains is_available and agy_path".to_string(),
+                    "Add uptime_seconds and process memory metrics to payload".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-12".to_string(),
+                title: "Add JSON export action to Direct Action Issues table".to_string(),
+                description: "Add a button to export all Direct Action issues as a downloadable formatted JSON file.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 20,
+                affected_files: vec!["frontend/src/views/IssuesHub.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Navigate to Direct Action Issues".to_string(),
+                    "Notice no batch export button".to_string(),
+                    "Add Export JSON button that triggers browser download".to_string(),
+                ],
+                mentor: "@dev-elena".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-13".to_string(),
+                title: "Add validation error banner on empty listing PR blurb submit".to_string(),
+                description: "Display an explicit error alert when attempting to submit an empty listing PR blurb.".to_string(),
+                category: "Frontend".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/views/ListingBlitz.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Open Listing Blitz submission modal".to_string(),
+                    "Submit with empty submission blurb".to_string(),
+                    "Show user-friendly inline alert rather than silent rejection".to_string(),
+                ],
+                mentor: "@sarah-ui".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-14".to_string(),
+                title: "Add dry-run flag to package manager manifest generator".to_string(),
+                description: "Support ?dry_run=true parameter on manifest generator routes to validate target schemas without state changes.".to_string(),
+                category: "Backend".to_string(),
+                difficulty: "Help Wanted".to_string(),
+                estimated_minutes: 25,
+                affected_files: vec!["backend/src/api/packages.rs".to_string()],
+                reproduction_steps: vec![
+                    "Call manifest generation API".to_string(),
+                    "Notice no validation-only dry-run option".to_string(),
+                    "Accept ?dry_run=true query flag and validate without side effects".to_string(),
+                ],
+                mentor: "@alex-spacecorps".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+            ContributorIssue {
+                id: "cf-issue-15".to_string(),
+                title: "Add contributor guide link to bottom footer".to_string(),
+                description: "Add a direct link in the application footer pointing to the Contributor Flywheel onboarding guide.".to_string(),
+                category: "Documentation".to_string(),
+                difficulty: "Good First Issue".to_string(),
+                estimated_minutes: 15,
+                affected_files: vec!["frontend/src/App.tsx".to_string()],
+                reproduction_steps: vec![
+                    "Scroll to bottom of application".to_string(),
+                    "Notice absence of quick contributor guide link".to_string(),
+                    "Add link navigating directly to Contributor Flywheel view".to_string(),
+                ],
+                mentor: "@rorychatt".to_string(),
+                claimed: false,
+                claimed_by: None,
+                claimed_at: None,
+                pr_url: None,
+            },
+        ]
+    }
+
+    pub fn seed_contributors() -> Vec<ContributorRecord> {
+        vec![
+            ContributorRecord {
+                name: "Rory Chatt".to_string(),
+                avatar_url: "https://github.com/rorychatt.png".to_string(),
+                profile_url: "https://github.com/rorychatt".to_string(),
+                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+            },
+            ContributorRecord {
+                name: "Alex Vance".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
+                profile_url: "https://github.com/alex-spacecorps".to_string(),
+                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+            },
+            ContributorRecord {
+                name: "Sarah Jenkins".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
+                profile_url: "https://github.com/sarah-ui".to_string(),
+                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+            },
+            ContributorRecord {
+                name: "Elena Rostova".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
+                profile_url: "https://github.com/dev-elena".to_string(),
+                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+            },
+            ContributorRecord {
+                name: "Marcus Chen".to_string(),
+                avatar_url: "https://avatars.githubusercontent.com/u/10004?v=4".to_string(),
+                profile_url: "https://github.com/marcus-cli".to_string(),
+                contributions: vec!["cli".to_string(), "package".to_string(), "test".to_string()],
+            },
+        ]
     }
 }

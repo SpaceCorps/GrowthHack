@@ -3,8 +3,10 @@ import type {
   ActiveTab,
   AgentStatus,
   Article,
+  ContributorIssue,
   GrowthIssue,
   Listing,
+  PackageManagerTarget,
   ReviewItem,
   TrendTopic,
   VideoDemo,
@@ -16,9 +18,12 @@ import { IssuesHub } from "./views/IssuesHub";
 import { ArticleEngine } from "./views/ArticleEngine";
 import { TrendRadar } from "./views/TrendRadar";
 import { ListingBlitz } from "./views/ListingBlitz";
+import { PackageManagerBlitz } from "./views/PackageManagerBlitz";
 import { VideoDemos } from "./views/VideoDemos";
 import { AgentConsole } from "./views/AgentConsole";
 import { ReviewQueue } from "./views/ReviewQueue";
+import { PrFlywheel } from "./views/PrFlywheel";
+import { ContributorFlywheel } from "./views/ContributorFlywheel";
 
 export const App: React.FC = () => {
   const searchParams =
@@ -34,8 +39,11 @@ export const App: React.FC = () => {
       "trends",
       "demos",
       "listings",
+      "packages",
+      "contributors",
       "agent",
       "review",
+      "flywheel",
     ];
     if (validTabs.includes(hash)) return hash;
     return initialTabParam && validTabs.includes(initialTabParam) ? initialTabParam : "issues";
@@ -52,7 +60,9 @@ export const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [trends, setTrends] = useState<TrendTopic[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
+  const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -65,21 +75,33 @@ export const App: React.FC = () => {
   // Initial Data Fetching
   const fetchAll = async () => {
     try {
-      const [resIssues, resArticles, resTrends, resListings, resStatus, resDemos] =
-        await Promise.all([
-          fetch("/api/issues").then((r) => r.json()),
-          fetch("/api/articles").then((r) => r.json()),
-          fetch("/api/trends").then((r) => r.json()),
-          fetch("/api/listings").then((r) => r.json()),
-          fetch("/api/agent/status").then((r) => r.json()),
-          fetch("/api/demos").then((r) => r.json()),
-        ]);
+      const [
+        resIssues,
+        resArticles,
+        resTrends,
+        resListings,
+        resPackages,
+        resStatus,
+        resDemos,
+        resContributors,
+      ] = await Promise.all([
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/articles").then((r) => r.json()),
+        fetch("/api/trends").then((r) => r.json()),
+        fetch("/api/listings").then((r) => r.json()),
+        fetch("/api/packages").then((r) => r.json()),
+        fetch("/api/agent/status").then((r) => r.json()),
+        fetch("/api/demos").then((r) => r.json()),
+        fetch("/api/contributors/issues").then((r) => r.json()),
+      ]);
       setIssues(resIssues);
       setArticles(resArticles);
       setTrends(resTrends);
       setListings(resListings);
+      setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
+      setContributorIssues(resContributors);
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -103,8 +125,11 @@ export const App: React.FC = () => {
         "trends",
         "demos",
         "listings",
+        "packages",
+        "contributors",
         "agent",
         "review",
+        "flywheel",
       ];
       if (validTabs.includes(hash)) {
         setActiveTabState(hash);
@@ -228,6 +253,17 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSyncMetrics = async () => {
+    try {
+      const res = await fetch("/api/articles/sync-metrics", { method: "POST" });
+      if (res.ok) {
+        fetchAll();
+      }
+    } catch (err) {
+      console.error("Sync metrics error:", err);
+    }
+  };
+
   // Trend Handlers
   const handleScoutTrends = async (
     sourcesOrMode?: string[] | "general" | "discussions",
@@ -253,11 +289,15 @@ export const App: React.FC = () => {
       });
       const data = await res.json();
       if (data.task_id) {
-        setTerminalTitle(
-          mode === "discussions"
-            ? "Harvester: Social Discussions (Reddit & HN)"
-            : `Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`,
-        );
+        if (mode === "discussions") {
+          const targetsLabel =
+            sources && sources.length > 0
+              ? ` (${sources.slice(0, 3).join(", ")}${sources.length > 3 ? "..." : ""})`
+              : " (Reddit & HN)";
+          setTerminalTitle(`Harvester: Social Discussions${targetsLabel}`);
+        } else {
+          setTerminalTitle(`Scouting ${sources?.length ? sources.join(", ") : "All"} Trends`);
+        }
         setActiveTaskId(data.task_id);
       }
     } catch (err) {
@@ -325,6 +365,78 @@ export const App: React.FC = () => {
       fetchAll();
     } catch (err) {
       console.error("Create listing error:", err);
+    }
+  };
+
+  const handleBatchGenerateBlurbs = async (category?: string, listingIds?: string[]) => {
+    try {
+      const res = await fetch("/api/listings/generate-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: category === "all" ? undefined : category,
+          listing_ids: listingIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_ids && data.task_ids.length > 0) {
+        setTerminalTitle(`Batch Blurb Generation (${data.targeted_count} targets)`);
+        setActiveTaskId(data.task_ids[0]);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Batch generate blurbs error:", err);
+      throw err;
+    }
+  };
+
+  const handleVerifyBacklink = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/verify-backlink`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Verify backlink error:", err);
+      throw err;
+    }
+  };
+
+  const handleUpdatePackageStatus = async (
+    id: string,
+    payload: { status?: string; pr_url?: string; notes?: string },
+  ) => {
+    try {
+      await fetch(`/api/packages/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      fetchAll();
+    } catch (err) {
+      console.error("Update package status error:", err);
+    }
+  };
+
+  const handleDispatchPackagePr = async (id: string, version?: string) => {
+    try {
+      const res = await fetch(`/api/packages/${id}/dispatch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version }),
+      });
+      const data = await res.json();
+      if (data && data.task_id) {
+        setTerminalTitle("Antigravity Upstream PR Dispatcher");
+        setActiveTaskId(data.task_id);
+      }
+      fetchAll();
+      return data?.task_id;
+    } catch (err) {
+      console.error("Dispatch package PR error:", err);
     }
   };
 
@@ -479,7 +591,32 @@ export const App: React.FC = () => {
       rawId: trend.id,
     }));
 
-    const listingItems = baseReviewItems.filter((it) => it.type === "listing_blurb");
+    const dynamicListingItems: ReviewItem[] = listings
+      .filter((l) => l.submission_blurb && l.submission_blurb.trim().length > 0)
+      .map((l) => ({
+        id: `listing-${l.id}`,
+        type: "listing_blurb" as const,
+        title: l.name,
+        subtitle: `${l.category} • ${l.url}`,
+        channel: l.category === "Awesome Repo" ? "GitHub PR" : "Directory",
+        summary: l.notes || `Submission blurb for ${l.name}`,
+        content: l.submission_blurb,
+        backlinks: ["https://github.com/Ivy-Interactive/Ivy-Tendril"],
+        citations: [l.url],
+        status:
+          l.blurb_status === "Approved"
+            ? "Approved"
+            : l.blurb_status === "Rejected"
+              ? "Rejected"
+              : "Pending",
+        createdAt: l.updated_at,
+        rawId: l.id,
+      }));
+
+    const listingItems =
+      dynamicListingItems.length > 0
+        ? dynamicListingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb");
 
     setReviewItems([
       ...articleItems,
@@ -489,9 +626,11 @@ export const App: React.FC = () => {
       ...(trendItems.length > 0
         ? trendItems
         : baseReviewItems.filter((it) => it.type === "trend_synthesis")),
-      ...listingItems,
+      ...(listingItems.length > 0
+        ? listingItems
+        : baseReviewItems.filter((it) => it.type === "listing_blurb")),
     ]);
-  }, [articles, demos, trends]);
+  }, [articles, demos, trends, listings]);
 
   const handleApproveReviewItem = async (item: ReviewItem) => {
     setReviewItems((prev) =>
@@ -520,6 +659,17 @@ export const App: React.FC = () => {
         fetchAll();
       } catch (err) {
         console.error("Approve trend error:", err);
+      }
+    } else if (item.type === "listing_blurb") {
+      try {
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blurb_status: "Approved" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Approve listing blurb error:", err);
       }
     }
   };
@@ -552,11 +702,33 @@ export const App: React.FC = () => {
       } catch (err) {
         console.error("Reject trend error:", err);
       }
+    } else if (item.type === "listing_blurb") {
+      try {
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blurb_status: "Rejected" }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Reject listing blurb error:", err);
+      }
     }
   };
 
   const handleRefineReviewItem = async (item: ReviewItem, updated: Partial<ReviewItem>) => {
-    setReviewItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, ...updated } : it)));
+    let nextUpdated = { ...updated };
+    if (
+      item.type === "listing_blurb" &&
+      updated.content !== undefined &&
+      updated.content !== item.content &&
+      !updated.status
+    ) {
+      nextUpdated.status = "Pending";
+    }
+    setReviewItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, ...nextUpdated } : it)),
+    );
     if (item.type === "article") {
       try {
         await fetch(`/api/articles/${item.rawId}`, {
@@ -604,6 +776,23 @@ export const App: React.FC = () => {
       } catch (err) {
         console.error("Refine trend error:", err);
       }
+    } else if (item.type === "listing_blurb") {
+      try {
+        const isModified = updated.content !== undefined && updated.content !== item.content;
+        const blurbStatus = nextUpdated.status ?? (isModified ? "Pending" : undefined);
+        await fetch(`/api/listings/${item.rawId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            submission_blurb: updated.content,
+            notes: updated.summary,
+            ...(blurbStatus ? { blurb_status: blurbStatus } : {}),
+          }),
+        });
+        fetchAll();
+      } catch (err) {
+        console.error("Refine listing blurb error:", err);
+      }
     }
   };
 
@@ -643,7 +832,9 @@ export const App: React.FC = () => {
         articlesCount={articles.length}
         trendsCount={trends.length}
         listingsCount={listings.length}
+        packagesCount={packages.length}
         reviewCount={pendingReviewCount}
+        contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -666,6 +857,7 @@ export const App: React.FC = () => {
               setArticleModalTab(tab || "content");
             }}
             onUpdateStatus={handleUpdateArticleStatus}
+            onSyncMetrics={handleSyncMetrics}
           />
         )}
 
@@ -697,13 +889,50 @@ export const App: React.FC = () => {
             onGenerateBlurb={handleGenerateBlurb}
             onUpdateStatus={handleUpdateListingStatus}
             onCreateListing={handleCreateListing}
+            onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+            onVerifyBacklink={handleVerifyBacklink}
           />
         )}
+
+        {activeTab === "packages" && (
+          <PackageManagerBlitz
+            packages={packages}
+            onUpdatePackageStatus={handleUpdatePackageStatus}
+            onDispatchPackagePr={handleDispatchPackagePr}
+          />
+        )}
+
+        {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
+
+        {activeTab === "flywheel" && <PrFlywheel />}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800 bg-slate-900/50 py-6 text-center text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p>GrowthHack Platform &middot; Scaling Ivy-Tendril adoption</p>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setActiveTab("contributors")}
+              className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+            >
+              Contributor Guide & Fast-Track Onboarding
+            </button>
+            <a
+              href="https://github.com/SpaceCorps/GrowthHack"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-slate-200 transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
+        </div>
+      </footer>
 
       {/* Floating Live Terminal for Real-Time Streaming */}
       <LiveTerminal
