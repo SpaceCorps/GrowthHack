@@ -225,4 +225,166 @@ describe("ArticleEngine Component", () => {
     expect(spotlightBadge).toBeDefined();
     expect(spotlightBadge?.className).toContain("text-amber-300");
   });
+
+  it("renders aggregate reader engagement metrics in content authority dashboard", async () => {
+    const testArticles: Article[] = [
+      {
+        id: "art-eng-1",
+        title: "Worktree Mastery",
+        feature: "Worktrees",
+        channel: "Dev.to",
+        angle: "Architecture",
+        summary: "Worktree deep dive",
+        content: "Content",
+        backlinks: [],
+        outbound_citations: [],
+        status: "Published",
+        created_at: new Date().toISOString(),
+        engagement: {
+          views: 1200,
+          reactions: 85,
+          comments: 14,
+          last_synced_at: "2026-09-10T12:00:00Z",
+        },
+      },
+      {
+        id: "art-eng-2",
+        title: "Autonomous Coding",
+        feature: "Multi-Agent Orchestration",
+        channel: "Hashnode",
+        angle: "Tutorial",
+        summary: "Coding tutorial",
+        content: "Content",
+        backlinks: [],
+        outbound_citations: [],
+        status: "Published",
+        created_at: new Date().toISOString(),
+        engagement: {
+          views: 450,
+          reactions: 32,
+          comments: 6,
+          last_synced_at: "2026-09-10T14:30:00Z",
+        },
+      },
+    ];
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={testArticles}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("Reader Engagement");
+    expect(container!.textContent).toContain("Total Views");
+    expect(container!.textContent).toContain("1650");
+    expect(container!.textContent).toContain("Total Reactions");
+    expect(container!.textContent).toContain("117");
+    expect(container!.textContent).toContain("Total Comments");
+    expect(container!.textContent).toContain("20");
+  });
+
+  it("renders per-channel engagement chips on article cards", async () => {
+    const testArticles: Article[] = [
+      {
+        id: "art-exported-1",
+        title: "Syndicated Article",
+        feature: "Worktrees",
+        channel: "Website",
+        angle: "Architecture",
+        summary: "Summary",
+        content: "Content",
+        backlinks: [],
+        outbound_citations: [],
+        status: "Published",
+        created_at: new Date().toISOString(),
+        exports: [
+          {
+            channel: "Dev.to",
+            exported_at: new Date().toISOString(),
+            target_path: "https://dev.to/article/123",
+            status: "Success",
+            external_id: "123",
+            engagement: {
+              views: 350,
+              reactions: 42,
+              comments: 8,
+              last_synced_at: new Date().toISOString(),
+            },
+          },
+          {
+            channel: "Hashnode",
+            exported_at: new Date().toISOString(),
+            target_path: "https://hashnode.com/post/456",
+            status: "Success",
+            external_id: "456",
+            engagement: {
+              views: 180,
+              reactions: 15,
+              comments: 2,
+              last_synced_at: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    ];
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={testArticles}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("Dev.to: 350 views • 42 reactions • 8 comments");
+    expect(container!.textContent).toContain("Hashnode: 180 views • 15 reactions • 2 comments");
+  });
+
+  it("sync metrics button triggers sync and displays loading state", async () => {
+    let resolveSync!: () => void;
+    const syncPromise = new Promise<void>((resolve) => {
+      resolveSync = resolve;
+    });
+    const onSyncMetrics = vi.fn().mockImplementation(() => syncPromise);
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          onSyncMetrics={onSyncMetrics}
+        />,
+      );
+    });
+
+    const syncButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Sync Metrics"),
+    );
+    expect(syncButton).toBeDefined();
+
+    await act(async () => {
+      syncButton!.click();
+    });
+
+    expect(onSyncMetrics).toHaveBeenCalled();
+    expect(syncButton!.textContent).toContain("Syncing...");
+    expect(syncButton!.disabled).toBe(true);
+
+    await act(async () => {
+      resolveSync();
+    });
+
+    expect(syncButton!.textContent).toContain("Sync Metrics");
+    expect(syncButton!.disabled).toBe(false);
+  });
 });
