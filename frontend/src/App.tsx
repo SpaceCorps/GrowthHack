@@ -873,7 +873,11 @@ export const App: React.FC = () => {
             (updated.summary !== undefined && updated.summary !== item.summary))) ||
         (item.type === "video_demo" &&
           ((updated.content !== undefined && updated.content !== item.content) ||
-            (updated.title !== undefined && updated.title !== item.title)));
+            (updated.title !== undefined && updated.title !== item.title))) ||
+        (item.type === "trend_synthesis" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title) ||
+            (updated.summary !== undefined && updated.summary !== item.summary)));
 
       if (isModified) {
         nextUpdated.status = "Pending";
@@ -923,7 +927,7 @@ export const App: React.FC = () => {
           body: JSON.stringify({
             topic: updated.title,
             summary: updated.summary,
-            status: updated.status,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
