@@ -1,10 +1,10 @@
+use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::api::packages::ReleaseInfo;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthIssue {
@@ -125,6 +125,8 @@ pub struct SyndicationSettings {
     pub hashnode_publication_id: Option<String>,
     #[serde(default)]
     pub github_token: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
     #[serde(default = "default_publish_as_draft")]
     pub publish_as_draft: bool,
 }
@@ -136,6 +138,7 @@ impl Default for SyndicationSettings {
             hashnode_api_key: None,
             hashnode_publication_id: None,
             github_token: None,
+            webhook_secret: None,
             publish_as_draft: true,
         }
     }
@@ -158,11 +161,11 @@ pub struct VideoDemo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageManagerTarget {
     pub id: String,
-    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub target_key: String,    // "homebrew", "winget", "scoop", "npx"
     pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
-    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub os: String,   // "macOS / Linux", "Windows", "Cross-Platform"
     pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
-    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub package_id: String,    // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
     pub install_command: String,
     pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
     pub pr_url: Option<String>,
@@ -2141,25 +2144,41 @@ steps:
                 name: "Rory Chatt".to_string(),
                 avatar_url: "https://github.com/rorychatt.png".to_string(),
                 profile_url: "https://github.com/rorychatt".to_string(),
-                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "architecture".to_string(),
+                    "review".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Alex Vance".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
                 profile_url: "https://github.com/alex-spacecorps".to_string(),
-                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "backend".to_string(),
+                    "test".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Sarah Jenkins".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
                 profile_url: "https://github.com/sarah-ui".to_string(),
-                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+                contributions: vec![
+                    "design".to_string(),
+                    "frontend".to_string(),
+                    "a11y".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Elena Rostova".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
                 profile_url: "https://github.com/dev-elena".to_string(),
-                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "doc".to_string(),
+                    "maintenance".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Marcus Chen".to_string(),

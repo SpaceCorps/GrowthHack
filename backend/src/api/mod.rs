@@ -8,6 +8,7 @@ pub mod demos;
 pub mod doctor;
 pub mod issues;
 pub mod listings;
+pub mod middleware;
 pub mod packages;
 pub mod playground;
 pub mod recipes;
@@ -87,7 +88,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         )
         .route(
             "/api/webhooks/syndication",
-            post(articles::handle_syndication_webhook),
+            post(articles::handle_syndication_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
         )
         // Syndication Settings
         .route(

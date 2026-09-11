@@ -804,11 +804,7 @@ pub fn sync_hero_asset(
         category
     );
 
-    let blog_dir = if target_images_dir
-        .file_name()
-        .and_then(|f| f.to_str())
-        == Some("blog")
-    {
+    let blog_dir = if target_images_dir.file_name().and_then(|f| f.to_str()) == Some("blog") {
         target_images_dir.to_path_buf()
     } else {
         target_images_dir.join("blog")
@@ -898,11 +894,8 @@ pub async fn export_ivy_web(
         }
 
         let file_path = target_dir.join(format!("{}.mdoc", slug));
-        let post_content = generate_ivy_web_post_with_options(
-            article,
-            &slug,
-            payload.hero_format.as_deref(),
-        );
+        let post_content =
+            generate_ivy_web_post_with_options(article, &slug, payload.hero_format.as_deref());
 
         if let Err(e) = std::fs::write(&file_path, &post_content) {
             return (
@@ -927,7 +920,9 @@ pub async fn export_ivy_web(
                 Err(e) => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) })),
+                        Json(
+                            serde_json::json!({ "error": format!("Failed to sync hero asset: {}", e) }),
+                        ),
                     );
                 }
             }
@@ -948,14 +943,17 @@ pub async fn export_ivy_web(
 
         (
             StatusCode::OK,
-            Json(serde_json::to_value(ExportIvyWebResponse {
-                success: true,
-                file_path: file_path.to_string_lossy().to_string(),
-                slug,
-                post_content,
-                record,
-                image_path: image_path_str,
-            }).unwrap()),
+            Json(
+                serde_json::to_value(ExportIvyWebResponse {
+                    success: true,
+                    file_path: file_path.to_string_lossy().to_string(),
+                    slug,
+                    post_content,
+                    record,
+                    image_path: image_path_str,
+                })
+                .unwrap(),
+            ),
         )
     } else {
         (
@@ -985,11 +983,14 @@ pub async fn sync_assets(
         match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
             Ok(img_path) => (
                 StatusCode::OK,
-                Json(serde_json::to_value(SyncAssetsResponse {
-                    success: true,
-                    image_path: img_path.to_string_lossy().to_string(),
-                    slug,
-                }).unwrap()),
+                Json(
+                    serde_json::to_value(SyncAssetsResponse {
+                        success: true,
+                        image_path: img_path.to_string_lossy().to_string(),
+                        slug,
+                    })
+                    .unwrap(),
+                ),
             ),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -1022,16 +1023,14 @@ pub async fn get_hero_banner_svg(
         let title = query.title.as_deref().unwrap_or(&article.title);
         let category = query.category.as_deref().unwrap_or(&article.angle);
         let summary = query.summary.as_deref().unwrap_or(&article.summary);
-        let svg = generate_hero_banner_svg(
-            title,
-            category,
-            summary,
-            query.theme.as_deref(),
-        );
+        let svg = generate_hero_banner_svg(title, category, summary, query.theme.as_deref());
 
         (
             StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "image/svg+xml; charset=utf-8",
+            )],
             svg,
         )
             .into_response()
@@ -1075,11 +1074,7 @@ pub async fn upload_hero_image(
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
 
-        let blog_dir = if images_dir
-            .file_name()
-            .and_then(|f| f.to_str())
-            == Some("blog")
-        {
+        let blog_dir = if images_dir.file_name().and_then(|f| f.to_str()) == Some("blog") {
             images_dir
         } else {
             images_dir.join("blog")
@@ -1121,22 +1116,21 @@ pub async fn upload_hero_image(
         }
 
         let svg_path = blog_dir.join(format!("{}-hero.svg", slug));
-        let svg_content = generate_hero_banner_svg(
-            &article.title,
-            &article.angle,
-            &article.summary,
-            None,
-        );
+        let svg_content =
+            generate_hero_banner_svg(&article.title, &article.angle, &article.summary, None);
         let _ = std::fs::write(&svg_path, svg_content);
 
         (
             StatusCode::OK,
-            Json(serde_json::to_value(UploadHeroImageResponse {
-                success: true,
-                image_path: dest_png.to_string_lossy().to_string(),
-                slug,
-                bytes_written: image_bytes.len(),
-            }).unwrap()),
+            Json(
+                serde_json::to_value(UploadHeroImageResponse {
+                    success: true,
+                    image_path: dest_png.to_string_lossy().to_string(),
+                    slug,
+                    bytes_written: image_bytes.len(),
+                })
+                .unwrap(),
+            ),
         )
             .into_response()
     } else {
@@ -1207,6 +1201,8 @@ pub struct SyndicationSettingsResponse {
     pub hashnode_key_preview: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: bool,
+    pub webhook_secret_configured: bool,
+    pub webhook_secret_preview: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -1215,6 +1211,7 @@ pub struct UpdateSyndicationSettingsRequest {
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
     pub publish_as_draft: Option<bool>,
+    pub webhook_secret: Option<String>,
 }
 
 fn mask_api_key(key: Option<&str>) -> (bool, Option<String>) {
@@ -1250,9 +1247,15 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1261,6 +1264,8 @@ pub async fn get_syndication_settings(State(ctx): State<Arc<AppContext>>) -> imp
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -1295,6 +1300,13 @@ pub async fn update_syndication_settings(
     if let Some(pad) = payload.publish_as_draft {
         state.syndication_settings.publish_as_draft = pad;
     }
+    if let Some(ref sec) = payload.webhook_secret {
+        state.syndication_settings.webhook_secret = if sec.trim().is_empty() {
+            None
+        } else {
+            Some(sec.trim().to_string())
+        };
+    }
 
     let _ = state.save(&ctx.data_file);
 
@@ -1314,9 +1326,15 @@ pub async fn update_syndication_settings(
         .as_deref()
         .or(ctx.config.hashnode_publication_id.as_deref())
         .map(|s| s.to_string());
+    let webhook_sec = state
+        .syndication_settings
+        .webhook_secret
+        .as_deref()
+        .or(ctx.config.syndication_webhook_secret.as_deref());
 
     let (devto_configured, devto_key_preview) = mask_api_key(devto_key);
     let (hashnode_configured, hashnode_key_preview) = mask_api_key(hashnode_key);
+    let (webhook_secret_configured, webhook_secret_preview) = mask_api_key(webhook_sec);
 
     let res = SyndicationSettingsResponse {
         devto_configured,
@@ -1325,6 +1343,8 @@ pub async fn update_syndication_settings(
         hashnode_key_preview,
         hashnode_publication_id: hashnode_pub_id,
         publish_as_draft: state.syndication_settings.publish_as_draft,
+        webhook_secret_configured,
+        webhook_secret_preview,
     };
 
     (StatusCode::OK, Json(res))
@@ -1849,7 +1869,9 @@ pub struct SyncMetricsSummary {
     pub total_views: u32,
 }
 
-pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetricsSummary, String> {
+pub async fn sync_all_metrics_internal(
+    ctx: &Arc<AppContext>,
+) -> Result<SyncMetricsSummary, String> {
     let (devto_key, hashnode_key, hashnode_pub_id) = {
         let state = ctx.state.read().await;
         let d_key = state
@@ -1925,7 +1947,8 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
                         .await
                     {
                         Ok(r) => match r.json::<serde_json::Value>().await {
-                            Ok(json) => json["data"]["me"]["publications"]["edges"][0]["node"]["id"]
+                            Ok(json) => json["data"]["me"]["publications"]["edges"][0]["node"]
+                                ["id"]
                                 .as_str()
                                 .map(|s| s.to_string()),
                             Err(_) => None,
@@ -1948,15 +1971,13 @@ pub async fn sync_all_metrics_internal(ctx: &Arc<AppContext>) -> Result<SyncMetr
                     .send()
                     .await
                 {
-                    Ok(r) if r.status().is_success() => {
-                        match r.json::<serde_json::Value>().await {
-                            Ok(val) => parse_hashnode_metrics(&val),
-                            Err(e) => {
-                                tracing::warn!("Failed to parse Hashnode GraphQL response: {}", e);
-                                Vec::new()
-                            }
+                    Ok(r) if r.status().is_success() => match r.json::<serde_json::Value>().await {
+                        Ok(val) => parse_hashnode_metrics(&val),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse Hashnode GraphQL response: {}", e);
+                            Vec::new()
                         }
-                    }
+                    },
                     Ok(r) => {
                         tracing::warn!("Hashnode GraphQL returned status: {}", r.status());
                         Vec::new()
@@ -2144,7 +2165,10 @@ pub async fn handle_syndication_webhook(
     State(ctx): State<Arc<AppContext>>,
     body: Option<Json<serde_json::Value>>,
 ) -> impl IntoResponse {
-    tracing::info!("Received syndication webhook event: {:?}", body.as_ref().map(|b| &b.0));
+    tracing::info!(
+        "Received syndication webhook event: {:?}",
+        body.as_ref().map(|b| &b.0)
+    );
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
         if let Err(e) = sync_all_metrics_internal(&sync_ctx).await {
@@ -2339,6 +2363,9 @@ mod tests {
             ivy_web_content_path: content_dir.clone(),
             ivy_web_images_path: images_dir.clone(),
             config: crate::config::Config::load(),
+            rate_limiter: std::sync::Arc::new(
+                crate::api::middleware::rate_limit::IpRateLimiter::default(),
+            ),
         });
 
         let req = ExportIvyWebRequest {
@@ -2769,6 +2796,7 @@ mod tests {
         assert_eq!(parsed.devto_api_key, None);
         assert_eq!(parsed.hashnode_api_key, None);
         assert_eq!(parsed.hashnode_publication_id, None);
+        assert_eq!(parsed.webhook_secret, None);
         assert!(parsed.publish_as_draft);
 
         // Verify round-trip persistence
@@ -2777,6 +2805,7 @@ mod tests {
             hashnode_api_key: Some("hashnode_pat_456".to_string()),
             hashnode_publication_id: Some("pub_789".to_string()),
             github_token: Some("ghp_roundtrip_test_999".to_string()),
+            webhook_secret: Some("whsec_roundtrip_test_123".to_string()),
             publish_as_draft: false,
         };
         let serialized = serde_json::to_string(&populated).expect("serialize");
@@ -2792,7 +2821,11 @@ mod tests {
 
         let slug = "test-article-slug";
         let res = sync_hero_asset(slug, &temp_dir, "Test Title", "Architecture");
-        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "sync_hero_asset should succeed: {:?}",
+            res.err()
+        );
 
         let created_path = res.unwrap();
         assert!(created_path.exists(), "Synced file must exist");
@@ -2864,7 +2897,9 @@ mod tests {
 
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
         assert!(content_dir.join("test-syncing-article.mdoc").exists());
-        assert!(images_dir.join("blog/test-syncing-article-hero.png").exists());
+        assert!(images_dir
+            .join("blog/test-syncing-article-hero.png")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -2917,14 +2952,17 @@ mod tests {
         .into_response();
 
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
-        assert!(images_dir.join("blog/test-sync-assets-endpoint-hero.png").exists());
+        assert!(images_dir
+            .join("blog/test-sync-assets-endpoint-hero.png")
+            .exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_generate_hero_banner_svg() {
-        let title = "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
+        let title =
+            "Building Resilient AI Workflows with Autonomous Git Worktrees and Verification Gates";
         let category = "Architecture & Design";
         let summary = "A comprehensive deep dive into isolated git checkouts, automated verification steps, and human approval gates.";
         let svg = generate_hero_banner_svg(title, category, summary, Some("dark-cyan"));
@@ -2950,7 +2988,11 @@ mod tests {
 
         let slug = "dual-asset-article";
         let res = sync_hero_asset(slug, &temp_dir, "Dual Asset Article Title", "Benchmark");
-        assert!(res.is_ok(), "sync_hero_asset should succeed: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "sync_hero_asset should succeed: {:?}",
+            res.err()
+        );
 
         let png_path = temp_dir.join("blog/dual-asset-article-hero.png");
         let svg_path = temp_dir.join("blog/dual-asset-article-hero.svg");

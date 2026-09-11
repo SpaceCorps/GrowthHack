@@ -72,6 +72,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const [devtoApiKeyInput, setDevtoApiKeyInput] = useState<string>("");
   const [hashnodeApiKeyInput, setHashnodeApiKeyInput] = useState<string>("");
   const [hashnodePubIdInput, setHashnodePubIdInput] = useState<string>("");
+  const [webhookSecretInput, setWebhookSecretInput] = useState<string>("");
   const [publishAsDraftInput, setPublishAsDraftInput] = useState<boolean>(true);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const [settingsSaveMessage, setSettingsSaveMessage] = useState<string | null>(null);
@@ -409,6 +410,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           devto_api_key: devtoApiKeyInput.trim() || undefined,
           hashnode_api_key: hashnodeApiKeyInput.trim() || undefined,
           hashnode_publication_id: hashnodePubIdInput.trim() || undefined,
+          webhook_secret: webhookSecretInput.trim() || undefined,
           publish_as_draft: publishAsDraftInput,
         }),
       });
@@ -417,6 +419,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         setSyndicationSettings(data);
         setDevtoApiKeyInput("");
         setHashnodeApiKeyInput("");
+        setWebhookSecretInput("");
         setSettingsSaveMessage("Credentials saved successfully!");
         setTimeout(() => {
           setSettingsSaveMessage(null);
@@ -1280,7 +1283,29 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                         />
                       </div>
 
-                      <div className="flex items-center space-x-2 pt-5">
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">
+                          Webhook Secret (HMAC)
+                          {syndicationSettings?.webhook_secret_configured && (
+                            <span className="ml-2 text-[10px] text-emerald-400 font-mono">
+                              ({syndicationSettings.webhook_secret_preview || "Configured"})
+                            </span>
+                          )}
+                        </label>
+                        <input
+                          type="password"
+                          value={webhookSecretInput}
+                          onChange={(e) => setWebhookSecretInput(e.target.value)}
+                          placeholder={
+                            syndicationSettings?.webhook_secret_configured
+                              ? "Leave blank to keep current secret"
+                              : "Enter HMAC webhook secret"
+                          }
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center space-x-2 pt-5 sm:col-span-2">
                         <label className="flex items-center space-x-2 cursor-pointer text-slate-300">
                           <input
                             type="checkbox"

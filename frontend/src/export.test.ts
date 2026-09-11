@@ -68,12 +68,14 @@ describe("Article & Export Pipeline Types", () => {
       devto_api_key: "devto_test_key",
       hashnode_api_key: "hashnode_test_token",
       hashnode_publication_id: "pub_123",
+      webhook_secret: "whsec_test_secret_123",
       publish_as_draft: true,
     };
 
     expect(settings.devto_api_key).toBe("devto_test_key");
     expect(settings.hashnode_api_key).toBe("hashnode_test_token");
     expect(settings.hashnode_publication_id).toBe("pub_123");
+    expect(settings.webhook_secret).toBe("whsec_test_secret_123");
     expect(settings.publish_as_draft).toBe(true);
 
     const status: SyndicationStatusResponse = {
@@ -82,11 +84,15 @@ describe("Article & Export Pipeline Types", () => {
       hashnode_configured: true,
       hashnode_key_preview: "...oken",
       hashnode_publication_id: "pub_123",
+      webhook_secret_configured: true,
+      webhook_secret_preview: "..._123",
       publish_as_draft: true,
     };
 
     expect(status.devto_configured).toBe(true);
     expect(status.hashnode_configured).toBe(true);
+    expect(status.webhook_secret_configured).toBe(true);
+    expect(status.webhook_secret_preview).toBe("..._123");
     expect(status.devto_key_preview).toBe("..._key");
   });
 
