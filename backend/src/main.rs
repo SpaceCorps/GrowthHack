@@ -35,6 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ivy_web_content_path: config.ivy_web_content_path.clone(),
         ivy_web_images_path: config.ivy_web_images_path.clone(),
         config: config.clone(),
+        rate_limiter: Arc::new(
+            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
+        ),
     });
 
     let sync_ctx = Arc::clone(&ctx);

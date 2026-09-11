@@ -27,6 +27,9 @@ fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
         ivy_web_content_path: temp_dir.clone(),
         ivy_web_images_path: temp_dir.clone(),
         config: growthhack_backend::config::Config::load(),
+        rate_limiter: Arc::new(
+            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
+        ),
     });
 
     (ctx, data_file)
@@ -60,7 +63,10 @@ async fn test_doctor_diagnose_endpoint() {
 
     // Verify summary
     assert!(report.get("summary").is_some());
-    assert_eq!(report["summary"]["total"].as_u64().unwrap(), checks.len() as u64);
+    assert_eq!(
+        report["summary"]["total"].as_u64().unwrap(),
+        checks.len() as u64
+    );
 
     let _ = std::fs::remove_file(data_file);
 }
@@ -76,7 +82,9 @@ async fn test_doctor_fix_endpoint() {
                 .uri("/api/doctor/fix")
                 .method("POST")
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"check_ids": ["key_anthropic", "key_gemini"]}"#))
+                .body(Body::from(
+                    r#"{"check_ids": ["key_anthropic", "key_gemini"]}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -114,7 +122,9 @@ async fn test_demo_scenarios_and_start() {
         .unwrap();
 
     assert_eq!(scenarios_res.status(), StatusCode::OK);
-    let body = to_bytes(scenarios_res.into_body(), usize::MAX).await.unwrap();
+    let body = to_bytes(scenarios_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let scenarios: Value = serde_json::from_slice(&body).unwrap();
     assert!(scenarios.as_array().unwrap().len() >= 3);
 
@@ -126,7 +136,9 @@ async fn test_demo_scenarios_and_start() {
                 .uri("/api/demo/start")
                 .method("POST")
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"scenario_id": "scenario-health-check", "speed_multiplier": 100.0}"#))
+                .body(Body::from(
+                    r#"{"scenario_id": "scenario-health-check", "speed_multiplier": 100.0}"#,
+                ))
                 .unwrap(),
         )
         .await
