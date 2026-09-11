@@ -1,7 +1,7 @@
+mod common;
+
 use axum::extract::{Path, State};
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::listings::{
     build_tailored_prompt, check_backlink_content, create_listing, generate_batch_listings,
     list_listings, update_listing, verify_backlink, CreateListingRequest, GenerateBatchRequest,
@@ -9,28 +9,6 @@ use growthhack_backend::api::listings::{
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config: growthhack_backend::config::Config::load(),
-    })
-}
 
 #[tokio::test]
 async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
@@ -69,7 +47,7 @@ async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
 
 #[tokio::test]
 async fn test_list_and_create_and_update_listing() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // 1. List listings
     let Json(initial_listings) = list_listings(State(ctx.clone())).await;
@@ -207,7 +185,7 @@ fn test_prompt_tailoring_across_categories() {
 
 #[tokio::test]
 async fn test_generate_batch_listings_endpoint() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // Filter by category
     let batch_req = GenerateBatchRequest {
@@ -245,7 +223,7 @@ async fn test_backlink_verification_logic_and_endpoint() {
         axum::serve(listener, mock_app).await.unwrap();
     });
 
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
     let test_listing = Listing {
         id: "list-verify-test".to_string(),
         name: "Mock Awesome List".to_string(),

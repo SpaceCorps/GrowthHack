@@ -1,17 +1,13 @@
+mod common;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use growthhack_backend::api::{self, AppContext};
+use growthhack_backend::api;
 use growthhack_backend::db::{GrowthState, TrendTopic};
-use std::sync::Arc;
 use tower::ServiceExt;
-
-fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
-    AppContext::new_test_context()
-}
-
 #[tokio::test]
 async fn test_put_trend_updates_status_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let update_payload = serde_json::json!({
@@ -49,7 +45,7 @@ async fn test_put_trend_updates_status_and_persists() {
 
 #[tokio::test]
 async fn test_get_and_delete_trend() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx.clone());
 
     // GET

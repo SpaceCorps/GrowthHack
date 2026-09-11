@@ -1,17 +1,13 @@
+mod common;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use growthhack_backend::api::{self, AppContext};
+use growthhack_backend::api;
 use growthhack_backend::db::{GrowthState, VideoDemo};
-use std::sync::Arc;
 use tower::ServiceExt;
-
-fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
-    AppContext::new_test_context()
-}
-
 #[tokio::test]
 async fn test_get_demos_returns_seeded() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let response = app
@@ -38,7 +34,7 @@ async fn test_get_demos_returns_seeded() {
 
 #[tokio::test]
 async fn test_post_demo_creates_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let new_demo_payload = serde_json::json!({
@@ -81,7 +77,7 @@ async fn test_post_demo_creates_and_persists() {
 
 #[tokio::test]
 async fn test_put_demo_updates_status_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let update_payload = serde_json::json!({
@@ -120,7 +116,7 @@ async fn test_put_demo_updates_status_and_persists() {
 
 #[tokio::test]
 async fn test_delete_demo_removes_and_persists() {
-    let (ctx, data_file) = create_test_context();
+    let (ctx, data_file) = common::create_test_context_with_file();
     let app = api::router(ctx);
 
     let response = app
