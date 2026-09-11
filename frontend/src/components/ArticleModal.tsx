@@ -622,7 +622,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             {article.status !== "Published" ? (
               <button
                 onClick={() => onUpdateStatus(article.id, "Published")}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-colors"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Mark Published</span>
@@ -1286,11 +1286,11 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                       type="button"
                       onClick={handleCopyChannelContent}
                       disabled={isFormatting || !formattedContent}
-                      className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all hover:scale-[1.02] disabled:opacity-50"
+                      className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02] disabled:opacity-50"
                     >
                       {channelCopied ? (
                         <>
-                          <Check className="w-4 h-4 text-white" />
+                          <Check className="w-4 h-4 text-slate-950" />
                           <span>Copied!</span>
                         </>
                       ) : (

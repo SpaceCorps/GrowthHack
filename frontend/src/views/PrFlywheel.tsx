@@ -511,11 +511,11 @@ export const PrFlywheel: React.FC = () => {
           <button
             type="button"
             onClick={() => copyToClipboard("header_markdown", generatedMarkdown)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-all shadow-md shadow-emerald-600/20"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-950/20"
           >
             {copiedKey === "header_markdown" ? (
               <>
-                <Check className="w-3.5 h-3.5 text-white" />
+                <Check className="w-3.5 h-3.5 text-slate-950" />
                 <span>Copied Markdown!</span>
               </>
             ) : (

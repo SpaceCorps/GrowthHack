@@ -640,7 +640,7 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
 
                   <button
                     onClick={() => onUpdateArticleStatus(art.id, "Published")}
-                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950 transition-all hover:scale-[1.02]"
+                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02]"
                     title="Approve and mark article published"
                   >
                     <Send className="w-3.5 h-3.5" />

@@ -290,7 +290,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
               onClick={() => setMode("feature")}
               className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
                 mode === "feature"
-                  ? "bg-emerald-600 text-white shadow-lg shadow-emerald-950"
+                  ? "bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-950/20"
                   : "bg-slate-800/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
               }`}
             >
@@ -403,7 +403,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
 
                   <button
                     type="submit"
-                    className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950 transition-all hover:scale-[1.02]"
+                    className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-all hover:scale-[1.02]"
                   >
                     <Sparkles className="w-4 h-4" />
                     <span>Generate with Antigravity</span>
@@ -1084,7 +1084,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                       e.stopPropagation();
                       onUpdateStatus(article.id, "Published");
                     }}
-                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
+                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Publish</span>

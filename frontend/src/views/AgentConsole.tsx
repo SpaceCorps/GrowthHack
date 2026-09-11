@@ -103,7 +103,7 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({ agentStatus, onRunCu
             />
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950 transition-all hover:scale-[1.02] flex items-center justify-center space-x-2 shrink-0 self-end"
+              className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-all hover:scale-[1.02] flex items-center justify-center space-x-2 shrink-0 self-end"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>Launch</span>

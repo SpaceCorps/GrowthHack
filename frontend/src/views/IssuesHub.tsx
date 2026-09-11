@@ -159,7 +159,7 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
         {/* Add Issue Button */}
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-950 transition-all self-start sm:self-auto"
+          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all self-start sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>New Direct Action</span>
@@ -255,7 +255,7 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
 
               <button
                 onClick={() => onRunIssue(issue.id)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition-all group-hover:shadow-emerald-950"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-all group-hover:shadow-emerald-950/20"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Run Action</span>
@@ -355,7 +355,7 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
                 >
                   Create Issue
                 </button>

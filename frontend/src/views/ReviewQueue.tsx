@@ -676,7 +676,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
           <button
             onClick={() => setShowExportModal(true)}
             disabled={exportableItems.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-950/20 transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
             Export Approved ({exportableItems.length})
@@ -1004,7 +1004,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                   <button
                     onClick={handleApprove}
                     data-testid="approve-btn"
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950/50 transition-all transform active:scale-95"
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm shadow-xl shadow-emerald-950/20 transition-all transform active:scale-95"
                     title="Approve (ArrowRight or A)"
                   >
                     <Check className="w-4 h-4" />
@@ -1044,7 +1044,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               {exportableItems.length > 0 && (
                 <button
                   onClick={() => setShowExportModal(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-950/40 transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
                   Export {exportableItems.length} Approved Items
@@ -1226,7 +1226,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               <button
                 onClick={handleBatchPublish}
                 disabled={isBatchPublishing}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 transition-colors disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-950/20 transition-colors disabled:opacity-50"
               >
                 {isBatchPublishing ? (
                   <>
