@@ -1,44 +1,15 @@
+mod common;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::{self, AppContext};
-use growthhack_backend::db::GrowthState;
+use growthhack_backend::api;
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower::ServiceExt;
-
-fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
-    let temp_dir = std::env::temp_dir();
-    let file_id = uuid::Uuid::new_v4().simple().to_string();
-    let data_file = temp_dir.join(format!("test_growth_data_pg_{}.json", file_id));
-
-    let state = GrowthState::seed_default();
-    let _ = state.save(&data_file);
-
-    let state_arc = Arc::new(RwLock::new(state));
-    let runner = AgentRunner::new(std::path::PathBuf::from("agy"));
-    let task_manager = TaskManager::new(runner);
-
-    let ctx = Arc::new(AppContext {
-        state: state_arc,
-        task_manager,
-        data_file: data_file.clone(),
-        ivy_web_content_path: temp_dir.clone(),
-        ivy_web_images_path: temp_dir.clone(),
-        config: growthhack_backend::config::Config::load(),
-        rate_limiter: Arc::new(
-            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
-        ),
-    });
-
-    (ctx, data_file)
-}
 
 #[tokio::test]
 async fn test_list_scenarios() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -64,14 +35,12 @@ async fn test_list_scenarios() {
     assert!(first["file_tree"].is_array());
     assert!(first["diff"].is_string());
     assert!(first["pr_summary"].is_string());
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_import_custom_issue() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let payload = serde_json::json!({
         "issue_url": "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/42",
@@ -98,20 +67,26 @@ async fn test_import_custom_issue() {
 
     assert_eq!(scenario["title"], "Add Prometheus metrics endpoint");
     assert!(scenario["id"].as_str().unwrap().starts_with("custom-"));
-    assert!(scenario["diff"].as_str().unwrap().contains("Add Prometheus metrics endpoint"));
+    assert!(scenario["diff"]
+        .as_str()
+        .unwrap()
+        .contains("Add Prometheus metrics endpoint"));
 
     // Verify imported count in persisted metrics
-    let disk_content = std::fs::read_to_string(&data_file).unwrap();
+    let disk_content = std::fs::read_to_string(guard.data_file()).unwrap();
     let disk_state: Value = serde_json::from_str(&disk_content).unwrap();
-    assert!(disk_state["playground_metrics"]["issues_imported"].as_u64().unwrap() >= 1);
-
-    let _ = std::fs::remove_file(data_file);
+    assert!(
+        disk_state["playground_metrics"]["issues_imported"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
 }
 
 #[tokio::test]
 async fn test_worktree_tree() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -135,14 +110,12 @@ async fn test_worktree_tree() {
     let backend_node = nodes.iter().find(|n| n["name"] == "backend").unwrap();
     assert_eq!(backend_node["is_dir"], true);
     assert!(backend_node["children"].is_array());
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_simulation_lifecycle() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     // 1. Reset simulation
     let reset_res = app
@@ -222,15 +195,16 @@ async fn test_simulation_lifecycle() {
     assert_eq!(diff_res.status(), StatusCode::OK);
     let diff_body = to_bytes(diff_res.into_body(), usize::MAX).await.unwrap();
     let diff_data: Value = serde_json::from_slice(&diff_body).unwrap();
-    assert!(diff_data["diff"].as_str().unwrap().contains("HealthResponse"));
-
-    let _ = std::fs::remove_file(data_file);
+    assert!(diff_data["diff"]
+        .as_str()
+        .unwrap()
+        .contains("HealthResponse"));
 }
 
 #[tokio::test]
 async fn test_metrics_and_star_click() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     // 1. Initial metrics
     let metrics_res = app
@@ -266,17 +240,15 @@ async fn test_metrics_and_star_click() {
     assert_eq!(updated_metrics["github_stars_clicked"], 1);
 
     // Verify disk persistence
-    let disk_content = std::fs::read_to_string(&data_file).unwrap();
+    let disk_content = std::fs::read_to_string(guard.data_file()).unwrap();
     let disk_state: Value = serde_json::from_str(&disk_content).unwrap();
     assert_eq!(disk_state["playground_metrics"]["github_stars_clicked"], 1);
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_banner_embed_generator() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -294,9 +266,13 @@ async fn test_banner_embed_generator() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let banner: Value = serde_json::from_slice(&body).unwrap();
 
-    assert!(banner["markdown_snippet"].as_str().unwrap().contains("[![Try Tendril"));
-    assert!(banner["html_snippet"].as_str().unwrap().contains("<a href=\"https://tendril.run/playground\""));
+    assert!(banner["markdown_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("[![Try Tendril"));
+    assert!(banner["html_snippet"]
+        .as_str()
+        .unwrap()
+        .contains("<a href=\"https://tendril.run/playground\""));
     assert!(banner["raw_svg"].as_str().unwrap().contains("<svg"));
-
-    let _ = std::fs::remove_file(data_file);
 }

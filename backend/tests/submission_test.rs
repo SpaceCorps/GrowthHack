@@ -1,47 +1,13 @@
+mod common;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::listings::submit_upstream;
 use growthhack_backend::api::submission::{
     extract_github_repo, get_github_status, insert_listing_entry,
 };
-use growthhack_backend::db::{GrowthState, Listing};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context(token: Option<String>) -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!(
-        "growth_data_sub_test_{}.json",
-        uuid::Uuid::new_v4()
-    ));
-    let ivy_web_content_path =
-        std::env::temp_dir().join(format!("growth_sub_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path = std::env::temp_dir().join(format!(
-        "growth_sub_ivy_images_test_{}",
-        uuid::Uuid::new_v4()
-    ));
-
-    let mut config = growthhack_backend::config::Config::load();
-    config.github_token = token;
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config,
-        rate_limiter: Arc::new(
-            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
-        ),
-    })
-}
+use growthhack_backend::db::Listing;
 
 #[test]
 fn test_extract_github_repo() {
@@ -126,7 +92,8 @@ Submit PRs!
 #[tokio::test]
 async fn test_submission_endpoint_validation() {
     // 1. Context without GitHub token
-    let ctx_no_token = create_test_context(None);
+    let guard_no_token = common::create_test_context_with_token(None);
+    let ctx_no_token = guard_no_token.ctx();
 
     // Test non-existent listing ID -> 404 Not Found
     let (code_not_found, _) = submit_upstream(
@@ -191,12 +158,15 @@ async fn test_submission_endpoint_validation() {
 #[tokio::test]
 async fn test_get_github_status_endpoint_contract() {
     // 1. When unconfigured
-    let ctx_no_token = create_test_context(None);
+    let guard_no_token = common::create_test_context_with_token(None);
+    let ctx_no_token = guard_no_token.ctx();
     let resp = get_github_status(State(ctx_no_token)).await.into_response();
     assert_eq!(resp.status(), StatusCode::OK);
 
     // 2. When configured in context
-    let ctx_with_token = create_test_context(Some("ghp_dummy_token_for_tests".to_string()));
+    let guard_with_token =
+        common::create_test_context_with_token(Some("ghp_dummy_token_for_tests".to_string()));
+    let ctx_with_token = guard_with_token.ctx();
     assert_eq!(
         ctx_with_token.get_github_token(),
         Some("ghp_dummy_token_for_tests".to_string())

@@ -1,48 +1,19 @@
+mod common;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::recipes::{
     get_recipe, list_recipes, resolve_cli_snippet, run_recipe, submit_recipe, ListRecipesQuery,
     RunRecipeRequest, SubmitRecipeRequest,
 };
-use growthhack_backend::db::{GrowthState, RecipeParameter};
+use growthhack_backend::db::RecipeParameter;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!(
-        "growth_data_recipes_test_{}.json",
-        uuid::Uuid::new_v4()
-    ));
-    let ivy_web_content_path =
-        std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path =
-        std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-    let config = growthhack_backend::config::Config::load();
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config,
-        rate_limiter: Arc::new(
-            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
-        ),
-    })
-}
 
 #[tokio::test]
 async fn test_list_recipes_returns_5_seeded_gold_standard_recipes() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let Json(recipes) = list_recipes(State(ctx.clone()), Query(ListRecipesQuery::default())).await;
 
     assert_eq!(recipes.len(), 5);
@@ -77,7 +48,8 @@ async fn test_list_recipes_returns_5_seeded_gold_standard_recipes() {
 
 #[tokio::test]
 async fn test_recipe_parameters_and_cli_snippet_generation() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let Json(recipes) = list_recipes(State(ctx), Query(ListRecipesQuery::default())).await;
 
     let bugfixer = recipes
@@ -112,7 +84,8 @@ async fn test_recipe_parameters_and_cli_snippet_generation() {
 
 #[tokio::test]
 async fn test_run_recipe_endpoint_dispatches_task() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let mut overrides = HashMap::new();
     overrides.insert("issue_id".to_string(), "88".to_string());
@@ -151,7 +124,8 @@ async fn test_run_recipe_endpoint_dispatches_task() {
 
 #[tokio::test]
 async fn test_submit_community_recipe_success() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let payload = SubmitRecipeRequest {
         name: "Docstring Generator".to_string(),
@@ -196,7 +170,8 @@ async fn test_submit_community_recipe_success() {
 
 #[tokio::test]
 async fn test_submit_community_recipe_validation_failure() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     // 1. Missing name
     let empty_name_payload = SubmitRecipeRequest {

@@ -1,47 +1,20 @@
+mod common;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::contributors::{
     claim_contributor_issue, generate_all_contributors_pr, get_all_contributors,
     get_all_contributorsrc, get_contributing_guide, link_github_issue, list_contributor_issues,
-    verify_contributor, ClaimIssueRequest, ContributorIssuesQuery, GenerateAllContributorsPrRequest,
-    LinkGitHubIssueRequest, VerifyContributorRequest,
+    verify_contributor, ClaimIssueRequest, ContributorIssuesQuery,
+    GenerateAllContributorsPrRequest, LinkGitHubIssueRequest, VerifyContributorRequest,
 };
-use growthhack_backend::api::issues::AppContext;
-use growthhack_backend::db::GrowthState;
-use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file =
-        std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path =
-        std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path =
-        std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-    let config = growthhack_backend::config::Config::load();
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config,
-        rate_limiter: Arc::new(
-            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
-        ),
-    })
-}
 
 #[tokio::test]
 async fn test_list_seeded_contributor_issues() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let Json(issues) =
         list_contributor_issues(State(ctx), Query(ContributorIssuesQuery::default())).await;
 
@@ -73,7 +46,8 @@ async fn test_list_seeded_contributor_issues() {
 
 #[tokio::test]
 async fn test_filter_issues_by_category_and_max_time() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     // Filter category: Frontend
     let query_fe = ContributorIssuesQuery {
@@ -113,7 +87,8 @@ async fn test_filter_issues_by_category_and_max_time() {
 
 #[tokio::test]
 async fn test_claim_issue_and_reject_duplicate() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let claim_req = ClaimIssueRequest {
         contributor_name: "Test Contributor".to_string(),
@@ -168,7 +143,8 @@ async fn test_claim_issue_and_reject_duplicate() {
 
 #[tokio::test]
 async fn test_claim_nonexistent_issue_returns_not_found() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let claim_req = ClaimIssueRequest {
         contributor_name: "Nobody".to_string(),
@@ -249,7 +225,8 @@ async fn test_get_contributing_guide_mandatory_sections() {
 
 #[tokio::test]
 async fn test_get_all_contributors() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let Json(resp) = get_all_contributors(State(ctx)).await;
 
     assert_eq!(
@@ -269,7 +246,8 @@ async fn test_get_all_contributors() {
 
 #[tokio::test]
 async fn test_claim_issue_with_github_sync_skipped_without_token() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let claim_req = ClaimIssueRequest {
         contributor_name: "Alex Contributor".to_string(),
         github_handle: Some("@alexcontributor".to_string()),
@@ -277,12 +255,8 @@ async fn test_claim_issue_with_github_sync_skipped_without_token() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     assert!(result.is_ok());
     let (status, Json(claimed_issue)) = result.unwrap();
@@ -300,7 +274,8 @@ async fn test_claim_issue_with_github_sync_skipped_without_token() {
 
 #[tokio::test]
 async fn test_link_github_issue_endpoint() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let link_req = LinkGitHubIssueRequest {
         github_issue_number: Some(42),
         github_repo: Some("SpaceCorps/GrowthHack-Demo".to_string()),
@@ -395,9 +370,8 @@ async fn test_claim_issue_with_mock_github_client() {
 
     std::env::set_var("GITHUB_API_BASE_URL", format!("http://{}", local_addr));
 
-    let mut ctx_val = (*create_test_context()).clone();
-    ctx_val.config.github_token = Some("ghp_mock_token_123".to_string());
-    let ctx = Arc::new(ctx_val);
+    let guard = common::create_test_context_with_token(Some("ghp_mock_token_123".to_string()));
+    let ctx = guard.ctx();
 
     let claim_req = ClaimIssueRequest {
         contributor_name: "Mock Contributor".to_string(),
@@ -406,12 +380,8 @@ async fn test_claim_issue_with_mock_github_client() {
         auto_sync_github: Some(true),
     };
 
-    let result = claim_contributor_issue(
-        State(ctx),
-        Path("cf-issue-1".to_string()),
-        Json(claim_req),
-    )
-    .await;
+    let result =
+        claim_contributor_issue(State(ctx), Path("cf-issue-1".to_string()), Json(claim_req)).await;
 
     std::env::remove_var("GITHUB_API_BASE_URL");
 
@@ -420,7 +390,10 @@ async fn test_claim_issue_with_mock_github_client() {
     assert_eq!(status, StatusCode::OK);
     assert!(claimed_issue.claimed);
     assert_eq!(claimed_issue.github_sync_status.as_deref(), Some("Synced"));
-    assert!(claimed_issue.github_sync_message.unwrap().contains("claimed"));
+    assert!(claimed_issue
+        .github_sync_message
+        .unwrap()
+        .contains("claimed"));
     assert_eq!(labels_hit.load(Ordering::SeqCst), 1);
     assert_eq!(assignees_hit.load(Ordering::SeqCst), 1);
     assert_eq!(comments_hit.load(Ordering::SeqCst), 1);
@@ -428,7 +401,8 @@ async fn test_claim_issue_with_mock_github_client() {
 
 #[tokio::test]
 async fn test_get_all_contributorsrc_schema() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
     let Json(resp) = get_all_contributorsrc(State(ctx)).await;
 
     assert_eq!(resp.config.project_name, "GrowthHack");
@@ -461,7 +435,8 @@ async fn test_get_all_contributorsrc_schema() {
 
 #[tokio::test]
 async fn test_verify_contributor_and_update_state() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let req = VerifyContributorRequest {
         issue_id: Some("cf-issue-1".to_string()),
@@ -506,7 +481,8 @@ async fn test_verify_contributor_and_update_state() {
 
 #[tokio::test]
 async fn test_generate_all_contributors_pr_payload() {
-    let ctx = create_test_context();
+    let guard = common::create_test_context();
+    let ctx = guard.ctx();
 
     let req = GenerateAllContributorsPrRequest {
         github_handle: "@rocket-dev".to_string(),
@@ -521,7 +497,10 @@ async fn test_generate_all_contributors_pr_payload() {
 
     assert_eq!(resp.branch_name, "docs/add-rocket-dev");
     assert_eq!(resp.file_path, ".all-contributorsrc");
-    assert_eq!(resp.pr_title, "docs: update .all-contributorsrc for @rocket-dev");
+    assert_eq!(
+        resp.pr_title,
+        "docs: update .all-contributorsrc for @rocket-dev"
+    );
     assert!(resp.pr_body.contains("@rocket-dev"));
     assert!(resp.pr_body.contains("doc, review"));
     assert!(resp.file_content.contains("rocket-dev"));
@@ -531,7 +510,9 @@ async fn test_generate_all_contributors_pr_payload() {
     assert_eq!(resp.cli_commands[0], "git checkout -b docs/add-rocket-dev");
     assert!(resp.cli_commands[1].starts_with("cat << 'EOF' > .all-contributorsrc"));
     assert_eq!(resp.cli_commands[2], "git add .all-contributorsrc");
-    assert!(resp.cli_commands[3].contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
+    assert!(resp.cli_commands[3]
+        .contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
     assert_eq!(resp.cli_commands[4], "git push origin docs/add-rocket-dev");
-    assert!(resp.cli_commands[5].starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
+    assert!(resp.cli_commands[5]
+        .starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
 }
