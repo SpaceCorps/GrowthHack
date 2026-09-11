@@ -458,4 +458,226 @@ describe("DoctorDemo View Component", () => {
       delete (global as any).EventSource;
     }
   });
+
+  describe("Terminal Drawer Step and Search Filters", () => {
+    const multiStepLogsState: DemoRunState = {
+      id: "demo-filter-test",
+      status: "Idle",
+      current_step: 4,
+      step_progress_pct: 100,
+      logs: [
+        "[00:02] Step 1/4 (Intake): Analyzing task issue intake and specification...",
+        "[00:15] Step 2/4 (Worktree): Creating isolated git worktree branch...",
+        "[00:30] Step 3/4 (Verification): RustClippy check: cargo clippy -- -D warnings -> PASS",
+        "[00:45] Step 4/4 (PR Diff): Formatted pull request diff preview ready.",
+      ],
+      elapsed_seconds: 45,
+    };
+
+    beforeEach(() => {
+      (global.fetch as any).mockImplementation((url: string) => {
+        if (url.includes("/api/demo/status")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(multiStepLogsState),
+          });
+        }
+        if (url.includes("/api/doctor/diagnose")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(mockReport),
+          });
+        }
+        if (url.includes("/api/demo/scenarios")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(mockScenarios),
+          });
+        }
+        if (url.includes("/api/demo/metrics")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(mockMetrics),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({}),
+        });
+      });
+    });
+
+    it("renders step filter buttons and search input in terminal drawer", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      expect(screen.getByRole("button", { name: "All" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Intake" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Worktree" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Verification" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "PR Diff" })).toBeDefined();
+      expect(screen.getByPlaceholderText("Filter logs...")).toBeDefined();
+    });
+
+    it("filters logs by step filter buttons", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      // Verify all 4 initial logs are visible
+      expect(screen.getByText(/Step 1\/4 \(Intake\)/)).toBeDefined();
+      expect(screen.getByText(/Step 2\/4 \(Worktree\)/)).toBeDefined();
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.getByText(/Step 4\/4 \(PR Diff\)/)).toBeDefined();
+
+      // Click Intake
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Intake" }));
+      });
+      expect(screen.getByText(/Step 1\/4 \(Intake\)/)).toBeDefined();
+      expect(screen.queryByText(/Step 2\/4 \(Worktree\)/)).toBeNull();
+      expect(screen.queryByText(/Step 3\/4 \(Verification\)/)).toBeNull();
+      expect(screen.queryByText(/Step 4\/4 \(PR Diff\)/)).toBeNull();
+      expect(screen.getByText("Showing 1 of 4 logs")).toBeDefined();
+
+      // Click Worktree
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+      });
+      expect(screen.queryByText(/Step 1\/4 \(Intake\)/)).toBeNull();
+      expect(screen.getByText(/Step 2\/4 \(Worktree\)/)).toBeDefined();
+      expect(screen.queryByText(/Step 3\/4 \(Verification\)/)).toBeNull();
+      expect(screen.queryByText(/Step 4\/4 \(PR Diff\)/)).toBeNull();
+
+      // Click Verification
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Verification" }));
+      });
+      expect(screen.queryByText(/Step 1\/4 \(Intake\)/)).toBeNull();
+      expect(screen.queryByText(/Step 2\/4 \(Worktree\)/)).toBeNull();
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.queryByText(/Step 4\/4 \(PR Diff\)/)).toBeNull();
+
+      // Click PR Diff
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "PR Diff" }));
+      });
+      expect(screen.queryByText(/Step 1\/4 \(Intake\)/)).toBeNull();
+      expect(screen.queryByText(/Step 2\/4 \(Worktree\)/)).toBeNull();
+      expect(screen.queryByText(/Step 3\/4 \(Verification\)/)).toBeNull();
+      expect(screen.getByText(/Step 4\/4 \(PR Diff\)/)).toBeDefined();
+
+      // Click All
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "All" }));
+      });
+      expect(screen.getByText(/Step 1\/4 \(Intake\)/)).toBeDefined();
+      expect(screen.getByText(/Step 2\/4 \(Worktree\)/)).toBeDefined();
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.getByText(/Step 4\/4 \(PR Diff\)/)).toBeDefined();
+      expect(screen.queryByText(/Showing \d of \d logs/)).toBeNull();
+    });
+
+    it("filters logs by search query substring case-insensitively and clears search", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      const searchInput = screen.getByPlaceholderText("Filter logs...");
+
+      await act(async () => {
+        fireEvent.change(searchInput, { target: { value: "CLIPPY" } });
+      });
+
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.queryByText(/Step 1\/4 \(Intake\)/)).toBeNull();
+      expect(screen.queryByText(/Step 2\/4 \(Worktree\)/)).toBeNull();
+      expect(screen.queryByText(/Step 4\/4 \(PR Diff\)/)).toBeNull();
+      expect(screen.getByText("Showing 1 of 4 logs")).toBeDefined();
+
+      // Clear search with X button
+      const clearSearchBtn = screen.getByLabelText("Clear search");
+      await act(async () => {
+        fireEvent.click(clearSearchBtn);
+      });
+
+      expect(screen.getByText(/Step 1\/4 \(Intake\)/)).toBeDefined();
+      expect(screen.getByText(/Step 2\/4 \(Worktree\)/)).toBeDefined();
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.getByText(/Step 4\/4 \(PR Diff\)/)).toBeDefined();
+      expect(screen.queryByText(/Showing \d of \d logs/)).toBeNull();
+    });
+
+    it("combines step filter button and search input conjunctionally", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      // Select Verification step
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Verification" }));
+      });
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+
+      // Search for PASS (should match Step 3)
+      const searchInput = screen.getByPlaceholderText("Filter logs...");
+      await act(async () => {
+        fireEvent.change(searchInput, { target: { value: "PASS" } });
+      });
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.getByText("Showing 1 of 4 logs")).toBeDefined();
+
+      // Search for FAIL (no match within Verification step)
+      await act(async () => {
+        fireEvent.change(searchInput, { target: { value: "FAIL" } });
+      });
+      expect(screen.queryByText(/Step 3\/4 \(Verification\)/)).toBeNull();
+      expect(screen.getByText("No log lines matching active filter.")).toBeDefined();
+      expect(screen.getByText("Showing 0 of 4 logs")).toBeDefined();
+    });
+
+    it("resets filters when clicking Clear button", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      // Filter by Worktree and search "branch"
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Worktree" }));
+      });
+      const searchInput = screen.getByPlaceholderText("Filter logs...") as HTMLInputElement;
+      await act(async () => {
+        fireEvent.change(searchInput, { target: { value: "branch" } });
+      });
+
+      expect(screen.getByText("Showing 1 of 4 logs")).toBeDefined();
+      const clearBtn = screen.getByRole("button", { name: "Clear" });
+
+      await act(async () => {
+        fireEvent.click(clearBtn);
+      });
+
+      expect(searchInput.value).toBe("");
+      expect(screen.getByText(/Step 1\/4 \(Intake\)/)).toBeDefined();
+      expect(screen.getByText(/Step 2\/4 \(Worktree\)/)).toBeDefined();
+      expect(screen.getByText(/Step 3\/4 \(Verification\)/)).toBeDefined();
+      expect(screen.getByText(/Step 4\/4 \(PR Diff\)/)).toBeDefined();
+      expect(screen.queryByText(/Showing \d of \d logs/)).toBeNull();
+    });
+
+    it("displays empty state feedback when query matches zero log lines", async () => {
+      await act(async () => {
+        render(<DoctorDemo />);
+      });
+
+      const searchInput = screen.getByPlaceholderText("Filter logs...");
+      await act(async () => {
+        fireEvent.change(searchInput, { target: { value: "nonexistent query string" } });
+      });
+
+      expect(screen.getByText("No log lines matching active filter.")).toBeDefined();
+      expect(screen.getByText("Showing 0 of 4 logs")).toBeDefined();
+    });
+  });
 });
