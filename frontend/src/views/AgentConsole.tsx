@@ -57,8 +57,7 @@ export const AgentConsole: React.FC<AgentConsoleProps> = ({ agentStatus, onRunCu
                 </span>
               </div>
               <p className="text-xs font-mono text-slate-400 mt-0.5 truncate max-w-xl">
-                Executable:{" "}
-                {agentStatus?.agy_path || "C:\\Users\\pavel\\AppData\\Local\\agy\\bin\\agy.exe"}
+                Executable: {agentStatus?.agy_path || "Auto-detected"}
               </p>
             </div>
           </div>
