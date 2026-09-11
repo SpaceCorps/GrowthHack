@@ -244,6 +244,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/contributors/generate-pr",
             post(contributors::generate_all_contributors_pr),
         )
+        .route(
+            "/api/webhooks/github",
+            post(contributors::handle_github_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
+        )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
