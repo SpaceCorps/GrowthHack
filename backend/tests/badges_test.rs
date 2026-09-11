@@ -23,7 +23,9 @@ async fn test_generate_minimal_badge() {
         format: Some("minimal".to_string()),
     };
 
-    let response = generate_badge(State(ctx), Json(req)).await.into_response();
+    let response = generate_badge(State(ctx.ctx()), Json(req))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -53,7 +55,9 @@ async fn test_generate_shield_svg_badge() {
         format: Some("shield_svg".to_string()),
     };
 
-    let response = generate_badge(State(ctx), Json(req)).await.into_response();
+    let response = generate_badge(State(ctx.ctx()), Json(req))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -84,7 +88,9 @@ async fn test_generate_summary_card() {
         format: Some("summary_card".to_string()),
     };
 
-    let response = generate_badge(State(ctx), Json(req)).await.into_response();
+    let response = generate_badge(State(ctx.ctx()), Json(req))
+        .await
+        .into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

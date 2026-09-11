@@ -402,9 +402,68 @@ export interface ContributorIssue {
 
 export interface ContributorRecord {
   name: string;
+  login?: string;
   avatar_url: string;
   profile_url: string;
   contributions: string[];
+  verified?: boolean;
+  verified_at?: string;
+  pr_url?: string;
+}
+
+export interface AllContributorsEntry {
+  login: string;
+  name: string;
+  avatar_url: string;
+  profile: string;
+  contributions: string[];
+}
+
+export interface AllContributorsConfig {
+  projectName: string;
+  projectOwner: string;
+  repoType: string;
+  repoHost: string;
+  files: string[];
+  imageSize: number;
+  commit: boolean;
+  commitConvention: string;
+  contributors: AllContributorsEntry[];
+  contributorsPerLine: number;
+  linkToUsage: boolean;
+}
+
+export interface AllContributorsRcResponse {
+  content: string;
+  config: AllContributorsConfig;
+  contributor_count: number;
+}
+
+export interface VerifyContributorRequest {
+  issue_id?: string;
+  contributor_name: string;
+  github_handle: string;
+  contributions: string[];
+  auto_generate_pr?: boolean;
+}
+
+export interface GenerateAllContributorsPrResponse {
+  branch_name: string;
+  pr_title: string;
+  pr_body: string;
+  file_path: string;
+  file_content: string;
+  cli_commands: string[];
+  pr_url?: string;
+  status: string;
+}
+
+export interface VerifyContributorResponse {
+  success: boolean;
+  contributor: ContributorRecord;
+  issue?: ContributorIssue;
+  pr?: GenerateAllContributorsPrResponse;
+  message: string;
 }
 
 export interface ContributingGuideResponse {

@@ -22,7 +22,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-pub use issues::AppContext;
+pub use issues::{AppContext, TestContextGuard};
 
 pub fn router(ctx: Arc<AppContext>) -> Router {
     Router::new()
@@ -231,6 +231,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route(
             "/api/contributors/all-contributors",
             get(contributors::get_all_contributors),
+        )
+        .route(
+            "/api/contributors/all-contributorsrc",
+            get(contributors::get_all_contributorsrc),
+        )
+        .route(
+            "/api/contributors/verify",
+            post(contributors::verify_contributor),
+        )
+        .route(
+            "/api/contributors/generate-pr",
+            post(contributors::generate_all_contributors_pr),
         )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
