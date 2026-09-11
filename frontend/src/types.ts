@@ -150,7 +150,7 @@ export interface ReviewItem {
   content: string;
   backlinks: string[];
   citations: string[];
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Approved" | "Rejected" | "Published";
   createdAt: string;
   rawId: string;
 }
