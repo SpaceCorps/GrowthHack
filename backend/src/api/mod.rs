@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod issues;
 pub mod listings;
 pub mod packages;
+pub mod playground;
 pub mod recipes;
 pub mod submission;
 pub mod trends;
@@ -192,5 +193,16 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/demo/diff", get(demo::get_diff))
         .route("/api/demo/metrics", get(demo::get_metrics))
         .route("/api/demo/star-click", post(demo::record_star_click))
+        // Interactive Browser Web Playground (tendril.run)
+        .route("/api/playground/scenarios", get(playground::list_scenarios))
+        .route("/api/playground/import-issue", post(playground::import_issue))
+        .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/status", get(playground::get_status))
+        .route("/api/playground/start", post(playground::start_simulation))
+        .route("/api/playground/reset", post(playground::reset_simulation))
+        .route("/api/playground/diff", get(playground::get_diff))
+        .route("/api/playground/metrics", get(playground::get_metrics))
+        .route("/api/playground/star-click", post(playground::record_star_click))
+        .route("/api/playground/banner", get(playground::get_banner_info))
         .with_state(ctx)
 }
