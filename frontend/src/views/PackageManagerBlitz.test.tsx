@@ -237,8 +237,8 @@ describe("PackageManagerBlitz View", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/packages/homebrew/manifest");
 
     // Verify release status pill shows dynamic release tag
-    const releasePill = await screen.findByTestId("release-status-pill");
-    expect(releasePill.textContent).toContain("Release: v1.2.3 (Dynamic)");
+    const releasePill = await screen.findByText(/Release: v1\.2\.3 \(Dynamic\)/);
+    expect(releasePill).toBeDefined();
 
     // Verify code content updated from fetch
     expect(await screen.findByText("# Live dynamic formula content v1.2.3")).toBeDefined();
