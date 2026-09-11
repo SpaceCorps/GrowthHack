@@ -168,6 +168,19 @@ const mockVerifyResponse = {
   },
 };
 
+const mockGitHubUsers = [
+  {
+    login: "octocat",
+    avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4",
+    html_url: "https://github.com/octocat",
+  },
+  {
+    login: "octodog",
+    avatar_url: "https://avatars.githubusercontent.com/u/583232?v=4",
+    html_url: "https://github.com/octodog",
+  },
+];
+
 describe("ContributorFlywheel View", () => {
   beforeEach(() => {
     // Mock clipboard
@@ -193,6 +206,25 @@ describe("ContributorFlywheel View", () => {
 
     // Mock fetch
     global.fetch = vi.fn().mockImplementation((url: string, _options?: RequestInit) => {
+      if (url.includes("/api/contributors/github-users")) {
+        if (url.includes("error")) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () => Promise.resolve({ error: "Rate limit or GitHub API error" }),
+          });
+        }
+        if (url.includes("empty")) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockGitHubUsers),
+        });
+      }
       if (url.includes("/api/contributors/verify")) {
         return Promise.resolve({
           ok: true,
@@ -525,6 +557,168 @@ describe("ContributorFlywheel View", () => {
     fireEvent.click(finishBtn);
   });
 
+  it("triggers debounced fetch to /api/contributors/github-users when typing into handle input", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    expect(screen.getByText("Claim Good First Issue")).toBeDefined();
+
+    const handleInput = screen.getByTestId("claim-handle-input");
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=octo");
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it("renders matching avatar, login handle, and profile link in user suggestions", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input");
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    expect(suggestion0.textContent).toContain("@octocat");
+
+    const img = suggestion0.querySelector("img") as HTMLImageElement;
+    expect(img).toBeDefined();
+    expect(img.src).toBe("https://avatars.githubusercontent.com/u/583231?v=4");
+
+    const link = suggestion0.querySelector("a") as HTMLAnchorElement;
+    expect(link).toBeDefined();
+    expect(link.href).toBe("https://github.com/octocat");
+
+    const suggestion1 = screen.getByTestId("claim-handle-suggestion-1");
+    expect(suggestion1.textContent).toContain("@octodog");
+  });
+
+  it("populates handle input and autofills contributorName upon clicking a suggestion", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const nameInput = screen.getByTestId("claim-name-input") as HTMLInputElement;
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    expect(nameInput.value).toBe("");
+
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-suggestion-0")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    fireEvent.click(suggestion0);
+
+    expect(handleInput.value).toBe("@octocat");
+    expect(nameInput.value).toBe("octocat");
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
+
+  it("supports keyboard navigation (ArrowDown, Enter, Escape) in suggestion list", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    // ArrowDown once to highlight first item (@octocat)
+    fireEvent.keyDown(handleInput, { key: "ArrowDown" });
+    const suggestion0 = screen.getByTestId("claim-handle-suggestion-0");
+    expect(suggestion0.className).toContain("bg-cyan-600/30");
+
+    // ArrowDown again to highlight second item (@octodog)
+    fireEvent.keyDown(handleInput, { key: "ArrowDown" });
+    const suggestion1 = screen.getByTestId("claim-handle-suggestion-1");
+    expect(suggestion1.className).toContain("bg-cyan-600/30");
+
+    // Enter to select currently highlighted suggestion
+    fireEvent.keyDown(handleInput, { key: "Enter" });
+    expect(handleInput.value).toBe("@octodog");
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+
+    // Type again to reopen and test Escape dismissal
+    fireEvent.change(handleInput, { target: { value: "octo" } });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("claim-handle-autocomplete-dropdown")).toBeDefined();
+      },
+      { timeout: 2000 },
+    );
+
+    fireEvent.keyDown(handleInput, { key: "Escape" });
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
+
+  it("handles empty or error response gracefully from user search endpoint", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    const handleInput = screen.getByTestId("claim-handle-input") as HTMLInputElement;
+
+    // Test query returning empty list
+    fireEvent.change(handleInput, { target: { value: "empty" } });
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=empty");
+      },
+      { timeout: 2000 },
+    );
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+
+    // Test query resulting in endpoint error
+    fireEvent.change(handleInput, { target: { value: "error" } });
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledWith("/api/contributors/github-users?q=error");
+      },
+      { timeout: 2000 },
+    );
+    expect(screen.queryByTestId("claim-handle-autocomplete-dropdown")).toBeNull();
+  });
   it("renders claim timeout countdown badge on claimed issue and handles timeout due", async () => {
     render(<ContributorFlywheel />);
 

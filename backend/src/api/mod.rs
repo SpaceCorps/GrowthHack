@@ -264,6 +264,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::generate_all_contributors_pr),
         )
         .route(
+            "/api/contributors/github-users",
+            get(contributors::search_github_users),
+        )
+        .route(
             "/api/webhooks/github",
             post(contributors::handle_github_webhook)
                 .layer(axum::middleware::from_fn_with_state(

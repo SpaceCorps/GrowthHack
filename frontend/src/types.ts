@@ -428,6 +428,12 @@ export interface ContributorIssue {
   closed_at?: string;
 }
 
+export interface GitHubUserSummary {
+  login: string;
+  avatar_url: string;
+  html_url: string;
+}
+
 export interface ContributorRecord {
   name: string;
   login?: string;
