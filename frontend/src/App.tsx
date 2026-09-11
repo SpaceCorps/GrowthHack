@@ -511,6 +511,30 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSyncAllPrs = async () => {
+    try {
+      const res = await fetch("/api/listings/sync-prs", { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync all PRs error:", err);
+      throw err;
+    }
+  };
+
+  const handleSyncSinglePr = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/sync-pr`, { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync single PR error:", err);
+      throw err;
+    }
+  };
+
   const handleUpdatePackageStatus = async (
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
@@ -1069,6 +1093,8 @@ export const App: React.FC = () => {
             onSubmitUpstream={handleSubmitUpstream}
             onBatchSubmitUpstream={handleBatchSubmitUpstream}
             githubStatus={githubStatus}
+            onSyncAllPrs={handleSyncAllPrs}
+            onSyncSinglePr={handleSyncSinglePr}
           />
         )}
 

@@ -754,3 +754,42 @@ async fn test_unclaim_with_mock_github_client() {
     assert_eq!(assignees_deleted.load(Ordering::SeqCst), 1, "DELETE /assignees should be called");
     assert_eq!(comments_posted.load(Ordering::SeqCst), 1, "POST /comments notification should be called");
 }
+
+#[tokio::test]
+async fn test_remove_issue_label_client_mock() {
+    use axum::routing::delete;
+    use axum::Router;
+    use growthhack_backend::api::submission::GitHubClient;
+
+    let app = Router::new().route(
+        "/repos/{owner}/{repo}/issues/{issue_number}/labels/{label}",
+        delete(
+            |axum::extract::Path((owner, repo, issue_number, label)): axum::extract::Path<(
+                String,
+                String,
+                u64,
+                String,
+            )>| async move {
+                assert_eq!(owner, "SpaceCorps");
+                assert_eq!(repo, "GrowthHack");
+                assert_eq!(issue_number, 42);
+                assert_eq!(label, "claimed");
+                StatusCode::NO_CONTENT
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let mock_url = format!("http://{}", addr);
+    let client = GitHubClient::with_base_url("mock_token", &mock_url).unwrap();
+
+    let res = client
+        .remove_issue_label("SpaceCorps", "GrowthHack", 42, "claimed")
+        .await;
+    assert!(res.is_ok());
+}
