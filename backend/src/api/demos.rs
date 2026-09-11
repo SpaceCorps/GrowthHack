@@ -402,82 +402,96 @@ H.264 profile settings, resolution, and ffmpeg fallback handling for {transcode_
         transcode_fmt = transcode_fmt,
     );
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
     let feature = payload.feature.clone();
     let platform = payload.target_platform.clone();
     let transcode_fmt_clone = transcode_fmt.clone();
 
-    tokio::spawn(async move {
-        // Stream generation stages to SSE subscriber
-        let _ = tx.send(format!(
-            "[STAGE:HOOK] Generating Hook scene for {} (0:00 - 0:05)...",
-            feature
-        ));
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let _ = tx.send(
+    ctx.task_manager
+        .send_log(
+            &task_id,
+            format!(
+                "[STAGE:HOOK] Generating Hook scene for {} (0:00 - 0:05)...",
+                feature
+            ),
+        )
+        .await;
+    ctx.task_manager
+        .send_log(
+            &task_id,
             "[STAGE:WORKTREE] Generating Worktree Isolation scene (0:05 - 0:15)...".to_string(),
-        );
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let _ = tx.send(
+        )
+        .await;
+    ctx.task_manager
+        .send_log(
+            &task_id,
             "[STAGE:VERIFY] Generating Automated Test Verification scene (0:15 - 0:25)..."
                 .to_string(),
-        );
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let _ = tx.send(format!(
-            "[STAGE:OUTRO] Generating PR Badge Outro scene (0:25 - 0:{:02})...",
-            duration
-        ));
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let _ = tx.send("[GEN:COPY] Drafting synchronized LinkedIn, X/Twitter thread, and YouTube Shorts copy...".to_string());
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        let _ = tx.send(format!(
-            "[GEN:PLAYWRIGHT] Synthesizing Playwright automation script & {} transcode config...",
-            transcode_fmt_clone
-        ));
+        )
+        .await;
+    ctx.task_manager
+        .send_log(
+            &task_id,
+            format!(
+                "[STAGE:OUTRO] Generating PR Badge Outro scene (0:25 - 0:{:02})...",
+                duration
+            ),
+        )
+        .await;
+    ctx.task_manager
+        .send_log(
+            &task_id,
+            "[GEN:COPY] Drafting synchronized LinkedIn, X/Twitter thread, and YouTube Shorts copy..."
+                .to_string(),
+        )
+        .await;
+    ctx.task_manager
+        .send_log(
+            &task_id,
+            format!(
+                "[GEN:PLAYWRIGHT] Synthesizing Playwright automation script & {} transcode config...",
+                transcode_fmt_clone
+            ),
+        )
+        .await;
 
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(output) => {
-                let (headline, body, storyboard, scenes, platform_copy, automation_config) =
-                    parse_demo_package(
-                        &output,
-                        &feature,
-                        &platform,
-                        duration,
-                        Some(transcode_fmt_clone),
-                    );
-
-                let demo = VideoDemo {
-                    id: format!("demo-{}", Uuid::new_v4().simple()),
-                    feature,
-                    target_platform: platform,
-                    duration_seconds: duration,
-                    headline,
-                    body,
-                    storyboard,
-                    status: "Pending".to_string(),
-                    created_at: Utc::now(),
-                    updated_at: Utc::now(),
-                    scenes,
-                    platform_copy: Some(platform_copy),
-                    automation_config: Some(automation_config),
-                };
-
-                let mut state = state_arc.write().await;
-                state.video_demos.push(demo);
-                let _ = state.save(&data_file);
-                let _ = tx.send(
-                    "[SYSTEM] Video demo package created and saved to review queue!".to_string(),
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |output, tx| async move {
+            let (headline, body, storyboard, scenes, platform_copy, automation_config) =
+                parse_demo_package(
+                    &output,
+                    &feature,
+                    &platform,
+                    duration,
+                    Some(transcode_fmt_clone),
                 );
-                let _ = tx.send("[DONE] Feature demo generation complete".to_string());
-            }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
-            }
-        }
-    });
+
+            let demo = VideoDemo {
+                id: format!("demo-{}", Uuid::new_v4().simple()),
+                feature,
+                target_platform: platform,
+                duration_seconds: duration,
+                headline,
+                body,
+                storyboard,
+                status: "Pending".to_string(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                scenes,
+                platform_copy: Some(platform_copy),
+                automation_config: Some(automation_config),
+            };
+
+            let mut state = state_arc.write().await;
+            state.video_demos.push(demo);
+            let _ = state.save(&data_file);
+            let _ = tx.send(
+                "[SYSTEM] Video demo package created and saved to review queue!".to_string(),
+            );
+            let _ = tx.send("[DONE] Feature demo generation complete".to_string());
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,

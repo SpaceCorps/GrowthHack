@@ -324,30 +324,23 @@ pub async fn generate_listing_blurb(
     let task_id = format!("task-list-{}", Uuid::new_v4().simple());
     let prompt = build_tailored_prompt(&listing);
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
     let list_id_clone = id.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(content) => {
-                let mut state = state_arc.write().await;
-                if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
-                    l.submission_blurb = content;
-                    l.blurb_status = Some("Pending".to_string());
-                    l.updated_at = Utc::now();
-                }
-                let _ = state.save(&data_file);
-                let _ =
-                    tx.send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            let mut state = state_arc.write().await;
+            if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
+                l.submission_blurb = content;
+                l.blurb_status = Some("Pending".to_string());
+                l.updated_at = Utc::now();
             }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
-            }
-        }
-    });
+            let _ = state.save(&data_file);
+            let _ =
+                tx.send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
@@ -396,29 +389,22 @@ pub async fn generate_batch_listings(
         task_ids.push(task_id.clone());
 
         let prompt = build_tailored_prompt(&listing);
-        let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-        let runner = ctx.task_manager.runner().clone();
         let state_arc = ctx.state.clone();
         let data_file = ctx.data_file.clone();
         let list_id = listing.id.clone();
 
-        tokio::spawn(async move {
-            match runner.execute(&prompt, tx.clone()).await {
-                Ok(content) => {
-                    let mut state = state_arc.write().await;
-                    if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id) {
-                        l.submission_blurb = content;
-                        l.updated_at = Utc::now();
-                    }
-                    let _ = state.save(&data_file);
-                    let _ = tx
-                        .send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+        ctx.task_manager
+            .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+                let mut state = state_arc.write().await;
+                if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id) {
+                    l.submission_blurb = content;
+                    l.updated_at = Utc::now();
                 }
-                Err(e) => {
-                    let _ = tx.send(format!("[ERROR] Generation failed: {}", e));
-                }
-            }
-        });
+                let _ = state.save(&data_file);
+                let _ = tx
+                    .send("[SYSTEM] Custom submission entry generated and saved!".to_string());
+            })
+            .await;
     }
 
     (
@@ -790,33 +776,25 @@ pub async fn submit_listing_pr(
     let task_id = format!("task-pr-{}", Uuid::new_v4().simple());
     let prompt = build_pr_submission_prompt(&listing);
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let list_id_clone = listing.id.clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
-    let tx_clone = tx.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx_clone.clone()).await {
-            Ok(content) => {
-                if let Some(pr_url) = extract_pr_url(&content) {
-                    let mut state = state_arc.write().await;
-                    if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
-                        l.pr_url = Some(pr_url.clone());
-                        l.status = "PR Submitted".to_string();
-                        l.updated_at = Utc::now();
-                    }
-                    let _ = state.save(&data_file);
-                    let _ = tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            if let Some(pr_url) = extract_pr_url(&content) {
+                let mut state = state_arc.write().await;
+                if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
+                    l.pr_url = Some(pr_url.clone());
+                    l.status = "PR Submitted".to_string();
+                    l.updated_at = Utc::now();
                 }
-                let _ = tx_clone.send("[SYSTEM] Automated PR generation completed!".to_string());
+                let _ = state.save(&data_file);
+                let _ = tx.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
             }
-            Err(e) => {
-                let _ = tx_clone.send(format!("[ERROR] PR generation failed: {}", e));
-            }
-        }
-    });
+            let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
@@ -1080,35 +1058,25 @@ pub async fn batch_submit_listing_prs(
         task_ids.push(task_id.clone());
 
         let prompt = build_pr_submission_prompt(&listing);
-        let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-        let runner = ctx.task_manager.runner().clone();
         let list_id_clone = listing.id.clone();
         let state_arc = ctx.state.clone();
         let data_file = ctx.data_file.clone();
-        let tx_clone = tx.clone();
 
-        tokio::spawn(async move {
-            match runner.execute(&prompt, tx_clone.clone()).await {
-                Ok(content) => {
-                    if let Some(pr_url) = extract_pr_url(&content) {
-                        let mut state = state_arc.write().await;
-                        if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
-                            l.pr_url = Some(pr_url.clone());
-                            l.status = "PR Submitted".to_string();
-                            l.updated_at = Utc::now();
-                        }
-                        let _ = state.save(&data_file);
-                        let _ =
-                            tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
+        ctx.task_manager
+            .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+                if let Some(pr_url) = extract_pr_url(&content) {
+                    let mut state = state_arc.write().await;
+                    if let Some(l) = state.listings.iter_mut().find(|l| l.id == list_id_clone) {
+                        l.pr_url = Some(pr_url.clone());
+                        l.status = "PR Submitted".to_string();
+                        l.updated_at = Utc::now();
                     }
-                    let _ =
-                        tx_clone.send("[SYSTEM] Automated PR generation completed!".to_string());
+                    let _ = state.save(&data_file);
+                    let _ = tx.send(format!("[SYSTEM] Upstream PR registered: {}", pr_url));
                 }
-                Err(e) => {
-                    let _ = tx_clone.send(format!("[ERROR] PR generation failed: {}", e));
-                }
-            }
-        });
+                let _ = tx.send("[SYSTEM] Automated PR generation completed!".to_string());
+            })
+            .await;
     }
 
     (
