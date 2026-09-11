@@ -5,7 +5,8 @@ use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::contributors::{
     claim_contributor_issue, generate_all_contributors_pr, get_all_contributors,
     get_all_contributorsrc, get_contributing_guide, link_github_issue, list_contributor_issues,
-    verify_contributor, ClaimIssueRequest, ContributorIssuesQuery, GenerateAllContributorsPrRequest,
+    search_github_users, verify_contributor, ClaimIssueRequest, ContributorIssuesQuery,
+    GenerateAllContributorsPrRequest, GitHubUserSearchQuery, GitHubUserSummary,
     LinkGitHubIssueRequest, VerifyContributorRequest,
 };
 use growthhack_backend::api::issues::AppContext;
@@ -337,8 +338,11 @@ async fn test_link_github_issue_endpoint() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
+static GITHUB_ENV_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn test_claim_issue_with_mock_github_client() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
     use axum::routing::post;
     use axum::Router;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -534,4 +538,129 @@ async fn test_generate_all_contributors_pr_payload() {
     assert!(resp.cli_commands[3].contains("git commit -m \"docs: update .all-contributorsrc for @rocket-dev [skip ci]\""));
     assert_eq!(resp.cli_commands[4], "git push origin docs/add-rocket-dev");
     assert!(resp.cli_commands[5].starts_with("gh pr create --title \"docs: update .all-contributorsrc for @rocket-dev\""));
+}
+
+#[tokio::test]
+async fn test_search_github_users_empty_or_short_query_returns_empty_array() {
+    let ctx = create_test_context();
+
+    // Empty query
+    let empty_q = GitHubUserSearchQuery { q: "".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(empty_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single whitespace
+    let space_q = GitHubUserSearchQuery { q: "   ".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(space_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single '@' symbol
+    let at_q = GitHubUserSearchQuery { q: "@".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(at_q)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // Single character
+    let single_char = GitHubUserSearchQuery { q: "a".to_string() };
+    let res = search_github_users(State(ctx.clone()), Query(single_char)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+
+    // '@' with single character
+    let at_single_char = GitHubUserSearchQuery { q: "@b".to_string() };
+    let res = search_github_users(State(ctx), Query(at_single_char)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert!(users.is_empty());
+}
+
+#[tokio::test]
+async fn test_search_github_users_with_mock_github_api() {
+    let _env_lock = GITHUB_ENV_MUTEX.lock().await;
+    use axum::extract::Query as AxumQuery;
+    use axum::routing::get;
+    use axum::Router;
+    use std::collections::HashMap;
+
+    let mock_app = Router::new().route(
+        "/search/users",
+        get(|AxumQuery(params): AxumQuery<HashMap<String, String>>| async move {
+            let q = params.get("q").cloned().unwrap_or_default();
+            if q == "ratelimit" {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "message": "API rate limit exceeded",
+                        "documentation_url": "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
+                    })),
+                );
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "total_count": 2,
+                    "incomplete_results": false,
+                    "items": [
+                        {
+                            "login": "octocat",
+                            "id": 1,
+                            "avatar_url": "https://avatars.githubusercontent.com/u/583231?v=4",
+                            "html_url": "https://github.com/octocat"
+                        },
+                        {
+                            "login": "octodog",
+                            "id": 2,
+                            "avatar_url": "https://avatars.githubusercontent.com/u/583232?v=4",
+                            "html_url": "https://github.com/octodog"
+                        }
+                    ]
+                })),
+            )
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    std::env::set_var("GITHUB_API_BASE_URL", format!("http://{}", local_addr));
+
+    let ctx = create_test_context();
+
+    // Test successful search query with leading @
+    let query = GitHubUserSearchQuery {
+        q: "@octo".to_string(),
+    };
+    let res = search_github_users(State(ctx.clone()), Query(query)).await;
+    assert!(res.is_ok());
+    let Json(users) = res.unwrap();
+    assert_eq!(users.len(), 2);
+    assert_eq!(
+        users[0],
+        GitHubUserSummary {
+            login: "octocat".to_string(),
+            avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4".to_string(),
+            html_url: "https://github.com/octocat".to_string(),
+        }
+    );
+    assert_eq!(users[1].login, "octodog");
+
+    // Test rate limit handling returns empty vector cleanly
+    let rate_limit_query = GitHubUserSearchQuery {
+        q: "ratelimit".to_string(),
+    };
+    let rate_limit_res = search_github_users(State(ctx), Query(rate_limit_query)).await;
+    assert!(rate_limit_res.is_ok());
+    let Json(empty_users) = rate_limit_res.unwrap();
+    assert!(empty_users.is_empty());
+
+    std::env::remove_var("GITHUB_API_BASE_URL");
 }
