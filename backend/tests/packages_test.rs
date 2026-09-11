@@ -1,43 +1,19 @@
+mod common;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::packages::{
     build_upstream_pr_commands, dispatch_package_pr, extract_pr_url, generate_manifest_content,
     get_manifest, list_packages, update_package_status, DispatchPackagePrRequest,
     UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-fn create_test_context() -> Arc<AppContext> {
-    let state = Arc::new(RwLock::new(GrowthState::seed_default()));
-    let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
-    let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_ivy_images_test_{}", uuid::Uuid::new_v4()));
-    let config = growthhack_backend::config::Config::load();
-
-    Arc::new(AppContext {
-        state,
-        task_manager,
-        data_file,
-        ivy_web_content_path,
-        ivy_web_images_path,
-        config,
-    })
-}
 
 #[tokio::test]
 async fn test_list_packages_returns_seeded_targets() {
-    let ctx = create_test_context();
-    let Json(packages) = match list_packages(State(ctx)).await {
-        resp => resp,
-    };
+    let ctx = common::create_test_context();
+    let Json(packages) = list_packages(State(ctx)).await;
 
     assert_eq!(packages.len(), 4);
 
@@ -113,7 +89,7 @@ async fn test_manifest_generators_syntax_markers() {
 
 #[tokio::test]
 async fn test_get_manifest_endpoint() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     // Valid target
     let (status, Json(manifest)) = get_manifest(Path("homebrew".to_string()), State(ctx.clone())).await;
@@ -129,7 +105,7 @@ async fn test_get_manifest_endpoint() {
 
 #[tokio::test]
 async fn test_update_package_status_and_persistence() {
-    let ctx = create_test_context();
+    let ctx = common::create_test_context();
 
     let payload = UpdatePackageStatusRequest {
         status: Some("Merged".to_string()),
