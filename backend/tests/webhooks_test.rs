@@ -12,14 +12,14 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_webhook_without_secret_allows_request() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     // Ensure no secret is set
     {
-        let mut state = guard.state.write().await;
+        let mut state = ctx.state.write().await;
         state.syndication_settings.webhook_secret = None;
     }
 
-    let app = api::router(guard.ctx());
+    let app = api::router(ctx);
     let payload = serde_json::json!({
         "event": "metrics_updated",
         "platform": "devto"
@@ -46,14 +46,14 @@ async fn test_webhook_without_secret_allows_request() {
 
 #[tokio::test]
 async fn test_webhook_with_valid_hmac_passes() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let secret = "test_webhook_signing_secret_99";
     {
-        let mut state = guard.state.write().await;
+        let mut state = ctx.state.write().await;
         state.syndication_settings.webhook_secret = Some(secret.to_string());
     }
 
-    let app = api::router(guard.ctx());
+    let app = api::router(ctx);
     let payload_bytes = serde_json::to_vec(&serde_json::json!({
         "event": "article_viewed",
         "views": 420
@@ -84,14 +84,14 @@ async fn test_webhook_with_valid_hmac_passes() {
 
 #[tokio::test]
 async fn test_webhook_with_raw_hex_signature_passes() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let secret = "test_raw_hex_secret_77";
     {
-        let mut state = guard.state.write().await;
+        let mut state = ctx.state.write().await;
         state.syndication_settings.webhook_secret = Some(secret.to_string());
     }
 
-    let app = api::router(guard.ctx());
+    let app = api::router(ctx);
     let payload_bytes = serde_json::to_vec(&serde_json::json!({
         "event": "comment_added",
         "comments": 15
@@ -121,14 +121,14 @@ async fn test_webhook_with_raw_hex_signature_passes() {
 
 #[tokio::test]
 async fn test_webhook_with_invalid_signature_rejected() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let secret = "secure_production_secret";
     {
-        let mut state = guard.state.write().await;
+        let mut state = ctx.state.write().await;
         state.syndication_settings.webhook_secret = Some(secret.to_string());
     }
 
-    let app = api::router(guard.ctx());
+    let app = api::router(ctx);
     let payload_bytes = b"{\"event\":\"tampered_payload\"}".to_vec();
     let invalid_signature =
         "sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -155,14 +155,14 @@ async fn test_webhook_with_invalid_signature_rejected() {
 
 #[tokio::test]
 async fn test_webhook_missing_signature_when_secret_set_rejected() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let secret = "mandatory_secret_key";
     {
-        let mut state = guard.state.write().await;
+        let mut state = ctx.state.write().await;
         state.syndication_settings.webhook_secret = Some(secret.to_string());
     }
 
-    let app = api::router(guard.ctx());
+    let app = api::router(ctx);
     let payload_bytes = b"{\"event\":\"ping\"}".to_vec();
 
     let response = app
@@ -186,11 +186,11 @@ async fn test_webhook_missing_signature_when_secret_set_rejected() {
 
 #[tokio::test]
 async fn test_webhook_rate_limiting_enforcement() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let test_ip = "198.51.100.99";
 
     // Initial requests within burst capacity (10) should succeed (assuming no secret configured)
-    let app = api::router(guard.ctx());
+    let app = api::router(Arc::clone(&ctx));
 
     let mut hit_rate_limit = false;
     let mut retry_after_header_present = false;
@@ -241,12 +241,12 @@ async fn test_webhook_rate_limiting_enforcement() {
 
 #[tokio::test]
 async fn test_webhook_debouncing_coalesces_concurrent_requests() {
-    let guard = common::create_test_context_with_file();
+    let (ctx, _file) = common::create_test_context_with_file();
     let (debouncer, worker) =
         MetricsSyncDebouncer::new(Duration::from_millis(30), Duration::from_millis(60));
     let debouncer = Arc::new(debouncer);
 
-    let mut ctx_val = (*guard.ctx).clone();
+    let mut ctx_val = (*ctx).clone();
     ctx_val.metrics_debouncer = Arc::clone(&debouncer);
     let ctx = Arc::new(ctx_val);
 

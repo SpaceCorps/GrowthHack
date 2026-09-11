@@ -7,6 +7,7 @@ pub mod demo;
 pub mod demos;
 pub mod doctor;
 pub mod issues;
+pub mod launch;
 pub mod listings;
 pub mod metrics_debouncer;
 pub mod middleware;
@@ -256,7 +257,20 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         )
         .route("/api/doctor/fix", post(doctor::fix_diagnostics))
         // Zero-Config Demo Simulator
-        .route("/api/demo/scenarios", get(demo::list_scenarios))
+        .route(
+            "/api/demo/scenarios",
+            get(demo::list_scenarios).post(demo::create_scenario),
+        )
+        .route(
+            "/api/demo/scenarios/reset",
+            post(demo::reset_scenarios),
+        )
+        .route(
+            "/api/demo/scenarios/{id}",
+            get(demo::get_scenario)
+                .put(demo::update_scenario)
+                .delete(demo::delete_scenario),
+        )
         .route("/api/demo/status", get(demo::get_status))
         .route("/api/demo/start", post(demo::start_demo))
         .route("/api/demo/stream/{task_id}", get(demo::stream_demo_logs))
@@ -264,6 +278,16 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/demo/diff", get(demo::get_diff))
         .route("/api/demo/metrics", get(demo::get_metrics))
         .route("/api/demo/star-click", post(demo::record_star_click))
+        // Coordinated 48-Hour Launch Campaign Orchestrator
+        .route("/api/launch/overview", get(launch::get_launch_overview))
+        .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
+        .route("/api/launch/show-hn", put(launch::update_show_hn))
+        .route("/api/launch/product-hunt", put(launch::update_product_hunt))
+        .route("/api/launch/product-hunt/checklist/{id}", put(launch::toggle_product_hunt_checklist))
+        .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
+        .route("/api/launch/checklist/{id}", put(launch::toggle_syndication_checklist))
+        .route("/api/launch/timeline/{phase_id}/tasks/{task_id}", put(launch::toggle_timeline_task))
+        .route("/api/launch/reset", post(launch::reset_launch_campaign))
         // Interactive Browser Web Playground (tendril.run)
         .route("/api/playground/scenarios", get(playground::list_scenarios))
         .route(
@@ -271,6 +295,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(playground::import_issue),
         )
         .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
         .route("/api/playground/status", get(playground::get_status))
         .route("/api/playground/start", post(playground::start_simulation))
         .route("/api/playground/reset", post(playground::reset_simulation))

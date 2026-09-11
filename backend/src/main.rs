@@ -69,18 +69,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = api::router(ctx);
 
     // Serve built frontend if available
-    let possible_paths = [
-        std::path::PathBuf::from("frontend/dist"),
-        std::path::PathBuf::from("../frontend/dist"),
-    ];
-
-    for dist in &possible_paths {
-        if dist.exists() {
-            tracing::info!("Serving frontend assets from: {:?}", dist);
-            let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
-            app = app.fallback_service(serve_dir);
-            break;
-        }
+    if let Some(dist) = &config.frontend_dist_dir {
+        tracing::info!("Serving frontend assets from: {:?}", dist);
+        let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
+        app = app.fallback_service(serve_dir);
+    } else {
+        tracing::info!("Frontend distribution assets not found; static asset serving is disabled");
     }
 
     let app = app.layer(cors).layer(TraceLayer::new_for_http());
