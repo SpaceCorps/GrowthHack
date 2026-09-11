@@ -715,7 +715,13 @@ export const App: React.FC = () => {
       backlinks: art.backlinks || [],
       citations: art.outbound_citations || [],
       status:
-        art.status === "Approved" ? "Approved" : art.status === "Rejected" ? "Rejected" : "Pending",
+        art.status === "Approved"
+          ? "Approved"
+          : art.status === "Rejected"
+            ? "Rejected"
+            : art.status === "Published"
+              ? "Published"
+              : "Pending",
       createdAt: art.created_at,
       rawId: art.id,
     }));
@@ -765,7 +771,9 @@ export const App: React.FC = () => {
             ? "Approved"
             : demo.status === "Rejected"
               ? "Rejected"
-              : "Pending",
+              : demo.status === "Published"
+                ? "Published"
+                : "Pending",
         createdAt: demo.created_at,
         rawId: demo.id,
       };
@@ -787,7 +795,9 @@ export const App: React.FC = () => {
           ? "Approved"
           : trend.status === "Rejected"
             ? "Rejected"
-            : "Pending",
+            : trend.status === "Published"
+              ? "Published"
+              : "Pending",
       createdAt: trend.created_at,
       rawId: trend.id,
     }));
@@ -873,6 +883,63 @@ export const App: React.FC = () => {
         console.error("Approve listing blurb error:", err);
       }
     }
+  };
+
+  const downloadReviewItemMarkdown = (item: ReviewItem) => {
+    const markdown = `# ${item.title}\n\n**Type:** ${item.type} | **Channel:** ${item.channel}\n\n${item.summary}\n\n---\n\n${item.content}\n\n**Backlinks:** ${item.backlinks.join(", ")}`;
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${item.type}_${item.rawId}_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleAutoPostReviewItem = async (item: ReviewItem) => {
+    if (item.type === "article") {
+      const res = await fetch(`/api/articles/${item.rawId}/auto-post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sync_hero_image: true, hero_format: "dual" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Auto-post failed for article ${item.rawId}`);
+      }
+    } else if (item.type === "listing_blurb") {
+      const res = await fetch(`/api/listings/${item.rawId}/submit-pr`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`Upstream PR dispatch failed for listing ${item.rawId}`);
+      }
+      const data = await res.json();
+      if (data.task_id) {
+        setTerminalTitle(`Automated Upstream PR Submission #${item.rawId}`);
+        setActiveTaskId(data.task_id);
+      }
+    } else if (item.type === "video_demo") {
+      const res = await fetch(`/api/demos/${item.rawId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Published" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Publish failed for video demo ${item.rawId}`);
+      }
+      downloadReviewItemMarkdown(item);
+    } else if (item.type === "trend_synthesis") {
+      const res = await fetch(`/api/trends/${item.rawId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Published" }),
+      });
+      if (!res.ok) {
+        throw new Error(`Publish failed for trend synthesis ${item.rawId}`);
+      }
+      downloadReviewItemMarkdown(item);
+    }
+    fetchAll();
   };
 
   const handleRejectReviewItem = async (item: ReviewItem) => {
@@ -1100,6 +1167,7 @@ export const App: React.FC = () => {
             onReject={handleRejectReviewItem}
             onRefine={handleRefineReviewItem}
             onBatchPublish={handleBatchPublish}
+            onAutoPost={handleAutoPostReviewItem}
           />
         )}
         {activeTab === "trends" && (
