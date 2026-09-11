@@ -6,6 +6,7 @@ import type {
   PlaygroundMetrics,
   BannerEmbedInfo,
   ImportIssueRequest,
+  PlaygroundFileInspection,
 } from "../types";
 import {
   Globe,
@@ -30,6 +31,8 @@ import {
   ChevronDown,
   CheckCircle2,
   Plus,
+  Columns,
+  Code,
 } from "lucide-react";
 
 export const Playground: React.FC = () => {
@@ -67,6 +70,16 @@ export const Playground: React.FC = () => {
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1.0);
   const [metrics, setMetrics] = useState<PlaygroundMetrics | null>(null);
   const [bannerInfo, setBannerInfo] = useState<BannerEmbedInfo | null>(null);
+
+  // File Inspection State
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(
+    "backend/src/api/health.rs",
+  );
+  const [inspectedFile, setInspectedFile] = useState<PlaygroundFileInspection | null>(null);
+  const [loadingFile, setLoadingFile] = useState<boolean>(false);
+  const [inspectorViewMode, setInspectorViewMode] = useState<"split" | "diff" | "source">("split");
+  const [showFullDiff, setShowFullDiff] = useState<boolean>(false);
+  const [copiedSource, setCopiedSource] = useState<boolean>(false);
 
   // UI Tabs & Modals
   const [activeRightTab, setActiveRightTab] = useState<"gates" | "diff" | "pr">("gates");
@@ -138,12 +151,72 @@ export const Playground: React.FC = () => {
     }
   };
 
+  const findFirstModifiedFile = (nodes: WorktreeFileNode[]): string | null => {
+    for (const node of nodes) {
+      if (!node.is_dir && node.status !== "Unchanged") {
+        return node.path;
+      }
+      if (node.children) {
+        const found = findFirstModifiedFile(node.children);
+        if (found) return found;
+      }
+    }
+    for (const node of nodes) {
+      if (!node.is_dir) return node.path;
+      if (node.children) {
+        const found = findFirstModifiedFile(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const fetchFileContent = async (scenarioId: string, filePath: string) => {
+    setLoadingFile(true);
+    try {
+      const res = await fetch(
+        `/api/playground/file-content?scenario_id=${encodeURIComponent(
+          scenarioId,
+        )}&path=${encodeURIComponent(filePath)}`,
+      );
+      if (res.ok) {
+        const data: PlaygroundFileInspection = await res.json();
+        setInspectedFile(data);
+      } else {
+        setInspectedFile(null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch file content:", err);
+      setInspectedFile(null);
+    } finally {
+      setLoadingFile(false);
+    }
+  };
+
+  const handleSelectFile = (filePath: string) => {
+    setSelectedFilePath(filePath);
+    setActiveRightTab("diff");
+    setShowFullDiff(false);
+    fetchFileContent(selectedScenarioId, filePath);
+  };
+
+  const copySourceCode = (code: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code);
+      setCopiedSource(true);
+      setTimeout(() => setCopiedSource(false), 2000);
+    }
+  };
+
   const fetchTree = async (scenarioId: string) => {
     try {
       const res = await fetch(`/api/playground/tree?scenario_id=${encodeURIComponent(scenarioId)}`);
       if (res.ok) {
         const data: WorktreeFileNode[] = await res.json();
         setFileTree(data);
+        const targetFile = findFirstModifiedFile(data) || "backend/src/api/health.rs";
+        setSelectedFilePath(targetFile);
+        fetchFileContent(scenarioId, targetFile);
       }
     } catch (err) {
       console.error("Failed to fetch worktree tree:", err);
@@ -328,14 +401,29 @@ export const Playground: React.FC = () => {
       );
     }
 
+    const isSelected = selectedFilePath === node.path;
     return (
-      <div
+      <button
         key={node.path}
-        className="flex items-center gap-1.5 py-1 px-1.5 hover:bg-slate-800/40 rounded transition-colors group"
+        type="button"
+        onClick={() => handleSelectFile(node.path)}
+        className={`w-full flex items-center gap-1.5 py-1 px-1.5 rounded transition-colors group cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+          isSelected
+            ? "bg-cyan-500/20 text-white border-l-2 border-cyan-400 font-semibold shadow-sm"
+            : "hover:bg-slate-800/40"
+        }`}
         style={{ paddingLeft: `${depth * 14 + 20}px` }}
       >
-        <FileText className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-200" />
-        <span className="text-xs font-mono text-slate-300 group-hover:text-white truncate">
+        <FileText
+          className={`w-3.5 h-3.5 shrink-0 ${
+            isSelected ? "text-cyan-300" : "text-slate-400 group-hover:text-slate-200"
+          }`}
+        />
+        <span
+          className={`text-xs font-mono truncate ${
+            isSelected ? "text-white" : "text-slate-300 group-hover:text-white"
+          }`}
+        >
           {node.name}
         </span>
         {node.status !== "Unchanged" && (
@@ -349,7 +437,7 @@ export const Playground: React.FC = () => {
             {node.status}
           </span>
         )}
-      </div>
+      </button>
     );
   };
 
@@ -685,7 +773,8 @@ export const Playground: React.FC = () => {
                       : "text-slate-400 hover:text-white"
                   }`}
                 >
-                  Diff
+                  <span className="hidden sm:inline">Code &amp; </span>
+                  <span>Diff</span>
                 </button>
                 <button
                   onClick={() => setActiveRightTab("pr")}
@@ -743,29 +832,199 @@ export const Playground: React.FC = () => {
               )}
 
               {activeRightTab === "diff" && (
-                <div className="font-mono text-xs overflow-x-auto bg-slate-950 p-2 rounded border border-slate-900">
-                  {simulationState.diff_preview || activeScenario?.diff ? (
-                    (simulationState.diff_preview || activeScenario.diff)
-                      .split("\n")
-                      .map((line, i) => (
+                <div className="flex flex-col h-full space-y-2">
+                  {/* File inspector header toolbar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-900/90 border border-slate-800 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileCode className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span
+                        className="font-mono text-slate-200 truncate font-semibold"
+                        title={inspectedFile?.path || selectedFilePath || ""}
+                      >
+                        {inspectedFile?.path || selectedFilePath || "No file selected"}
+                      </span>
+                      {inspectedFile && (
                         <span
-                          key={i}
-                          className={
-                            line.startsWith("+") && !line.startsWith("+++")
-                              ? "text-emerald-400 block bg-emerald-950/30 px-1"
-                              : line.startsWith("-") && !line.startsWith("---")
-                                ? "text-rose-400 block bg-rose-950/30 px-1"
-                                : line.startsWith("@@")
-                                  ? "text-cyan-400 block font-bold mt-1"
-                                  : "text-slate-400 block"
-                          }
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase shrink-0 ${
+                            inspectedFile.status === "Created"
+                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                              : inspectedFile.status === "Modified"
+                                ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                : "bg-slate-800 text-slate-400 border border-slate-700"
+                          }`}
                         >
-                          {line}
+                          {inspectedFile.status}
                         </span>
-                      ))
+                      )}
+                      {inspectedFile && (
+                        <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+                          {inspectedFile.line_count} lines ({inspectedFile.language})
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* View mode toggle buttons */}
+                      <div className="flex items-center bg-slate-950 border border-slate-800 rounded p-0.5 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("split")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "split"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Side by side split view"
+                        >
+                          <Columns className="w-3 h-3" />
+                          <span>Split</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("source")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "source"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Source code only"
+                        >
+                          <Code className="w-3 h-3" />
+                          <span>Source</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInspectorViewMode("diff")}
+                          className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                            inspectorViewMode === "diff"
+                              ? "bg-cyan-600 text-white font-semibold"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
+                          title="Diff only"
+                        >
+                          <GitPullRequest className="w-3 h-3" />
+                          <span>Diff</span>
+                        </button>
+                      </div>
+
+                      {/* Copy source code button */}
+                      {inspectedFile && (
+                        <button
+                          type="button"
+                          onClick={() => copySourceCode(inspectedFile.content)}
+                          className="flex items-center gap-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-medium transition-colors cursor-pointer"
+                          title="Copy source code"
+                        >
+                          {copiedSource ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-400" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main Inspector Code & Diff Panes */}
+                  {loadingFile ? (
+                    <div className="flex items-center justify-center py-16 text-xs text-slate-500 font-mono">
+                      Loading file content &amp; diff...
+                    </div>
+                  ) : inspectedFile ? (
+                    <div
+                      className={`grid gap-2 overflow-hidden flex-1 ${
+                        inspectorViewMode === "split" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
+                      }`}
+                    >
+                      {/* Left Pane: Source Code */}
+                      {(inspectorViewMode === "split" || inspectorViewMode === "source") && (
+                        <div className="flex flex-col bg-slate-950 border border-slate-900 rounded-lg overflow-hidden h-72">
+                          <div className="px-2.5 py-1 bg-slate-900/90 border-b border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between shrink-0">
+                            <span className="truncate">Source: {inspectedFile.name}</span>
+                            <span className="text-cyan-400">{inspectedFile.language}</span>
+                          </div>
+                          <div className="flex-1 overflow-auto p-2 font-mono text-xs flex leading-5">
+                            {/* Gutter with line numbers */}
+                            <div className="select-none text-slate-600 text-right pr-2.5 mr-2.5 border-r border-slate-800">
+                              {inspectedFile.content.split("\n").map((_, idx) => (
+                                <div key={idx}>{idx + 1}</div>
+                              ))}
+                            </div>
+                            {/* Monospace Code */}
+                            <pre className="text-slate-200 whitespace-pre overflow-x-auto flex-1">
+                              <code>{inspectedFile.content}</code>
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Right Pane: Unified Diff */}
+                      {(inspectorViewMode === "split" || inspectorViewMode === "diff") && (
+                        <div className="flex flex-col bg-slate-950 border border-slate-900 rounded-lg overflow-hidden h-72">
+                          <div className="px-2.5 py-1 bg-slate-900/90 border-b border-slate-800 text-[10px] font-mono text-slate-400 flex items-center justify-between shrink-0">
+                            <span>Unified Diff</span>
+                            {inspectedFile.status !== "Unchanged" && (
+                              <button
+                                type="button"
+                                onClick={() => setShowFullDiff(!showFullDiff)}
+                                className="text-cyan-400 hover:text-cyan-300 text-[10px] cursor-pointer"
+                              >
+                                {showFullDiff ? "Show File Diff" : "Show Full Diff"}
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex-1 overflow-auto p-2 font-mono text-xs">
+                            {inspectedFile.status === "Unchanged" && !showFullDiff ? (
+                              <div className="text-slate-500 text-xs text-center py-10 space-y-2">
+                                <p>File unchanged in this simulation run. No diff chunks.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFullDiff(true)}
+                                  className="text-cyan-400 hover:underline text-xs cursor-pointer"
+                                >
+                                  View full scenario diff
+                                </button>
+                              </div>
+                            ) : (
+                              (showFullDiff
+                                ? simulationState.diff_preview || activeScenario?.diff || ""
+                                : inspectedFile.file_diff ||
+                                  simulationState.diff_preview ||
+                                  activeScenario?.diff ||
+                                  ""
+                              )
+                                .split("\n")
+                                .map((line, i) => (
+                                  <span
+                                    key={i}
+                                    className={
+                                      line.startsWith("+") && !line.startsWith("+++")
+                                        ? "text-emerald-400 block bg-emerald-950/30 px-1"
+                                        : line.startsWith("-") && !line.startsWith("---")
+                                          ? "text-rose-400 block bg-rose-950/30 px-1"
+                                          : line.startsWith("@@")
+                                            ? "text-cyan-400 block font-bold mt-1"
+                                            : "text-slate-400 block"
+                                    }
+                                  >
+                                    {line}
+                                  </span>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <div className="text-slate-500 text-xs text-center py-6">
-                      Diff will generate upon simulation completion.
+                    <div className="text-slate-500 text-xs text-center py-12">
+                      Click on any file in the worktree tree to inspect source code and unified diff
+                      side by side.
                     </div>
                   )}
                 </div>

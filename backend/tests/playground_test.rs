@@ -300,3 +300,87 @@ async fn test_banner_embed_generator() {
 
     let _ = std::fs::remove_file(data_file);
 }
+
+#[tokio::test]
+async fn test_get_file_content_created_file() {
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/playground/file-content?scenario_id=scenario-health-check&path=backend/src/api/health.rs")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let file_resp: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(file_resp["path"], "backend/src/api/health.rs");
+    assert_eq!(file_resp["name"], "health.rs");
+    assert_eq!(file_resp["status"], "Created");
+    assert_eq!(file_resp["language"], "rust");
+    assert!(file_resp["content"].as_str().unwrap().contains("pub async fn health_check"));
+    assert!(file_resp["file_diff"].is_string());
+    assert!(file_resp["file_diff"].as_str().unwrap().contains("diff --git a/backend/src/api/health.rs"));
+
+    let _ = std::fs::remove_file(data_file);
+}
+
+#[tokio::test]
+async fn test_get_file_content_unchanged_file() {
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/playground/file-content?scenario_id=scenario-health-check&path=backend/Cargo.toml")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let file_resp: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(file_resp["path"], "backend/Cargo.toml");
+    assert_eq!(file_resp["name"], "Cargo.toml");
+    assert_eq!(file_resp["status"], "Unchanged");
+    assert_eq!(file_resp["language"], "toml");
+    assert!(file_resp["content"].as_str().unwrap().contains("growthhack-backend"));
+    assert!(file_resp["file_diff"].is_null());
+
+    let _ = std::fs::remove_file(data_file);
+}
+
+#[tokio::test]
+async fn test_get_file_content_nonexistent_file() {
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/playground/file-content?scenario_id=scenario-health-check&path=nonexistent/path.rs")
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let _ = std::fs::remove_file(data_file);
+}
