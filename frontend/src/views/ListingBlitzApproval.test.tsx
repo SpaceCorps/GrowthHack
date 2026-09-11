@@ -3,6 +3,8 @@ import { render, screen, fireEvent, act, cleanup } from "@testing-library/react"
 import { ListingBlitz } from "./ListingBlitz";
 import { ReviewQueue } from "./ReviewQueue";
 import type { Listing, ReviewItem } from "../types";
+import { setupMockFetch } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockListings: Listing[] = [
   {
@@ -64,28 +66,18 @@ const mockListings: Listing[] = [
 ];
 
 describe("ListingBlitz Blurb Approval Badges", () => {
-  let originalFetch: typeof global.fetch;
+  let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
-    originalFetch = global.fetch;
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/submissions/github-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            configured: true,
-            username: "testuser",
-            message: "ok",
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    }) as unknown as typeof fetch;
+    mockController = setupMockFetch();
   });
 
   afterEach(() => {
     cleanup();
-    global.fetch = originalFetch;
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
     vi.restoreAllMocks();
   });
 
@@ -114,10 +106,10 @@ describe("ListingBlitz Blurb Approval Badges", () => {
 });
 
 describe("Review Queue Listing Blurb Approval Flow", () => {
-  let originalFetch: typeof global.fetch;
+  let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
-    originalFetch = global.fetch;
+    mockController = setupMockFetch();
     vi.useFakeTimers();
   });
 
@@ -125,7 +117,10 @@ describe("Review Queue Listing Blurb Approval Flow", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
-    global.fetch = originalFetch;
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("approving a listing blurb triggers approval callback and PUT to /api/listings/{id}", async () => {

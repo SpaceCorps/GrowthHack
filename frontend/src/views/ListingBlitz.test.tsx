@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ListingBlitz } from "./ListingBlitz";
 import type { Listing } from "../types";
+import { setupMockFetch } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockListings: Listing[] = [
   {
@@ -67,7 +69,7 @@ const mockListings: Listing[] = [
 ];
 
 describe("ListingBlitz View", () => {
-  let originalFetch: typeof global.fetch;
+  let mockController: MockFetchController | null = null;
 
   const defaultProps = {
     listings: mockListings,
@@ -80,7 +82,6 @@ describe("ListingBlitz View", () => {
   };
 
   beforeEach(() => {
-    originalFetch = global.fetch;
     Object.defineProperty(navigator, "clipboard", {
       value: {
         writeText: vi.fn().mockResolvedValue(undefined),
@@ -89,25 +90,24 @@ describe("ListingBlitz View", () => {
       configurable: true,
     });
 
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/submissions/github-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            configured: false,
-            message: "GitHub token not configured. Set GITHUB_TOKEN environment variable.",
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    }) as unknown as typeof fetch;
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/submissions/github-status": {
+          configured: false,
+          message: "GitHub token not configured. Set GITHUB_TOKEN environment variable.",
+        },
+      },
+    });
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     vi.restoreAllMocks();
-    global.fetch = originalFetch;
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("renders metric cards and listing cards correctly", () => {

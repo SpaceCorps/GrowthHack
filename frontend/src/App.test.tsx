@@ -1,80 +1,44 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { render, screen, act, cleanup } from "@testing-library/react";
 import { App, resolveActiveTabFromLocation } from "./App";
+import { setupMockFetch } from "./test";
+import type { MockFetchController } from "./test";
 
 describe("App URL Hash Routing", () => {
+  let mockController: MockFetchController | null = null;
+
   beforeEach(() => {
     window.location.hash = "";
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/issues")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/articles")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/trends")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/listings")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/packages")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/agent/status")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ is_running: false }) });
-      }
-      if (url.includes("/api/demos")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/submissions/github-status")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ configured: false }) });
-      }
-      if (url.includes("/api/recipes")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/contributors/issues")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/playground/scenarios")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/playground/tree")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      }
-      if (url.includes("/api/playground/status")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              id: "init",
-              scenario_id: "scenario-health-check",
-              status: "Idle",
-              current_step: 1,
-              step_progress_pct: 0,
-              logs: [],
-              verification_gates: [],
-              elapsed_seconds: 0,
-              speed_multiplier: 1.0,
-            }),
-        });
-      }
-      if (url.includes("/api/playground/metrics")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
-      }
-      if (url.includes("/api/playground/banner")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
-      }
-      if (url.includes("/api/launch/overview")) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
-      }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/submissions/github-status": { configured: false },
+        "/api/playground/scenarios": [],
+        "/api/playground/tree": [],
+        "/api/playground/status": {
+          id: "init",
+          scenario_id: "scenario-health-check",
+          status: "Idle",
+          current_step: 1,
+          step_progress_pct: 0,
+          logs: [],
+          verification_gates: [],
+          elapsed_seconds: 0,
+          speed_multiplier: 1.0,
+        },
+        "/api/playground/metrics": null,
+        "/api/playground/banner": null,
+        "/api/launch/overview": null,
+      },
     });
   });
 
   afterEach(() => {
     cleanup();
     window.location.hash = "";
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
     vi.restoreAllMocks();
   });
 
