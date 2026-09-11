@@ -1,5 +1,5 @@
 use crate::api::issues::AppContext;
-use crate::db::{Article, EngagementMetrics, EngagementSnapshot, ExportRecord};
+use crate::db::{Article, ChannelMetrics, EngagementMetrics, EngagementSnapshot, ExportRecord};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -2006,6 +2006,8 @@ pub async fn sync_all_metrics_internal(
     let mut total_comments = 0;
     let mut total_views = 0;
     let mut synced_count = 0;
+    let mut global_channels: std::collections::HashMap<String, ChannelMetrics> =
+        std::collections::HashMap::new();
 
     for article in state.articles.iter_mut() {
         let mut article_had_sync = false;
@@ -2098,11 +2100,41 @@ pub async fn sync_all_metrics_internal(
             });
         }
 
+        let mut article_channels: std::collections::HashMap<String, ChannelMetrics> =
+            std::collections::HashMap::new();
+        for export in &article.exports {
+            if let Some(ref eng) = export.engagement {
+                let ch_name = if export.channel.eq_ignore_ascii_case("dev.to")
+                    || export.channel.eq_ignore_ascii_case("devto")
+                {
+                    "Dev.to".to_string()
+                } else if export.channel.eq_ignore_ascii_case("hashnode") {
+                    "Hashnode".to_string()
+                } else if export.channel.eq_ignore_ascii_case("medium") {
+                    "Medium".to_string()
+                } else {
+                    export.channel.clone()
+                };
+
+                let entry = article_channels.entry(ch_name).or_default();
+                entry.views += eng.views;
+                entry.reactions += eng.reactions;
+                entry.comments += eng.comments;
+            }
+        }
+
         if let Some(ref eng) = article.engagement {
             total_reactions += eng.reactions;
             total_comments += eng.comments;
             total_views += eng.views;
             synced_count += 1;
+
+            for (ch, m) in &article_channels {
+                let g = global_channels.entry(ch.clone()).or_default();
+                g.views += m.views;
+                g.reactions += m.reactions;
+                g.comments += m.comments;
+            }
 
             record_engagement_snapshot(
                 &mut article.engagement_snapshots,
@@ -2110,6 +2142,7 @@ pub async fn sync_all_metrics_internal(
                 eng.views,
                 eng.reactions,
                 eng.comments,
+                article_channels,
                 MAX_ARTICLE_SNAPSHOTS,
             );
         }
@@ -2122,6 +2155,7 @@ pub async fn sync_all_metrics_internal(
             total_views,
             total_reactions,
             total_comments,
+            global_channels,
             MAX_GLOBAL_SNAPSHOTS,
         );
     }
@@ -2141,6 +2175,17 @@ pub const MAX_ARTICLE_SNAPSHOTS: usize = 500;
 pub const MAX_GLOBAL_SNAPSHOTS: usize = 1000;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ChannelVelocity {
+    pub views_per_day: f64,
+    pub reactions_per_day: f64,
+    pub comments_per_day: f64,
+    pub views_delta_24h: i64,
+    pub reactions_delta_24h: i64,
+    pub comments_delta_24h: i64,
+    pub trend: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct EngagementVelocity {
     pub views_per_day: f64,
     pub reactions_per_day: f64,
@@ -2149,6 +2194,8 @@ pub struct EngagementVelocity {
     pub reactions_delta_24h: i64,
     pub comments_delta_24h: i64,
     pub trend: String, // "Accelerating", "Steady", "Decelerating", "Flat"
+    #[serde(default)]
+    pub channels: std::collections::HashMap<String, ChannelVelocity>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -2163,12 +2210,15 @@ pub fn record_engagement_snapshot(
     views: u32,
     reactions: u32,
     comments: u32,
+    channels: std::collections::HashMap<String, ChannelMetrics>,
     max_capacity: usize,
 ) -> bool {
     let should_record = match snapshots.last() {
         Some(last) => {
-            let metrics_changed =
-                last.views != views || last.reactions != reactions || last.comments != comments;
+            let metrics_changed = last.views != views
+                || last.reactions != reactions
+                || last.comments != comments
+                || last.channels != channels;
             let elapsed_secs = (timestamp - last.timestamp).num_seconds();
             metrics_changed || elapsed_secs >= 3600
         }
@@ -2181,6 +2231,7 @@ pub fn record_engagement_snapshot(
             views,
             reactions,
             comments,
+            channels,
         });
         if snapshots.len() > max_capacity {
             let overflow = snapshots.len() - max_capacity;
@@ -2192,57 +2243,29 @@ pub fn record_engagement_snapshot(
     }
 }
 
-pub fn calculate_engagement_velocity(
-    snapshots: &[EngagementSnapshot],
-    _now: DateTime<Utc>,
-) -> EngagementVelocity {
-    if snapshots.is_empty() {
-        return EngagementVelocity {
-            views_per_day: 0.0,
-            reactions_per_day: 0.0,
-            comments_per_day: 0.0,
-            views_delta_24h: 0,
-            reactions_delta_24h: 0,
-            comments_delta_24h: 0,
-            trend: "Flat".to_string(),
-        };
+fn compute_velocity_from_series(
+    points: &[(DateTime<Utc>, u32, u32, u32)],
+) -> (f64, f64, f64, i64, i64, i64, String) {
+    if points.len() <= 1 {
+        return (0.0, 0.0, 0.0, 0, 0, 0, "Flat".to_string());
     }
 
-    let mut sorted = snapshots.to_vec();
-    sorted.sort_by_key(|s| s.timestamp);
+    let latest = &points[points.len() - 1];
+    let cutoff_24h = latest.0 - chrono::Duration::hours(24);
+    let baseline_idx = points.iter().rposition(|p| p.0 <= cutoff_24h).unwrap_or(0);
+    let baseline_24h = &points[baseline_idx];
 
-    let latest = &sorted[sorted.len() - 1];
+    let views_delta_24h = latest.1 as i64 - baseline_24h.1 as i64;
+    let reactions_delta_24h = latest.2 as i64 - baseline_24h.2 as i64;
+    let comments_delta_24h = latest.3 as i64 - baseline_24h.3 as i64;
 
-    if sorted.len() == 1 {
-        return EngagementVelocity {
-            views_per_day: 0.0,
-            reactions_per_day: 0.0,
-            comments_per_day: 0.0,
-            views_delta_24h: 0,
-            reactions_delta_24h: 0,
-            comments_delta_24h: 0,
-            trend: "Flat".to_string(),
-        };
-    }
-
-    let cutoff_24h = latest.timestamp - chrono::Duration::hours(24);
-    let baseline_idx = sorted
-        .iter()
-        .rposition(|s| s.timestamp <= cutoff_24h)
-        .unwrap_or(0);
-    let baseline_24h = &sorted[baseline_idx];
-
-    let views_delta_24h = latest.views as i64 - baseline_24h.views as i64;
-    let reactions_delta_24h = latest.reactions as i64 - baseline_24h.reactions as i64;
-    let comments_delta_24h = latest.comments as i64 - baseline_24h.comments as i64;
-
-    let dt_secs = (latest.timestamp - baseline_24h.timestamp).num_seconds() as f64;
+    let dt_secs = (latest.0 - baseline_24h.0).num_seconds() as f64;
     let (views_per_day, reactions_per_day, comments_per_day) = if dt_secs >= 60.0 {
         let days = dt_secs / 86400.0;
         (
-            ((latest.views as f64 - baseline_24h.views as f64) / days * 10.0).round() / 10.0,
-            ((latest.reactions as f64 - baseline_24h.reactions as f64) / days * 10.0).round() / 10.0,
-            ((latest.comments as f64 - baseline_24h.comments as f64) / days * 10.0).round() / 10.0,
+            ((latest.1 as f64 - baseline_24h.1 as f64) / days * 10.0).round() / 10.0,
+            ((latest.2 as f64 - baseline_24h.2 as f64) / days * 10.0).round() / 10.0,
+            ((latest.3 as f64 - baseline_24h.3 as f64) / days * 10.0).round() / 10.0,
         )
     } else {
         (0.0, 0.0, 0.0)
@@ -2250,15 +2273,15 @@ pub fn calculate_engagement_velocity(
 
     let trend = if views_delta_24h <= 0 && reactions_delta_24h <= 0 && comments_delta_24h <= 0 {
         "Flat".to_string()
-    } else if sorted.len() >= 3 {
-        let mid_idx = baseline_idx + (sorted.len() - 1 - baseline_idx) / 2;
-        let midpoint = &sorted[mid_idx];
-        let dt_prior = (midpoint.timestamp - baseline_24h.timestamp).num_seconds() as f64;
-        let dt_recent = (latest.timestamp - midpoint.timestamp).num_seconds() as f64;
+    } else if points.len() >= 3 {
+        let mid_idx = baseline_idx + (points.len() - 1 - baseline_idx) / 2;
+        let midpoint = &points[mid_idx];
+        let dt_prior = (midpoint.0 - baseline_24h.0).num_seconds() as f64;
+        let dt_recent = (latest.0 - midpoint.0).num_seconds() as f64;
 
         if dt_prior >= 60.0 && dt_recent >= 60.0 {
-            let rate_prior = (midpoint.views as f64 - baseline_24h.views as f64) / dt_prior;
-            let rate_recent = (latest.views as f64 - midpoint.views as f64) / dt_recent;
+            let rate_prior = (midpoint.1 as f64 - baseline_24h.1 as f64) / dt_prior;
+            let rate_recent = (latest.1 as f64 - midpoint.1 as f64) / dt_recent;
 
             if rate_prior > 0.0 {
                 let ratio = rate_recent / rate_prior;
@@ -2281,6 +2304,101 @@ pub fn calculate_engagement_velocity(
         "Steady".to_string()
     };
 
+    (
+        views_per_day,
+        reactions_per_day,
+        comments_per_day,
+        views_delta_24h,
+        reactions_delta_24h,
+        comments_delta_24h,
+        trend,
+    )
+}
+
+pub fn calculate_engagement_velocity(
+    snapshots: &[EngagementSnapshot],
+    _now: DateTime<Utc>,
+) -> EngagementVelocity {
+    if snapshots.is_empty() {
+        return EngagementVelocity {
+            views_per_day: 0.0,
+            reactions_per_day: 0.0,
+            comments_per_day: 0.0,
+            views_delta_24h: 0,
+            reactions_delta_24h: 0,
+            comments_delta_24h: 0,
+            trend: "Flat".to_string(),
+            channels: std::collections::HashMap::new(),
+        };
+    }
+
+    let mut sorted = snapshots.to_vec();
+    sorted.sort_by_key(|s| s.timestamp);
+
+    let global_points: Vec<(DateTime<Utc>, u32, u32, u32)> = sorted
+        .iter()
+        .map(|s| (s.timestamp, s.views, s.reactions, s.comments))
+        .collect();
+
+    let (
+        views_per_day,
+        reactions_per_day,
+        comments_per_day,
+        views_delta_24h,
+        reactions_delta_24h,
+        comments_delta_24h,
+        trend,
+    ) = compute_velocity_from_series(&global_points);
+
+    let mut channel_names: std::collections::BTreeSet<String> = ["Dev.to", "Hashnode", "Medium"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for s in &sorted {
+        for k in s.channels.keys() {
+            channel_names.insert(k.clone());
+        }
+    }
+
+    let mut channels: std::collections::HashMap<String, ChannelVelocity> =
+        std::collections::HashMap::new();
+
+    for ch in channel_names {
+        let ch_points: Vec<(DateTime<Utc>, u32, u32, u32)> = sorted
+            .iter()
+            .map(|s| {
+                if let Some(m) = s.channels.get(&ch) {
+                    (s.timestamp, m.views, m.reactions, m.comments)
+                } else {
+                    (s.timestamp, 0, 0, 0)
+                }
+            })
+            .collect();
+
+        let (
+            ch_vpd,
+            ch_rpd,
+            ch_cpd,
+            ch_vd24,
+            ch_rd24,
+            ch_cd24,
+            ch_trend,
+        ) = compute_velocity_from_series(&ch_points);
+
+        channels.insert(
+            ch,
+            ChannelVelocity {
+                views_per_day: ch_vpd,
+                reactions_per_day: ch_rpd,
+                comments_per_day: ch_cpd,
+                views_delta_24h: ch_vd24,
+                reactions_delta_24h: ch_rd24,
+                comments_delta_24h: ch_cd24,
+                trend: ch_trend,
+            },
+        );
+    }
+
     EngagementVelocity {
         views_per_day,
         reactions_per_day,
@@ -2289,6 +2407,7 @@ pub fn calculate_engagement_velocity(
         reactions_delta_24h,
         comments_delta_24h,
         trend,
+        channels,
     }
 }
 
@@ -3351,6 +3470,7 @@ mod tests {
             views: 1250,
             reactions: 84,
             comments: 16,
+            channels: std::collections::HashMap::new(),
         };
 
         let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
@@ -3369,6 +3489,56 @@ mod tests {
         assert_eq!(default_parsed.views, 0);
         assert_eq!(default_parsed.reactions, 0);
         assert_eq!(default_parsed.comments, 0);
+        assert!(default_parsed.channels.is_empty());
+    }
+
+    #[test]
+    fn test_engagement_snapshot_with_channels_serialization() {
+        let now = Utc::now();
+        let mut channels = std::collections::HashMap::new();
+        channels.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 500,
+                reactions: 35,
+                comments: 8,
+            },
+        );
+        channels.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 400,
+                reactions: 25,
+                comments: 5,
+            },
+        );
+        channels.insert(
+            "Medium".to_string(),
+            ChannelMetrics {
+                views: 350,
+                reactions: 24,
+                comments: 3,
+            },
+        );
+
+        let snapshot = EngagementSnapshot {
+            timestamp: now,
+            views: 1250,
+            reactions: 84,
+            comments: 16,
+            channels: channels.clone(),
+        };
+
+        let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        assert!(json.contains("\"Dev.to\""));
+        assert!(json.contains("\"Hashnode\""));
+        assert!(json.contains("\"Medium\""));
+
+        let deserialized: EngagementSnapshot =
+            serde_json::from_str(&json).expect("deserialize snapshot");
+        assert_eq!(snapshot, deserialized);
+        assert_eq!(deserialized.channels.len(), 3);
+        assert_eq!(deserialized.channels["Dev.to"].views, 500);
     }
 
     #[test]
@@ -3377,25 +3547,43 @@ mod tests {
         let base_time = Utc::now();
 
         // 1. Initial snapshot is recorded
-        let added1 = record_engagement_snapshot(&mut snapshots, base_time, 100, 10, 2, 5);
+        let added1 = record_engagement_snapshot(
+            &mut snapshots,
+            base_time,
+            100,
+            10,
+            2,
+            Default::default(),
+            5,
+        );
         assert!(added1);
         assert_eq!(snapshots.len(), 1);
 
         // 2. Duplicate snapshot within 1 hour with unchanged metrics is skipped
         let soon = base_time + chrono::Duration::minutes(15);
-        let added_dup = record_engagement_snapshot(&mut snapshots, soon, 100, 10, 2, 5);
+        let added_dup =
+            record_engagement_snapshot(&mut snapshots, soon, 100, 10, 2, Default::default(), 5);
         assert!(!added_dup);
         assert_eq!(snapshots.len(), 1);
 
         // 3. Snapshot with changed metrics within 1 hour is recorded
-        let added_changed = record_engagement_snapshot(&mut snapshots, soon, 105, 10, 2, 5);
+        let added_changed =
+            record_engagement_snapshot(&mut snapshots, soon, 105, 10, 2, Default::default(), 5);
         assert!(added_changed);
         assert_eq!(snapshots.len(), 2);
 
         // 4. Fill up to cap and verify FIFO eviction
         for i in 3..=7 {
             let t = base_time + chrono::Duration::hours(i);
-            let ok = record_engagement_snapshot(&mut snapshots, t, 100 + i as u32 * 10, 10, 2, 5);
+            let ok = record_engagement_snapshot(
+                &mut snapshots,
+                t,
+                100 + i as u32 * 10,
+                10,
+                2,
+                Default::default(),
+                5,
+            );
             assert!(ok);
         }
 
@@ -3403,6 +3591,67 @@ mod tests {
         assert_eq!(snapshots.len(), 5);
         // Oldest elements should have been drained, newest retained
         assert_eq!(snapshots[4].views, 170);
+    }
+
+    #[test]
+    fn test_record_engagement_snapshot_with_channel_breakdown() {
+        let mut snapshots = Vec::new();
+        let base_time = Utc::now();
+
+        let mut ch1 = std::collections::HashMap::new();
+        ch1.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+        );
+        let added1 =
+            record_engagement_snapshot(&mut snapshots, base_time, 100, 10, 2, ch1.clone(), 3);
+        assert!(added1);
+        assert_eq!(snapshots.len(), 1);
+
+        // Same metrics and channels within 1h is skipped
+        let soon = base_time + chrono::Duration::minutes(15);
+        let added_dup =
+            record_engagement_snapshot(&mut snapshots, soon, 100, 10, 2, ch1.clone(), 3);
+        assert!(!added_dup);
+        assert_eq!(snapshots.len(), 1);
+
+        // Changed channel metric within 1h is recorded
+        let mut ch2 = std::collections::HashMap::new();
+        ch2.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 105,
+                reactions: 10,
+                comments: 2,
+            },
+        );
+        let added_ch = record_engagement_snapshot(&mut snapshots, soon, 105, 10, 2, ch2, 3);
+        assert!(added_ch);
+        assert_eq!(snapshots.len(), 2);
+
+        // Cap eviction test
+        for i in 3..=5 {
+            let t = base_time + chrono::Duration::hours(i);
+            let mut ch = std::collections::HashMap::new();
+            ch.insert(
+                "Dev.to".to_string(),
+                ChannelMetrics {
+                    views: 100 + i as u32 * 10,
+                    reactions: 10,
+                    comments: 2,
+                },
+            );
+            let ok =
+                record_engagement_snapshot(&mut snapshots, t, 100 + i as u32 * 10, 10, 2, ch, 3);
+            assert!(ok);
+        }
+
+        assert_eq!(snapshots.len(), 3);
+        assert_eq!(snapshots.last().unwrap().channels["Dev.to"].views, 150);
     }
 
     #[test]
@@ -3428,18 +3677,21 @@ mod tests {
                 views: 100,
                 reactions: 10,
                 comments: 2,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: t1,
                 views: 150,
                 reactions: 15,
                 comments: 3,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: t2,
                 views: 250,
                 reactions: 25,
                 comments: 5,
+                channels: Default::default(),
             },
         ];
 
@@ -3457,18 +3709,21 @@ mod tests {
                 views: 150,
                 reactions: 15,
                 comments: 3,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: t2,
                 views: 250,
                 reactions: 25,
                 comments: 5,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: t3,
                 views: 280,
                 reactions: 27,
                 comments: 6,
+                channels: Default::default(),
             },
         ];
 
@@ -3482,17 +3737,150 @@ mod tests {
                 views: 100,
                 reactions: 10,
                 comments: 2,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: t2,
                 views: 100,
                 reactions: 10,
                 comments: 2,
+                channels: Default::default(),
             },
         ];
         let flat_vel = calculate_engagement_velocity(&flat_snapshots, now);
         assert_eq!(flat_vel.trend, "Flat");
         assert_eq!(flat_vel.views_delta_24h, 0);
+    }
+
+    #[test]
+    fn test_per_channel_velocity_calculation() {
+        let now = Utc::now();
+        let t0 = now - chrono::Duration::hours(24);
+        let t1 = now - chrono::Duration::hours(12);
+        let t2 = now;
+
+        // Construct synthetic trajectory where:
+        // Dev.to accelerates: 100 -> 150 -> 250 (gain 50 then 100)
+        // Hashnode is decelerating: 150 -> 250 -> 280 (gain 100 then 30)
+        // Medium is flat: 50 -> 50 -> 50 (gain 0)
+        let mut ch0 = std::collections::HashMap::new();
+        ch0.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 100,
+                reactions: 10,
+                comments: 2,
+            },
+        );
+        ch0.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+        );
+        ch0.insert(
+            "Medium".to_string(),
+            ChannelMetrics {
+                views: 50,
+                reactions: 5,
+                comments: 1,
+            },
+        );
+
+        let mut ch1 = std::collections::HashMap::new();
+        ch1.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 150,
+                reactions: 15,
+                comments: 3,
+            },
+        );
+        ch1.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+        );
+        ch1.insert(
+            "Medium".to_string(),
+            ChannelMetrics {
+                views: 50,
+                reactions: 5,
+                comments: 1,
+            },
+        );
+
+        let mut ch2 = std::collections::HashMap::new();
+        ch2.insert(
+            "Dev.to".to_string(),
+            ChannelMetrics {
+                views: 250,
+                reactions: 25,
+                comments: 5,
+            },
+        );
+        ch2.insert(
+            "Hashnode".to_string(),
+            ChannelMetrics {
+                views: 280,
+                reactions: 27,
+                comments: 6,
+            },
+        );
+        ch2.insert(
+            "Medium".to_string(),
+            ChannelMetrics {
+                views: 50,
+                reactions: 5,
+                comments: 1,
+            },
+        );
+
+        let snapshots = vec![
+            EngagementSnapshot {
+                timestamp: t0,
+                views: 300,
+                reactions: 30,
+                comments: 6,
+                channels: ch0,
+            },
+            EngagementSnapshot {
+                timestamp: t1,
+                views: 450,
+                reactions: 45,
+                comments: 9,
+                channels: ch1,
+            },
+            EngagementSnapshot {
+                timestamp: t2,
+                views: 580,
+                reactions: 57,
+                comments: 12,
+                channels: ch2,
+            },
+        ];
+
+        let vel = calculate_engagement_velocity(&snapshots, now);
+        assert!(vel.channels.contains_key("Dev.to"));
+        assert!(vel.channels.contains_key("Hashnode"));
+        assert!(vel.channels.contains_key("Medium"));
+
+        let devto = &vel.channels["Dev.to"];
+        assert_eq!(devto.views_delta_24h, 150);
+        assert_eq!(devto.trend, "Accelerating");
+
+        let hashnode = &vel.channels["Hashnode"];
+        assert_eq!(hashnode.views_delta_24h, 130);
+        assert_eq!(hashnode.trend, "Decelerating");
+
+        let medium = &vel.channels["Medium"];
+        assert_eq!(medium.views_delta_24h, 0);
+        assert_eq!(medium.trend, "Flat");
     }
 
     #[tokio::test]
@@ -3509,12 +3897,14 @@ mod tests {
                 views: 500,
                 reactions: 50,
                 comments: 10,
+                channels: Default::default(),
             },
             EngagementSnapshot {
                 timestamp: now,
                 views: 850,
                 reactions: 85,
                 comments: 18,
+                channels: Default::default(),
             },
         ];
 

@@ -21,11 +21,28 @@ export interface EngagementMetrics {
   last_synced_at?: string;
 }
 
+export interface ChannelMetrics {
+  views: number;
+  reactions: number;
+  comments: number;
+}
+
+export interface ChannelVelocity {
+  views_per_day: number;
+  reactions_per_day: number;
+  comments_per_day: number;
+  views_delta_24h: number;
+  reactions_delta_24h: number;
+  comments_delta_24h: number;
+  trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
+}
+
 export interface EngagementSnapshot {
   timestamp: string;
   views: number;
   reactions: number;
   comments: number;
+  channels?: Record<string, ChannelMetrics>;
 }
 
 export interface EngagementVelocity {
@@ -39,6 +56,7 @@ export interface EngagementVelocity {
   reactions_24h?: number;
   comments_24h?: number;
   trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
+  channels?: Record<string, ChannelVelocity>;
 }
 
 export interface EngagementHistoryResponse {

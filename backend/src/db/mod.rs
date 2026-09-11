@@ -37,6 +37,16 @@ pub struct EngagementMetrics {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChannelMetrics {
+    #[serde(default)]
+    pub views: u32,
+    #[serde(default)]
+    pub reactions: u32,
+    #[serde(default)]
+    pub comments: u32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EngagementSnapshot {
     pub timestamp: DateTime<Utc>,
     #[serde(default)]
@@ -45,6 +55,8 @@ pub struct EngagementSnapshot {
     pub reactions: u32,
     #[serde(default)]
     pub comments: u32,
+    #[serde(default)]
+    pub channels: std::collections::HashMap<String, ChannelMetrics>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
