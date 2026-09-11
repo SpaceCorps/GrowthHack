@@ -50,12 +50,29 @@ runs:
         EOF
 
         MARKER="<!-- tendril-flywheel-badge -->"
-        EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+        mkdir -p tendril-attribution
+        echo "${PR_NUMBER}" > tendril-attribution/pr_number.txt
+        cp comment.md tendril-attribution/comment.md
+
+        if ! EXISTING_COMMENT_OUTPUT=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" 2>&1); then
+          if echo "$EXISTING_COMMENT_OUTPUT" | grep -iqE "Resource not accessible|403|HttpError"; then
+            echo "::warning title=Fork PR Read-Only Permissions::GITHUB_TOKEN is read-only on fork pull_request runs. PR comment attribution was skipped. Use the companion workflow_run pattern (tendril-comment.yml) for open-source fork commenting."
+            exit 0
+          fi
+          echo "::warning title=GitHub API Error::Failed to fetch comments: $EXISTING_COMMENT_OUTPUT"
+          exit 0
+        fi
+
+        EXISTING_COMMENT_ID=$(echo "$EXISTING_COMMENT_OUTPUT" | head -n 1)
 
         if [ -n "$EXISTING_COMMENT_ID" ]; then
           echo "Updating existing PR comment ID: $EXISTING_COMMENT_ID"
-          gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md
+          if ! PATCH_OUTPUT=$(gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md 2>&1); then
+            echo "::warning title=Comment Update Failed::Unable to update PR comment: $PATCH_OUTPUT"
+          fi
         else
           echo "Creating new PR comment on PR #$PR_NUMBER"
-          gh pr comment "${PR_NUMBER}" --body-file comment.md
+          if ! POST_OUTPUT=$(gh pr comment "${PR_NUMBER}" --body-file comment.md 2>&1); then
+            echo "::warning title=Comment Creation Failed::Unable to create PR comment: $POST_OUTPUT"
+          fi
         fi
