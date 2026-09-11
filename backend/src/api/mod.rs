@@ -10,6 +10,7 @@ pub mod issues;
 pub mod listings;
 pub mod packages;
 pub mod recipes;
+pub mod submission;
 pub mod trends;
 
 use axum::{
@@ -118,6 +119,19 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route(
             "/api/listings/{id}/verify-backlink",
             post(listings::verify_backlink),
+        )
+        .route(
+            "/api/listings/{id}/submit-upstream",
+            post(listings::submit_upstream),
+        )
+        .route(
+            "/api/listings/submit-batch",
+            post(listings::submit_batch),
+        )
+        // Upstream Submissions & GitHub Token Status
+        .route(
+            "/api/submissions/github-status",
+            get(submission::get_github_status),
         )
         .route(
             "/api/listings/{id}/submit-pr",

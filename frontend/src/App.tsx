@@ -68,6 +68,14 @@ export const App: React.FC = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [packages, setPackages] = useState<PackageManagerTarget[]>([]);
   const [demos, setDemos] = useState<VideoDemo[]>([]);
+  const [githubStatus, setGithubStatus] = useState<
+    | {
+        configured: boolean;
+        username?: string;
+        message: string;
+      }
+    | undefined
+  >(undefined);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
 
@@ -90,6 +98,7 @@ export const App: React.FC = () => {
         resPackages,
         resStatus,
         resDemos,
+        resGithub,
         resRecipes,
         resContributors,
       ] = await Promise.all([
@@ -100,6 +109,9 @@ export const App: React.FC = () => {
         fetch("/api/packages").then((r) => r.json()),
         fetch("/api/agent/status").then((r) => r.json()),
         fetch("/api/demos").then((r) => r.json()),
+        fetch("/api/submissions/github-status")
+          .then((r) => r.json())
+          .catch(() => undefined),
         fetch("/api/recipes").then((r) => r.json()),
         fetch("/api/contributors/issues").then((r) => r.json()),
       ]);
@@ -110,6 +122,9 @@ export const App: React.FC = () => {
       setPackages(resPackages);
       setAgentStatus(resStatus);
       setDemos(resDemos);
+      if (resGithub) {
+        setGithubStatus(resGithub);
+      }
       setRecipes(resRecipes);
       setContributorIssues(resContributors);
 
@@ -432,6 +447,47 @@ export const App: React.FC = () => {
       return data;
     } catch (err) {
       console.error("Verify backlink error:", err);
+      throw err;
+    }
+  };
+
+  const handleSubmitUpstream = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/submit-upstream`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.task_id) {
+        setTerminalTitle(`Automated Upstream PR Submission #${id}`);
+        setActiveTaskId(data.task_id);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Submit upstream PR error:", err);
+      throw err;
+    }
+  };
+
+  const handleBatchSubmitUpstream = async (category?: string, listingIds?: string[]) => {
+    try {
+      const res = await fetch("/api/listings/submit-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: category === "all" ? undefined : category,
+          listing_ids: listingIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.task_ids && data.task_ids.length > 0) {
+        setTerminalTitle(`Batch Upstream PR Submissions (${data.targeted_count} targets)`);
+        setActiveTaskId(data.task_ids[0]);
+      }
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Batch submit upstream PRs error:", err);
       throw err;
     }
   };
@@ -935,6 +991,9 @@ export const App: React.FC = () => {
             onCreateListing={handleCreateListing}
             onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
             onVerifyBacklink={handleVerifyBacklink}
+            onSubmitUpstream={handleSubmitUpstream}
+            onBatchSubmitUpstream={handleBatchSubmitUpstream}
+            githubStatus={githubStatus}
           />
         )}
 

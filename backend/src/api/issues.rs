@@ -44,6 +44,18 @@ impl Default for AppContext {
 }
 
 impl AppContext {
+    pub fn get_github_token(&self) -> Option<String> {
+        if let Ok(state) = self.state.try_read() {
+            if let Some(ref token) = state.syndication_settings.github_token {
+                let trimmed = token.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        self.config.github_token.clone()
+    }
+
     pub fn new_test() -> Self {
         Self::default()
     }
