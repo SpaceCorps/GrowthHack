@@ -173,6 +173,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/batch-submit-pr",
             post(listings::batch_submit_listing_prs),
         )
+        .route("/api/listings/sync-prs", post(listings::sync_all_listing_prs))
+        .route(
+            "/api/listings/{id}/sync-pr",
+            post(listings::check_single_listing_pr),
+        )
+        .route(
+            "/api/webhooks/github/pr",
+            post(listings::handle_github_pr_webhook),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route(
