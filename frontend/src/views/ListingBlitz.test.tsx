@@ -245,8 +245,7 @@ describe("ListingBlitz View", () => {
   });
 
   it("fetches GitHub status on mount when githubStatus prop is not provided", async () => {
-    const { githubStatus: _, ...propsWithoutStatus } = defaultProps;
-    render(<ListingBlitz {...propsWithoutStatus} />);
+    render(<ListingBlitz {...defaultProps} githubStatus={undefined} />);
 
     expect(global.fetch).toHaveBeenCalledWith("/api/submissions/github-status");
 
