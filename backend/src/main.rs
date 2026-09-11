@@ -52,6 +52,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let timeout_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic contributor issue claim timeout sweep...");
+            match api::contributors::check_claim_timeouts_internal(&timeout_ctx, 7).await {
+                Ok(unclaimed) => {
+                    tracing::info!(
+                        "Claim timeout sweep completed: {} issues automatically unclaimed ({:?})",
+                        unclaimed.len(),
+                        unclaimed
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Claim timeout sweep warning: {}", e);
+                }
+            }
+        }
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

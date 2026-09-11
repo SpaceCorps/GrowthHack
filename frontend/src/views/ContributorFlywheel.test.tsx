@@ -205,6 +205,32 @@ describe("ContributorFlywheel View", () => {
           json: () => Promise.resolve(mockContributors),
         });
       }
+      if (url.includes("/unclaim")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...mockIssues[2],
+              claimed: false,
+              claimed_by: undefined,
+              claimed_at: undefined,
+              github_sync_status: "Unclaimed",
+              github_sync_message: "Claim released manually",
+            }),
+        });
+      }
+      if (url.includes("/check-timeouts")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              unclaimed_count: 1,
+              unclaimed_issue_ids: ["cf-issue-3"],
+              message: "Timeouts evaluated",
+            }),
+        });
+      }
       if (url.includes("/claim")) {
         return Promise.resolve({
           ok: true,
@@ -479,5 +505,54 @@ describe("ContributorFlywheel View", () => {
     // Close modal
     const finishBtn = screen.getByTestId("finish-verify-btn");
     fireEvent.click(finishBtn);
+  });
+
+  it("renders claim timeout countdown badge on claimed issue and handles timeout due", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-timeout-badge-cf-issue-3")).toBeDefined();
+    });
+
+    const badge = screen.getByTestId("claim-timeout-badge-cf-issue-3");
+    expect(badge.textContent).toMatch(/(days? left before timeout|Timeout due)/);
+  });
+
+  it("handles manual unclaim button click", async () => {
+    const onIssueClaimed = vi.fn();
+    render(<ContributorFlywheel onIssueClaimed={onIssueClaimed} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("unclaim-btn-cf-issue-3")).toBeDefined();
+    });
+
+    const unclaimBtn = screen.getByTestId("unclaim-btn-cf-issue-3");
+    fireEvent.click(unclaimBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/cf-issue-3/unclaim",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(onIssueClaimed).toHaveBeenCalled();
+    });
+  });
+
+  it("handles Check Timeouts toolbar button click", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-timeouts-btn")).toBeDefined();
+    });
+
+    const checkBtn = screen.getByTestId("check-timeouts-btn");
+    fireEvent.click(checkBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/check-timeouts",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
   });
 });
