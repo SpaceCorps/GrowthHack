@@ -556,6 +556,7 @@ export const App: React.FC = () => {
     version?: string,
     tagOrSkipAuth?: string | boolean,
     skipAuthCheck?: boolean,
+    skipSyncCheck?: boolean,
   ) => {
     const tag = typeof tagOrSkipAuth === "string" ? tagOrSkipAuth : undefined;
     const skipAuth = typeof tagOrSkipAuth === "boolean" ? tagOrSkipAuth : skipAuthCheck;
@@ -563,7 +564,12 @@ export const App: React.FC = () => {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, tag, skip_auth_check: skipAuth }),
+        body: JSON.stringify({
+          version,
+          tag,
+          skip_auth_check: skipAuth,
+          skip_sync_check: skipSyncCheck,
+        }),
       });
       const data = await res.json();
       if (data && data.task_id) {

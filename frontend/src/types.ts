@@ -279,6 +279,18 @@ export interface GhAuthStatus {
   message: string;
 }
 
+export interface ForkSyncStatus {
+  target_key: string;
+  upstream_repo: string;
+  fork_repo?: string;
+  fork_exists: boolean;
+  is_synchronized: boolean;
+  behind_by: number;
+  ahead_by: number;
+  status: "synchronized" | "behind" | "no_fork" | "diverged" | "unknown";
+  message: string;
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;
