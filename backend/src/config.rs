@@ -82,6 +82,29 @@ pub fn resolve_ivy_web_images_path(
     probe_existing_path(&candidates).unwrap_or_else(|| PathBuf::from("./public/site/images"))
 }
 
+pub fn resolve_agy_path(
+    custom_env: Option<String>,
+    local_app_data: Option<String>,
+    home: Option<&Path>,
+) -> PathBuf {
+    if let Some(custom) = custom_env {
+        return PathBuf::from(custom);
+    }
+
+    let mut candidates = Vec::new();
+
+    if let Some(lad) = local_app_data {
+        candidates.push(PathBuf::from(lad).join("agy/bin/agy.exe"));
+    }
+
+    if let Some(home_dir) = home {
+        candidates.push(home_dir.join("AppData/Local/agy/bin/agy.exe"));
+        candidates.push(home_dir.join(".local/bin/agy"));
+    }
+
+    probe_existing_path(&candidates).unwrap_or_else(|| PathBuf::from("agy"))
+}
+
 impl Config {
     pub fn load() -> Self {
         let host = std::env::var("HOST")
@@ -94,23 +117,18 @@ impl Config {
             .and_then(|p| p.parse().ok())
             .unwrap_or(4200);
 
+        let home = get_user_home();
+
         // Detect agy executable path
-        let agy_path = if let Ok(custom) = std::env::var("AGY_PATH") {
-            PathBuf::from(custom)
-        } else {
-            let default_win = PathBuf::from(r"C:\Users\pavel\AppData\Local\agy\bin\agy.exe");
-            if default_win.exists() {
-                default_win
-            } else {
-                PathBuf::from("agy")
-            }
-        };
+        let agy_path = resolve_agy_path(
+            std::env::var("AGY_PATH").ok(),
+            std::env::var("LOCALAPPDATA").ok(),
+            home.as_deref(),
+        );
 
         let data_file = std::env::var("DATA_FILE")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("growth_data.json"));
-
-        let home = get_user_home();
 
         let ivy_web_content_path = resolve_ivy_web_content_path(
             std::env::var("IVY_WEB_CONTENT_PATH").ok(),
@@ -233,5 +251,47 @@ mod tests {
         let config = Config::load();
         std::env::remove_var("HOST");
         assert_eq!(config.host, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    }
+
+    #[test]
+    fn test_resolve_agy_path_custom_override() {
+        let custom = Some("/custom/bin/agy".to_string());
+        let resolved = resolve_agy_path(custom, None, None);
+        assert_eq!(resolved, PathBuf::from("/custom/bin/agy"));
+    }
+
+    #[test]
+    fn test_resolve_agy_path_default_fallback() {
+        let dummy_home = PathBuf::from("/nonexistent/dummy/home/path_for_growthhack_tests");
+        let dummy_lad = "/nonexistent/dummy/localappdata/path_for_growthhack_tests".to_string();
+        let resolved = resolve_agy_path(None, Some(dummy_lad), Some(&dummy_home));
+        assert_eq!(resolved, PathBuf::from("agy"));
+    }
+
+    #[test]
+    fn test_resolve_agy_path_localappdata() {
+        let temp_dir = std::env::temp_dir().join(format!("test_agy_lad_{}", uuid::Uuid::new_v4()));
+        let test_bin = temp_dir.join("agy/bin/agy.exe");
+        let _ = std::fs::create_dir_all(test_bin.parent().unwrap());
+        let _ = std::fs::write(&test_bin, b"dummy binary");
+
+        let resolved = resolve_agy_path(None, Some(temp_dir.to_string_lossy().to_string()), None);
+        assert_eq!(resolved, test_bin);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_agy_path_userprofile() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_agy_userprofile_{}", uuid::Uuid::new_v4()));
+        let test_bin = temp_dir.join("AppData/Local/agy/bin/agy.exe");
+        let _ = std::fs::create_dir_all(test_bin.parent().unwrap());
+        let _ = std::fs::write(&test_bin, b"dummy binary");
+
+        let resolved = resolve_agy_path(None, None, Some(&temp_dir));
+        assert_eq!(resolved, test_bin);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
