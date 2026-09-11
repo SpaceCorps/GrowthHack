@@ -19,6 +19,8 @@ const mockIssues: ContributorIssue[] = [
     reproduction_steps: ["Run cargo run -- completion --help", "Observe missing zsh generator"],
     mentor: "@rorychatt",
     claimed: false,
+    github_issue_number: 42,
+    github_repo: "SpaceCorps/GrowthHack",
   },
   {
     id: "cf-issue-2",
@@ -45,6 +47,10 @@ const mockIssues: ContributorIssue[] = [
     claimed: true,
     claimed_by: "@test-dev",
     claimed_at: "2026-09-10T12:00:00Z",
+    github_issue_number: 99,
+    github_repo: "SpaceCorps/GrowthHack",
+    github_sync_status: "Synced",
+    github_sync_message: "Assigned to @test-dev with claimed label",
   },
 ];
 
@@ -113,7 +119,9 @@ describe("ContributorFlywheel View", () => {
             Promise.resolve({
               ...mockIssues[0],
               claimed: true,
-              claimed_by: "@test-claimer",
+              claimed_by: "@janedev",
+              github_sync_status: "Synced",
+              github_sync_message: "Issue #42 assigned to @janedev with 'claimed' label",
             }),
         });
       }
@@ -153,6 +161,25 @@ describe("ContributorFlywheel View", () => {
     // Check contributor avatars
     expect(screen.getByText("Rory Chatt")).toBeDefined();
     expect(screen.getByText("Sarah Jenkins")).toBeDefined();
+  });
+
+  it("renders GitHub issue badges and sync status tags", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("github-issue-badge-cf-issue-1")).toBeDefined();
+    });
+
+    const badge1 = screen.getByTestId("github-issue-badge-cf-issue-1") as HTMLAnchorElement;
+    expect(badge1.href).toBe("https://github.com/SpaceCorps/GrowthHack/issues/42");
+    expect(badge1.textContent).toContain("#42");
+
+    // Unlinked issue should not have a badge
+    expect(screen.queryByTestId("github-issue-badge-cf-issue-2")).toBeNull();
+
+    // Claimed issue should display sync status tag
+    const syncTag = screen.getByTestId("github-sync-status-cf-issue-3");
+    expect(syncTag.textContent).toContain("GitHub: Synced");
   });
 
   it("handles onboarding checklist toggle and command copy", async () => {
@@ -202,7 +229,7 @@ describe("ContributorFlywheel View", () => {
     expect(screen.queryByText("Improve empty state message on Plan Review view")).toBeNull();
   });
 
-  it("opens claim modal and successfully claims an issue", async () => {
+  it("opens claim modal and successfully claims an issue with GitHub sync", async () => {
     const onIssueClaimed = vi.fn();
     render(<ContributorFlywheel onIssueClaimed={onIssueClaimed} />);
 
@@ -218,6 +245,12 @@ describe("ContributorFlywheel View", () => {
 
     const nameInput = screen.getByTestId("claim-name-input");
     const handleInput = screen.getByTestId("claim-handle-input");
+    const issueNumberInput = screen.getByTestId("claim-issue-number-input") as HTMLInputElement;
+    const autoSyncCheckbox = screen.getByTestId("claim-auto-sync-checkbox") as HTMLInputElement;
+
+    expect(issueNumberInput.value).toBe("42");
+    expect(autoSyncCheckbox.checked).toBe(true);
+
     fireEvent.change(nameInput, { target: { value: "Jane Developer" } });
     fireEvent.change(handleInput, { target: { value: "@janedev" } });
 
@@ -232,11 +265,20 @@ describe("ContributorFlywheel View", () => {
           body: JSON.stringify({
             contributor_name: "Jane Developer",
             github_handle: "@janedev",
+            github_issue_number: 42,
+            auto_sync_github: true,
           }),
         }),
       );
       expect(onIssueClaimed).toHaveBeenCalled();
+      expect(screen.getByTestId("claim-feedback-banner")).toBeDefined();
+      expect(screen.getByTestId("claim-feedback-sync-status").textContent).toContain("Synced");
     });
+
+    // Close feedback modal
+    const doneBtn = screen.getByTestId("claim-modal-done-btn");
+    fireEvent.click(doneBtn);
+    expect(screen.queryByTestId("claim-feedback-banner")).toBeNull();
   });
 
   it("copies contributing markdown, badge snippet, and html grid to clipboard", async () => {

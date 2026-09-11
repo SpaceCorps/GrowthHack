@@ -183,8 +183,14 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const isBlurbContentModified =
-      currentItem.type === "listing_blurb" && editContent !== currentItem.content;
+    const isContentModified =
+      (currentItem.type === "listing_blurb" && editContent !== currentItem.content) ||
+      (currentItem.type === "article" &&
+        (editContent !== currentItem.content ||
+          editTitle !== currentItem.title ||
+          editSummary !== currentItem.summary)) ||
+      (currentItem.type === "video_demo" &&
+        (editContent !== currentItem.content || editTitle !== currentItem.title));
 
     const updated: Partial<ReviewItem> = {
       title: editTitle,
@@ -192,7 +198,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
       summary: editSummary,
       content: editContent,
       backlinks: updatedBacklinks,
-      ...(isBlurbContentModified ? { status: "Pending" } : {}),
+      ...(isContentModified ? { status: "Pending" } : {}),
     };
 
     setItems((prev) => prev.map((it) => (it.id === currentItem.id ? { ...it, ...updated } : it)));

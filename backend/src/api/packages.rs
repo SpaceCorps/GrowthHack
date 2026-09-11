@@ -118,9 +118,13 @@ impl ReleaseInfo {
                 if let Some(ref body) = parsed.body {
                     for line in body.lines() {
                         if line.contains(&a.name) {
-                            for word in line.split(|c: char| c.is_whitespace() || c == '|' || c == ':' || c == '*' || c == '`') {
+                            for word in line.split(|c: char| {
+                                c.is_whitespace() || c == '|' || c == ':' || c == '*' || c == '`'
+                            }) {
                                 let clean = word.trim().to_lowercase();
-                                if clean.len() == 64 && clean.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                                if clean.len() == 64
+                                    && clean.chars().all(|ch| ch.is_ascii_hexdigit())
+                                {
                                     sha256 = Some(clean);
                                     break;
                                 }
@@ -169,7 +173,10 @@ impl ReleaseInfo {
 
     pub async fn fetch_latest(repo: &str) -> Result<Self, String> {
         let repo_to_use = std::env::var("IVY_TENDRIL_REPO").unwrap_or_else(|_| repo.to_string());
-        let url = format!("https://api.github.com/repos/{}/releases/latest", repo_to_use);
+        let url = format!(
+            "https://api.github.com/repos/{}/releases/latest",
+            repo_to_use
+        );
         let client = reqwest::Client::builder()
             .user_agent("GrowthHack-Backend/0.1.0")
             .build()
@@ -646,7 +653,11 @@ pub async fn update_package_status(
     Json(payload): Json<UpdatePackageStatusRequest>,
 ) -> (StatusCode, Json<Option<crate::db::PackageManagerTarget>>) {
     let mut state = ctx.state.write().await;
-    if let Some(target) = state.packages.iter_mut().find(|p| p.id == id || p.target_key == id) {
+    if let Some(target) = state
+        .packages
+        .iter_mut()
+        .find(|p| p.id == id || p.target_key == id)
+    {
         if let Some(status) = payload.status {
             target.status = status;
         }
@@ -762,7 +773,9 @@ pub fn extract_pr_url(output: &str) -> Option<String> {
         if let Some(idx) = line.find("https://github.com/") {
             let sub = &line[idx..];
             let end = sub
-                .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ')' || c == ']' || c == '>')
+                .find(|c: char| {
+                    c.is_whitespace() || c == '"' || c == '\'' || c == ')' || c == ']' || c == '>'
+                })
                 .unwrap_or(sub.len());
             let candidate = &sub[..end];
             let parts: Vec<&str> = candidate.split('/').collect();
@@ -779,10 +792,145 @@ pub fn extract_pr_url(output: &str) -> Option<String> {
     None
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GhAuthStatus {
+    pub authenticated: bool,
+    pub account: Option<String>,
+    pub message: String,
+}
+
+pub fn extract_gh_account(text: &str) -> Option<String> {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_lowercase();
+        if let Some(pos) = lower.find("account") {
+            let after = &trimmed[pos + "account".len()..];
+            let after_trimmed = after.trim_start_matches(|c: char| c == ':' || c.is_whitespace());
+            let acc: String = after_trimmed
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if !acc.is_empty() && acc != "true" && acc != "false" {
+                return Some(acc);
+            }
+        }
+    }
+    None
+}
+
+pub fn parse_gh_auth_output(success: bool, stdout: &str, stderr: &str) -> GhAuthStatus {
+    let combined = format!("{}\n{}", stdout, stderr);
+    let trimmed = combined.trim();
+
+    if success {
+        let account = extract_gh_account(trimmed);
+        let message = if let Some(ref acc) = account {
+            format!("GitHub CLI is authenticated as @{}.", acc)
+        } else {
+            "GitHub CLI is authenticated.".to_string()
+        };
+        GhAuthStatus {
+            authenticated: true,
+            account,
+            message,
+        }
+    } else {
+        let mut clean_msg = trimmed.to_string();
+        if clean_msg.is_empty() {
+            clean_msg = "GitHub CLI is not logged into any account.".to_string();
+        }
+        let message = if clean_msg.contains("gh auth login") {
+            clean_msg
+        } else {
+            format!(
+                "{} Run 'gh auth login' to authenticate GitHub CLI.",
+                clean_msg
+            )
+        };
+        GhAuthStatus {
+            authenticated: false,
+            account: None,
+            message,
+        }
+    }
+}
+
+pub async fn check_gh_auth_status() -> GhAuthStatus {
+    if let Ok(override_val) = std::env::var("GH_AUTH_STATUS_OVERRIDE") {
+        if override_val.eq_ignore_ascii_case("unauthenticated")
+            || override_val.eq_ignore_ascii_case("false")
+        {
+            return GhAuthStatus {
+                authenticated: false,
+                account: None,
+                message: "You are not logged into any GitHub hosts. Run 'gh auth login' to authenticate GitHub CLI.".to_string(),
+            };
+        } else if let Some(user) = override_val.strip_prefix("authenticated:") {
+            return GhAuthStatus {
+                authenticated: true,
+                account: Some(user.to_string()),
+                message: format!("GitHub CLI is authenticated as @{}.", user),
+            };
+        } else if override_val.eq_ignore_ascii_case("authenticated")
+            || override_val.eq_ignore_ascii_case("true")
+        {
+            return GhAuthStatus {
+                authenticated: true,
+                account: Some("testuser".to_string()),
+                message: "GitHub CLI is authenticated as @testuser.".to_string(),
+            };
+        }
+    }
+
+    let mut cmd = tokio::process::Command::new("gh");
+    cmd.args(["auth", "status"]);
+
+    if let Ok(token) = std::env::var("GH_TOKEN").or_else(|_| std::env::var("GITHUB_TOKEN")) {
+        if !token.is_empty() {
+            cmd.env("GH_TOKEN", &token);
+        }
+    }
+
+    match cmd.output().await {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            parse_gh_auth_output(output.status.success(), &stdout, &stderr)
+        }
+        Err(e) => {
+            if let Ok(token) = std::env::var("GH_TOKEN").or_else(|_| std::env::var("GITHUB_TOKEN"))
+            {
+                if !token.trim().is_empty() {
+                    return GhAuthStatus {
+                        authenticated: true,
+                        account: None,
+                        message: "GitHub CLI authenticated via environment token.".to_string(),
+                    };
+                }
+            }
+            GhAuthStatus {
+                authenticated: false,
+                account: None,
+                message: format!(
+                    "Failed to execute 'gh': {}. Run 'gh auth login' to authenticate GitHub CLI.",
+                    e
+                ),
+            }
+        }
+    }
+}
+
+pub async fn get_gh_auth_status() -> (StatusCode, Json<GhAuthStatus>) {
+    let status = check_gh_auth_status().await;
+    (StatusCode::OK, Json(status))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct DispatchPackagePrRequest {
     pub version: Option<String>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub skip_auth_check: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -800,7 +948,11 @@ pub async fn dispatch_package_pr(
     Json(payload): Json<DispatchPackagePrRequest>,
 ) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
     let state = ctx.state.read().await;
-    let target = match state.packages.iter().find(|p| p.id == id || p.target_key == id) {
+    let target = match state
+        .packages
+        .iter()
+        .find(|p| p.id == id || p.target_key == id)
+    {
         Some(t) => t.clone(),
         None => return (StatusCode::NOT_FOUND, Json(None)),
     };
@@ -817,6 +969,26 @@ pub async fn dispatch_package_pr(
 
     let version = payload.version.as_deref().unwrap_or("0.8.4");
     let commands = build_upstream_pr_commands(&target, &manifest, version);
+
+    let is_test_bypass = std::env::var("TEST_BYPASS_AUTH")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+    if payload.skip_auth_check != Some(true) && !is_test_bypass {
+        let auth_status = check_gh_auth_status().await;
+        if !auth_status.authenticated {
+            return (
+                StatusCode::PRECONDITION_FAILED,
+                Json(Some(DispatchPackagePrResponse {
+                    task_id: String::new(),
+                    message: auth_status.message,
+                    target_key: target.target_key,
+                    upstream_repo: target.registry_repo,
+                    commands,
+                })),
+            );
+        }
+    }
+
     let prompt = build_upstream_pr_agent_prompt(&target, &manifest, version);
 
     let task_id = format!("task-pkg-pr-{}", Uuid::new_v4().simple());
@@ -833,7 +1005,11 @@ pub async fn dispatch_package_pr(
         if let Ok(output) = exec_result {
             if let Some(found_url) = extract_pr_url(&output) {
                 let mut state = ctx_clone.state.write().await;
-                if let Some(pkg) = state.packages.iter_mut().find(|p| p.id == target_id || p.target_key == target_key) {
+                if let Some(pkg) = state
+                    .packages
+                    .iter_mut()
+                    .find(|p| p.id == target_id || p.target_key == target_key)
+                {
                     pkg.status = "PR Submitted".to_string();
                     pkg.pr_url = Some(found_url.clone());
                     pkg.updated_at = Utc::now();
@@ -861,7 +1037,11 @@ pub async fn get_package_dispatch_commands(
     State(ctx): State<Arc<AppContext>>,
 ) -> (StatusCode, Json<Option<DispatchPackagePrResponse>>) {
     let state = ctx.state.read().await;
-    let target = match state.packages.iter().find(|p| p.id == id || p.target_key == id) {
+    let target = match state
+        .packages
+        .iter()
+        .find(|p| p.id == id || p.target_key == id)
+    {
         Some(t) => t.clone(),
         None => return (StatusCode::NOT_FOUND, Json(None)),
     };
@@ -889,4 +1069,3 @@ pub async fn get_package_dispatch_commands(
         })),
     )
 }
-

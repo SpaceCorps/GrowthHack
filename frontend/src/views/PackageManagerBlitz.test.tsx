@@ -71,6 +71,16 @@ describe("PackageManagerBlitz View", () => {
       configurable: true,
     });
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            account: "testuser",
+            message: "GitHub CLI is authenticated as @testuser.",
+          }),
+        });
+      }
       const target = url.split("/")[3] || "homebrew";
       return Promise.resolve({
         ok: true,
@@ -305,5 +315,88 @@ describe("PackageManagerBlitz View", () => {
 
     expect(onDispatch).toHaveBeenCalledTimes(1);
     expect(onDispatch).toHaveBeenCalledWith("pkg-scoop", "0.8.4");
+  });
+
+  it("displays authenticated badge in dispatch modal when gh-auth-status returns authenticated: true", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            account: "spacecorps-dev",
+            message: "GitHub CLI is authenticated as @spacecorps-dev.",
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({}),
+      });
+    });
+
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const dispatchBtn = screen.getByTestId("dispatch-pr-pkg-winget");
+    fireEvent.click(dispatchBtn);
+
+    const badge = await screen.findByTestId("gh-auth-badge");
+    expect(badge).toBeDefined();
+    expect(badge.textContent).toContain("GitHub CLI Authenticated");
+    expect(badge.textContent).toContain("spacecorps-dev");
+
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn") as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(false);
+  });
+
+  it("displays warning banner and gh auth login recommendation when gh-auth-status returns authenticated: false", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/packages/gh-auth-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            authenticated: false,
+            account: null,
+            message:
+              "You are not logged into any GitHub hosts. Run 'gh auth login' to authenticate GitHub CLI.",
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({}),
+      });
+    });
+
+    const onDispatch = vi.fn().mockImplementation(() => Promise.resolve());
+    render(<PackageManagerBlitz packages={mockPackages} onDispatchPackagePr={onDispatch} />);
+
+    const dispatchBtn = screen.getByTestId("dispatch-pr-pkg-homebrew");
+    fireEvent.click(dispatchBtn);
+
+    const warning = await screen.findByTestId("gh-auth-warning");
+    expect(warning).toBeDefined();
+    expect(within(warning).getByText("GitHub CLI Authentication Required")).toBeDefined();
+    expect(
+      within(warning).getByText(
+        "You must authenticate with GitHub CLI before submitting upstream pull requests.",
+      ),
+    ).toBeDefined();
+    expect(within(warning).getByText("gh auth login")).toBeDefined();
+
+    // Confirm button is disabled without override
+    const confirmBtn = screen.getByTestId("confirm-dispatch-btn") as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+
+    // Check override checkbox
+    const skipCheckbox = screen.getByTestId("skip-auth-checkbox") as HTMLInputElement;
+    fireEvent.click(skipCheckbox);
+    expect(skipCheckbox.checked).toBe(true);
+    expect(confirmBtn.disabled).toBe(false);
+
+    // Click confirm dispatch with override enabled
+    fireEvent.click(confirmBtn);
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith("pkg-homebrew", "0.8.4", true);
   });
 });

@@ -249,7 +249,7 @@ pub struct Recipe {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ContributorIssue {
     pub id: String,
     pub title: String,
@@ -264,6 +264,14 @@ pub struct ContributorIssue {
     pub claimed_by: Option<String>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub pr_url: Option<String>,
+    #[serde(default)]
+    pub github_issue_number: Option<u64>,
+    #[serde(default)]
+    pub github_repo: Option<String>,
+    #[serde(default)]
+    pub github_sync_status: Option<String>,
+    #[serde(default)]
+    pub github_sync_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2082,6 +2090,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(14),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-2".to_string(),
@@ -2101,6 +2112,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(15),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-3".to_string(),
@@ -2120,6 +2134,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-4".to_string(),
@@ -2139,6 +2154,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-5".to_string(),
@@ -2158,6 +2174,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-6".to_string(),
@@ -2177,6 +2194,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-7".to_string(),
@@ -2196,6 +2214,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-8".to_string(),
@@ -2215,6 +2234,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-9".to_string(),
@@ -2234,6 +2254,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-10".to_string(),
@@ -2253,6 +2274,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-11".to_string(),
@@ -2272,6 +2294,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-12".to_string(),
@@ -2291,6 +2314,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-13".to_string(),
@@ -2310,6 +2334,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-14".to_string(),
@@ -2329,6 +2354,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-15".to_string(),
@@ -2348,6 +2374,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
         ]
     }
