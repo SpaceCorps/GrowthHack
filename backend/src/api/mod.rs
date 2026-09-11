@@ -290,6 +290,7 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/playground/scenarios", get(playground::list_scenarios))
         .route("/api/playground/import-issue", post(playground::import_issue))
         .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
         .route("/api/playground/status", get(playground::get_status))
         .route("/api/playground/start", post(playground::start_simulation))
         .route("/api/playground/reset", post(playground::reset_simulation))
