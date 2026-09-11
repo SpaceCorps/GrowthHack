@@ -84,11 +84,25 @@ describe("ListingBlitz View", () => {
       writable: true,
       configurable: true,
     });
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/api/submissions/github-status")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            configured: false,
+            message: "GitHub token not configured. Set GITHUB_TOKEN environment variable.",
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it("renders metric cards and listing cards correctly", () => {
@@ -227,6 +241,18 @@ describe("ListingBlitz View", () => {
     expect(badge).toBeDefined();
     expect(badge.textContent).toContain("Verified Live");
     expect(onUpdateStatus).toHaveBeenCalledWith("list-1", "Live");
+  });
+
+  it("fetches GitHub status on mount when githubStatus prop is not provided", async () => {
+    render(<ListingBlitz {...defaultProps} />);
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/submissions/github-status");
+
+    const banner = await screen.findByTestId("github-status-banner");
+    expect(banner).toBeDefined();
+    expect(banner.textContent).toContain(
+      "GitHub token not configured. Set GITHUB_TOKEN environment variable.",
+    );
   });
 
   it("renders GitHub status banner when unconfigured and connected badge when configured", () => {
