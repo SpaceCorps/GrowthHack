@@ -232,6 +232,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::claim_contributor_issue),
         )
         .route(
+            "/api/contributors/issues/{id}/unclaim",
+            post(contributors::unclaim_contributor_issue),
+        )
+        .route(
+            "/api/contributors/issues/check-timeouts",
+            post(contributors::check_claim_timeouts),
+        )
+        .route(
             "/api/contributors/issues/{id}/github",
             put(contributors::link_github_issue),
         )

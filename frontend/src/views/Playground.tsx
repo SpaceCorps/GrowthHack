@@ -544,6 +544,18 @@ export const Playground: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
                   {sc.description}
                 </p>
+                {sc.labels && sc.labels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {sc.labels.map((label, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono border border-slate-700/50"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between mt-3 text-[11px] text-slate-500 font-mono">
                   <span>Branch: {sc.target_branch}</span>
                   <span className="text-cyan-400 font-semibold">~{sc.estimated_seconds}s run</span>
@@ -562,10 +574,35 @@ export const Playground: React.FC = () => {
               <Play className="w-5 h-5 text-emerald-400" />
               Autonomous Pipeline Stepper
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Current scenario:{" "}
-              <span className="text-white font-semibold">{activeScenario?.title}</span>
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-400">
+                Current scenario:{" "}
+                <span className="text-white font-semibold">{activeScenario?.title}</span>
+              </p>
+              {activeScenario?.issue_url && (
+                <a
+                  href={activeScenario.issue_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-mono transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>View GitHub Issue</span>
+                </a>
+              )}
+            </div>
+            {activeScenario?.labels && activeScenario.labels.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {activeScenario.labels.map((label, idx) => (
+                  <span
+                    key={idx}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-mono font-medium"
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -1173,6 +1210,13 @@ export const Playground: React.FC = () => {
                   onChange={(e) => setImportUrl(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>
+                    Live issue title, description, and labels will be imported automatically when a
+                    GitHub token is configured.
+                  </span>
+                </p>
               </div>
 
               <div>
