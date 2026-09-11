@@ -111,9 +111,13 @@ pub async fn update_article(
     Path(id): Path<String>,
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<UpdateArticleRequest>,
-) -> impl IntoResponse {
+) -> (StatusCode, Json<Option<Article>>) {
     let mut state = ctx.state.write().await;
     if let Some(article) = state.articles.iter_mut().find(|a| a.id == id) {
+        let content_modified = payload.content.as_ref().is_some_and(|c| c != &article.content)
+            || payload.title.as_ref().is_some_and(|t| t != &article.title)
+            || payload.summary.as_ref().is_some_and(|s| s != &article.summary);
+
         if let Some(title) = payload.title {
             article.title = title;
         }
@@ -133,6 +137,9 @@ pub async fn update_article(
                 article.published_at = None;
             }
             article.status = status;
+        } else if content_modified {
+            article.status = "Pending".to_string();
+            article.published_at = None;
         }
         if let Some(backlinks) = payload.backlinks {
             article.backlinks = backlinks;
@@ -2790,7 +2797,7 @@ mod tests {
         assert_eq!(parsed.hashnode_api_key, None);
         assert_eq!(parsed.hashnode_publication_id, None);
         assert_eq!(parsed.webhook_secret, None);
-        assert_eq!(parsed.publish_as_draft, true);
+        assert!(parsed.publish_as_draft);
 
         // Verify round-trip persistence
         let populated = SyndicationSettings {
@@ -3270,5 +3277,116 @@ mod tests {
         assert_eq!(parsed[1].reactions, 21);
         assert_eq!(parsed[1].comments, 2);
         assert_eq!(parsed[1].views, 310);
+    }
+
+    #[tokio::test]
+    async fn test_update_article_resets_status_to_pending_on_content_change() {
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+        let article = Article {
+            id: "art-reset-test".to_string(),
+            title: "Original Title".to_string(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: "Original summary.".to_string(),
+            content: "Original content.".to_string(),
+            backlinks: vec![],
+            outbound_citations: vec![],
+            status: "Approved".to_string(),
+            created_at: now,
+            published_at: Some(now),
+            slug: Some("original-title".to_string()),
+            exports: vec![],
+            engagement: None,
+        };
+
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.push(article);
+        }
+
+        // 1. Modifying content without explicit status resets status to Pending and clears published_at
+        let update_content_req = UpdateArticleRequest {
+            title: None,
+            channel: None,
+            summary: None,
+            content: Some("Modified content text.".to_string()),
+            status: None,
+            backlinks: None,
+            outbound_citations: None,
+        };
+
+        let (status, Json(updated_opt)) = update_article(
+            Path("art-reset-test".to_string()),
+            State(ctx.clone()),
+            Json(update_content_req),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let updated = updated_opt.expect("Article should exist");
+        assert_eq!(updated.content, "Modified content text.");
+        assert_eq!(updated.status, "Pending");
+        assert!(updated.published_at.is_none());
+
+        // Re-set to Published
+        {
+            let mut state = ctx.state.write().await;
+            if let Some(art) = state.articles.iter_mut().find(|a| a.id == "art-reset-test") {
+                art.status = "Published".to_string();
+                art.published_at = Some(now);
+            }
+        }
+
+        // 2. Modifying title without explicit status resets status to Pending and clears published_at
+        let update_title_req = UpdateArticleRequest {
+            title: Some("Modified Article Title".to_string()),
+            channel: None,
+            summary: None,
+            content: None,
+            status: None,
+            backlinks: None,
+            outbound_citations: None,
+        };
+
+        let (status2, Json(updated_opt2)) = update_article(
+            Path("art-reset-test".to_string()),
+            State(ctx.clone()),
+            Json(update_title_req),
+        )
+        .await;
+
+        assert_eq!(status2, StatusCode::OK);
+        let updated2 = updated_opt2.expect("Article should exist");
+        assert_eq!(updated2.title, "Modified Article Title");
+        assert_eq!(updated2.status, "Pending");
+        assert!(updated2.published_at.is_none());
+
+        // 3. Modifying with explicit status preserves the provided status
+        let update_explicit_req = UpdateArticleRequest {
+            title: Some("Preserved Status Title".to_string()),
+            channel: None,
+            summary: None,
+            content: None,
+            status: Some("Published".to_string()),
+            backlinks: None,
+            outbound_citations: None,
+        };
+
+        let (status3, Json(updated_opt3)) = update_article(
+            Path("art-reset-test".to_string()),
+            State(ctx.clone()),
+            Json(update_explicit_req),
+        )
+        .await;
+
+        assert_eq!(status3, StatusCode::OK);
+        let updated3 = updated_opt3.expect("Article should exist");
+        assert_eq!(updated3.title, "Preserved Status Title");
+        assert_eq!(updated3.status, "Published");
+        assert!(updated3.published_at.is_some());
+
+        let _ = std::fs::remove_file(&ctx.data_file);
     }
 }

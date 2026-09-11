@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { PackageManagerTarget, PackageManifestResponse } from "../types";
+import type { PackageManagerTarget, PackageManifestResponse, GhAuthStatus } from "../types";
 import {
   Package,
   Terminal,
@@ -16,6 +16,8 @@ import {
   X,
   RefreshCw,
   Sparkles,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 
 interface PackageManagerBlitzProps {
@@ -24,7 +26,11 @@ interface PackageManagerBlitzProps {
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
   ) => Promise<void> | void;
-  onDispatchPackagePr?: (id: string, version?: string) => Promise<string | void>;
+  onDispatchPackagePr?: (
+    id: string,
+    version?: string,
+    skipAuthCheck?: boolean,
+  ) => Promise<string | void>;
 }
 
 export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
@@ -48,6 +54,25 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const [dispatchVersion, setDispatchVersion] = useState<string>("0.8.4");
   const [copiedCommands, setCopiedCommands] = useState<boolean>(false);
   const [isLaunching, setIsLaunching] = useState<boolean>(false);
+  const [authStatus, setAuthStatus] = useState<GhAuthStatus | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(false);
+  const [skipAuthOverride, setSkipAuthOverride] = useState<boolean>(false);
+  const [copiedLoginCmd, setCopiedLoginCmd] = useState<boolean>(false);
+
+  const fetchGhAuthStatus = async () => {
+    setIsCheckingAuth(true);
+    try {
+      const res = await fetch("/api/packages/gh-auth-status");
+      if (res.ok) {
+        const data: GhAuthStatus = await res.json();
+        setAuthStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to check GitHub CLI auth status:", err);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
 
   const getPreviewCommands = (target: PackageManagerTarget, version: string): string[] => {
     switch (target.target_key) {
@@ -90,6 +115,9 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
     setDispatchTarget(pkg);
     setDispatchVersion("0.8.4");
     setCopiedCommands(false);
+    setSkipAuthOverride(false);
+    setAuthStatus(null);
+    fetchGhAuthStatus();
   };
 
   // Manifest content cache/fallback
@@ -782,6 +810,103 @@ Installers:
                 />
               </div>
 
+              {/* GitHub CLI Authentication Pre-Flight Feedback Card */}
+              {isCheckingAuth && !authStatus && (
+                <div
+                  data-testid="gh-auth-loading"
+                  className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center space-x-2 text-xs text-slate-400 font-mono"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                  <span>Checking GitHub CLI authentication status...</span>
+                </div>
+              )}
+
+              {authStatus && authStatus.authenticated && (
+                <div
+                  data-testid="gh-auth-badge"
+                  className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl flex items-center justify-between"
+                >
+                  <div className="flex items-center space-x-2 text-emerald-300 text-xs font-mono">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      GitHub CLI Authenticated:{" "}
+                      <strong className="text-white font-semibold">
+                        {authStatus.account || "Active"}
+                      </strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchGhAuthStatus}
+                    disabled={isCheckingAuth}
+                    data-testid="recheck-gh-auth-btn"
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-mono transition-colors disabled:opacity-50"
+                    title="Re-check authentication status"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isCheckingAuth ? "animate-spin" : ""}`} />
+                    <span>Re-check</span>
+                  </button>
+                </div>
+              )}
+
+              {authStatus && !authStatus.authenticated && (
+                <div
+                  data-testid="gh-auth-warning"
+                  className="p-3.5 bg-amber-950/40 border border-amber-800/80 rounded-xl space-y-2.5 text-xs text-amber-200"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 font-bold text-amber-300">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>GitHub CLI Authentication Required</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchGhAuthStatus}
+                      disabled={isCheckingAuth}
+                      data-testid="recheck-gh-auth-btn"
+                      className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono transition-colors disabled:opacity-50"
+                      title="Re-check authentication status"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isCheckingAuth ? "animate-spin" : ""}`} />
+                      <span>Re-check</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                    You must authenticate with GitHub CLI before submitting upstream pull requests.
+                  </p>
+                  <div className="flex items-center justify-between bg-slate-950 px-2.5 py-1.5 rounded-lg border border-amber-900/60 font-mono text-[11px]">
+                    <code className="text-amber-300">gh auth login</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText("gh auth login");
+                        setCopiedLoginCmd(true);
+                        setTimeout(() => setCopiedLoginCmd(false), 2000);
+                      }}
+                      data-testid="copy-login-cmd-btn"
+                      className="text-slate-400 hover:text-white p-0.5 rounded transition-colors"
+                      title="Copy command"
+                    >
+                      {copiedLoginCmd ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <label className="flex items-center space-x-2 pt-1 text-[11px] text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      data-testid="skip-auth-checkbox"
+                      checked={skipAuthOverride}
+                      onChange={(e) => setSkipAuthOverride(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    <span>Proceed anyway (skip authentication pre-flight check)</span>
+                  </label>
+                </div>
+              )}
+
               {/* Command preview */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -837,12 +962,21 @@ Installers:
               </button>
               <button
                 data-testid="confirm-dispatch-btn"
-                disabled={isLaunching}
+                disabled={
+                  isLaunching ||
+                  (authStatus !== null && !authStatus.authenticated && !skipAuthOverride)
+                }
                 onClick={async () => {
-                  if (onDispatchPackagePr && dispatchTarget) {
+                  if (dispatchTarget) {
                     setIsLaunching(true);
                     try {
-                      await onDispatchPackagePr(dispatchTarget.id, dispatchVersion);
+                      if (onDispatchPackagePr) {
+                        if (skipAuthOverride) {
+                          await onDispatchPackagePr(dispatchTarget.id, dispatchVersion, true);
+                        } else {
+                          await onDispatchPackagePr(dispatchTarget.id, dispatchVersion);
+                        }
+                      }
                     } finally {
                       setIsLaunching(false);
                       setDispatchTarget(null);

@@ -199,6 +199,12 @@ export interface DispatchPackagePrResponse {
   commands: string[];
 }
 
+export interface GhAuthStatus {
+  authenticated: boolean;
+  account?: string;
+  message: string;
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;

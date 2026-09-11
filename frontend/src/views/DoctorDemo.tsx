@@ -65,11 +65,16 @@ export const DoctorDemo: React.FC = () => {
     fetchMetrics();
   }, []);
 
-  // Poll demo status while running
+  // Stream demo status via SSE while running, with fallback polling
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (demoState.status === "Running") {
-      interval = setInterval(async () => {
+    if (demoState.status !== "Running") return;
+
+    let eventSource: EventSource | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (pollInterval) return;
+      pollInterval = setInterval(async () => {
         try {
           const res = await fetch("/api/demo/status");
           if (res.ok) {
@@ -78,17 +83,111 @@ export const DoctorDemo: React.FC = () => {
             if (data.status === "Completed") {
               setShowCelebrationModal(true);
               fetchMetrics();
+              if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+              }
             }
           }
         } catch (err) {
           console.error("Failed to poll demo status:", err);
         }
       }, 350);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
     };
-  }, [demoState.status]);
+
+    if (typeof EventSource !== "undefined" && demoState.id) {
+      try {
+        const es = new EventSource(`/api/demo/stream/${demoState.id}`);
+        eventSource = es;
+
+        es.onmessage = (event) => {
+          const line = event.data;
+          setDemoState((prev) => {
+            const nextLogs = prev.logs.includes(line) ? prev.logs : [...prev.logs, line];
+            let current_step = prev.current_step;
+            let step_progress_pct = prev.step_progress_pct;
+
+            if (line.includes("Step 1")) {
+              current_step = 1;
+              step_progress_pct = 25;
+            } else if (line.includes("Step 2")) {
+              current_step = 2;
+              step_progress_pct = 50;
+            } else if (line.includes("Step 3")) {
+              current_step = 3;
+              step_progress_pct = 75;
+            } else if (line.includes("Step 4") || line.includes("[DONE]")) {
+              current_step = 4;
+              step_progress_pct = 100;
+            }
+
+            return {
+              ...prev,
+              current_step,
+              step_progress_pct,
+              logs: nextLogs,
+            };
+          });
+
+          if (line.includes("[DONE]")) {
+            es.close();
+            fetch("/api/demo/status")
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data: DemoRunState | null) => {
+                if (data) {
+                  setDemoState((prev) => ({
+                    ...prev,
+                    diff_preview: data.diff_preview ?? prev.diff_preview,
+                    pr_summary: data.pr_summary ?? prev.pr_summary,
+                    elapsed_seconds: data.elapsed_seconds ?? prev.elapsed_seconds,
+                    logs: data.logs && data.logs.length > prev.logs.length ? data.logs : prev.logs,
+                    status: "Completed",
+                    current_step: 4,
+                    step_progress_pct: 100,
+                  }));
+                } else {
+                  setDemoState((prev) => ({
+                    ...prev,
+                    status: "Completed",
+                    current_step: 4,
+                    step_progress_pct: 100,
+                  }));
+                }
+                setShowCelebrationModal(true);
+                fetchMetrics();
+              })
+              .catch((err) => {
+                console.error("Failed to fetch final demo status:", err);
+                setDemoState((prev) => ({
+                  ...prev,
+                  status: "Completed",
+                  current_step: 4,
+                  step_progress_pct: 100,
+                }));
+                setShowCelebrationModal(true);
+                fetchMetrics();
+              });
+          }
+        };
+
+        es.onerror = () => {
+          es.close();
+          eventSource = null;
+          startPolling();
+        };
+      } catch (err) {
+        console.error("Failed to establish EventSource, falling back to polling:", err);
+        startPolling();
+      }
+    } else {
+      startPolling();
+    }
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [demoState.status, demoState.id]);
 
   // Auto scroll terminal logs
   useEffect(() => {

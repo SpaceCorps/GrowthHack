@@ -220,3 +220,50 @@ async fn test_demo_metrics_and_persistence() {
 
     let _ = std::fs::remove_file(data_file);
 }
+
+#[tokio::test]
+async fn test_demo_sse_streaming() {
+    use futures_util::StreamExt;
+
+    let (ctx, data_file) = create_test_context();
+    let app = api::router(ctx.clone());
+
+    let task_id = "test-stream-123";
+    let tx = ctx.task_manager.get_or_create_channel(task_id).await;
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/demo/stream/{}", task_id))
+                .method("GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok()),
+        Some("text/event-stream")
+    );
+
+    let mut stream = response.into_body().into_data_stream();
+
+    // Broadcast a test log line
+    let test_msg = "[00:12] Step 2/4 (Worktree): Creating isolated git worktree at 'Worktrees/spacecorps/growthhack'...";
+    let _ = tx.send(test_msg.to_string());
+
+    if let Some(Ok(chunk)) = stream.next().await {
+        let chunk_str = String::from_utf8_lossy(&chunk);
+        assert!(chunk_str.contains("data:"));
+        assert!(chunk_str.contains(test_msg));
+    } else {
+        panic!("Expected SSE chunk from stream");
+    }
+
+    let _ = std::fs::remove_file(data_file);
+}

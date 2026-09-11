@@ -508,12 +508,12 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDispatchPackagePr = async (id: string, version?: string) => {
+  const handleDispatchPackagePr = async (id: string, version?: string, skipAuthCheck?: boolean) => {
     try {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version }),
+        body: JSON.stringify({ version, skip_auth_check: skipAuthCheck }),
       });
       const data = await res.json();
       if (data && data.task_id) {
@@ -805,13 +805,22 @@ export const App: React.FC = () => {
 
   const handleRefineReviewItem = async (item: ReviewItem, updated: Partial<ReviewItem>) => {
     let nextUpdated = { ...updated };
-    if (
-      item.type === "listing_blurb" &&
-      updated.content !== undefined &&
-      updated.content !== item.content &&
-      !updated.status
-    ) {
-      nextUpdated.status = "Pending";
+    if (!updated.status) {
+      const isModified =
+        (item.type === "listing_blurb" &&
+          updated.content !== undefined &&
+          updated.content !== item.content) ||
+        (item.type === "article" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title) ||
+            (updated.summary !== undefined && updated.summary !== item.summary))) ||
+        (item.type === "video_demo" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title)));
+
+      if (isModified) {
+        nextUpdated.status = "Pending";
+      }
     }
     setReviewItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, ...nextUpdated } : it)),
@@ -827,6 +836,7 @@ export const App: React.FC = () => {
             summary: updated.summary,
             content: updated.content,
             backlinks: updated.backlinks,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
@@ -841,7 +851,7 @@ export const App: React.FC = () => {
           body: JSON.stringify({
             headline: updated.title,
             body: updated.content,
-            status: updated.status,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
