@@ -197,7 +197,59 @@ export type ActiveTab =
   | "agent"
   | "review"
   | "flywheel"
-  | "contributors";
+  | "contributors"
+  | "recipes";
+
+export interface RecipeParameter {
+  name: string;
+  description: string;
+  default_value: string;
+  required: boolean;
+  param_type: string;
+  options?: string[];
+}
+
+export interface Recipe {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  author: string;
+  author_avatar?: string;
+  version: string;
+  tags: string[];
+  promptware_template: string;
+  parameters: RecipeParameter[];
+  cli_snippet: string;
+  forks_count: number;
+  stars_count: number;
+  is_official: boolean;
+  badge?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitRecipeRequest {
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  author?: string;
+  author_avatar?: string;
+  version?: string;
+  tags?: string[];
+  promptware_template: string;
+  parameters?: RecipeParameter[];
+  cli_snippet?: string;
+}
+
+export interface RunRecipeResponse {
+  task_id: string;
+  recipe_id: string;
+  cli_command: string;
+  message: string;
+}
 
 export interface ContributorIssue {
   id: string;
