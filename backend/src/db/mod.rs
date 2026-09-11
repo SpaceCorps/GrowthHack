@@ -82,6 +82,46 @@ pub struct Article {
     pub engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
+impl Default for Article {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            feature: "Worktrees".to_string(),
+            channel: "Website".to_string(),
+            angle: "Architecture".to_string(),
+            summary: String::new(),
+            content: String::new(),
+            backlinks: Vec::new(),
+            outbound_citations: Vec::new(),
+            status: "Draft".to_string(),
+            created_at: Utc::now(),
+            published_at: None,
+            slug: None,
+            exports: Vec::new(),
+            engagement: None,
+            engagement_snapshots: Vec::new(),
+        }
+    }
+}
+
+impl Article {
+    pub fn default_for_test() -> Self {
+        let now = Utc::now();
+        Self {
+            id: "art-test".to_string(),
+            title: "Test Article".to_string(),
+            summary: "Test summary of the article.".to_string(),
+            content: "# Test\n\nSome body.".to_string(),
+            published_at: Some(now),
+            slug: Some("test-article".to_string()),
+            created_at: now,
+            ..Self::default()
+        }
+    }
+}
+
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TrendTopic {
     pub id: String,
@@ -3281,3 +3321,47 @@ steps:
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_article_default() {
+        let article = Article::default();
+        assert_eq!(article.id, "");
+        assert_eq!(article.title, "");
+        assert_eq!(article.feature, "Worktrees");
+        assert_eq!(article.channel, "Website");
+        assert_eq!(article.angle, "Architecture");
+        assert_eq!(article.summary, "");
+        assert_eq!(article.content, "");
+        assert!(article.backlinks.is_empty());
+        assert!(article.outbound_citations.is_empty());
+        assert_eq!(article.status, "Draft");
+        assert!(article.published_at.is_none());
+        assert!(article.slug.is_none());
+        assert!(article.exports.is_empty());
+        assert!(article.engagement.is_none());
+    }
+
+    #[test]
+    fn test_article_default_for_test() {
+        let article = Article::default_for_test();
+        assert_eq!(article.id, "art-test");
+        assert_eq!(article.title, "Test Article");
+        assert_eq!(article.feature, "Worktrees");
+        assert_eq!(article.channel, "Website");
+        assert_eq!(article.angle, "Architecture");
+        assert_eq!(article.summary, "Test summary of the article.");
+        assert_eq!(article.content, "# Test\n\nSome body.");
+        assert!(article.backlinks.is_empty());
+        assert!(article.outbound_citations.is_empty());
+        assert_eq!(article.status, "Draft");
+        assert!(article.published_at.is_some());
+        assert_eq!(article.slug.as_deref(), Some("test-article"));
+        assert!(article.exports.is_empty());
+        assert!(article.engagement.is_none());
+    }
+}
+
