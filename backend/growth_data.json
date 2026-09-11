@@ -147,7 +147,7 @@
       "description": "Create a curated public repository of 1-click community recipes and promptware (bugfixer, dependency-upgrader, test-generator, database-migrator) to drive fork-and-star loops.",
       "direct_actions": [
         "Build initial 5 gold-standard recipes: Bugfixer, Security Patcher, Test Generator, PR Reviewer, DB Migrator",
-        "Provide 1-line execution: 'tendril run recipe/security-patch'",
+        "Provide 1-line execution: 'curl -s -X POST http://localhost:4200/api/recipes/security-patcher/run'",
         "Encourage community PR submissions with a GitHub contributor badge program"
       ],
       "routine_schedule": null,

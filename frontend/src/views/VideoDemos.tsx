@@ -333,7 +333,7 @@ const STAGE_CONFIGS: Record<
 
 const getFeatureIcon = (feature: string) => {
   const f = feature.toLowerCase();
-  if (f.contains ? f.contains("worktree") : f.includes("worktree")) return GitBranch;
+  if (f.includes("worktree")) return GitBranch;
   if (f.includes("issue") || f.includes("pr") || f.includes("verification")) return ShieldCheck;
   if (f.includes("multi-agent") || f.includes("agent") || f.includes("concurrency")) return Cpu;
   if (f.includes("voice")) return Mic;

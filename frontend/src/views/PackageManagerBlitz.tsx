@@ -29,6 +29,7 @@ interface PackageManagerBlitzProps {
   onDispatchPackagePr?: (
     id: string,
     version?: string,
+    tagOrSkipAuth?: string | boolean,
     skipAuthCheck?: boolean,
   ) => Promise<string | void>;
 }
@@ -42,6 +43,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const [copiedManifest, setCopiedManifest] = useState<boolean>(false);
   const [activeManifestTab, setActiveManifestTab] = useState<string>("homebrew");
   const [showManifestDrawer, setShowManifestDrawer] = useState<boolean>(false);
+  const [selectedTag, setSelectedTag] = useState<string>("");
   const [editingTarget, setEditingTarget] = useState<PackageManagerTarget | null>(null);
   const [editStatus, setEditStatus] = useState<string>("");
   const [editPrUrl, setEditPrUrl] = useState<string>("");
@@ -52,6 +54,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
 
   const [dispatchTarget, setDispatchTarget] = useState<PackageManagerTarget | null>(null);
   const [dispatchVersion, setDispatchVersion] = useState<string>("0.8.4");
+  const [dispatchTag, setDispatchTag] = useState<string>("");
   const [copiedCommands, setCopiedCommands] = useState<boolean>(false);
   const [isLaunching, setIsLaunching] = useState<boolean>(false);
   const [authStatus, setAuthStatus] = useState<GhAuthStatus | null>(null);
@@ -114,6 +117,7 @@ export const PackageManagerBlitz: React.FC<PackageManagerBlitzProps> = ({
   const handleOpenDispatch = (pkg: PackageManagerTarget) => {
     setDispatchTarget(pkg);
     setDispatchVersion("0.8.4");
+    setDispatchTag(selectedTag || "");
     setCopiedCommands(false);
     setSkipAuthOverride(false);
     setAuthStatus(null);
@@ -314,12 +318,19 @@ Installers:
     URL.revokeObjectURL(url);
   };
 
-  const fetchManifest = async (targetKey: string, refresh = false) => {
+  const fetchManifest = async (targetKey: string, refresh = false, tagOverride?: string) => {
     setIsLoadingManifest(true);
     try {
-      const url = refresh
-        ? `/api/packages/${targetKey}/manifest?refresh=true`
-        : `/api/packages/${targetKey}/manifest`;
+      const tagToUse = tagOverride !== undefined ? tagOverride : selectedTag;
+      const params: string[] = [];
+      if (tagToUse && tagToUse.trim()) {
+        params.push(`tag=${encodeURIComponent(tagToUse.trim())}`);
+      }
+      if (refresh) {
+        params.push("refresh=true");
+      }
+      const qs = params.length > 0 ? `?${params.join("&")}` : "";
+      const url = `/api/packages/${targetKey}/manifest${qs}`;
       const res = await fetch(url);
       if (res.ok) {
         const data: PackageManifestResponse | null = await res.json();
@@ -793,6 +804,28 @@ Installers:
                 </div>
               </div>
 
+              {/* Release Tag input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Release Tag</span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    GitHub Release tag (e.g. v1.2.0)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={dispatchTag}
+                  onChange={(e) => {
+                    setDispatchTag(e.target.value);
+                    const clean = e.target.value.trim().replace(/^v/, "");
+                    if (clean) setDispatchVersion(clean);
+                  }}
+                  data-testid="dispatch-tag-input"
+                  placeholder="e.g. v0.8.4"
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-700 rounded-lg text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
               {/* Version input */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
@@ -971,7 +1004,24 @@ Installers:
                     setIsLaunching(true);
                     try {
                       if (onDispatchPackagePr) {
-                        if (skipAuthOverride) {
+                        const tagToPass =
+                          dispatchTag && dispatchTag.trim() ? dispatchTag.trim() : undefined;
+                        if (tagToPass) {
+                          if (skipAuthOverride) {
+                            await onDispatchPackagePr(
+                              dispatchTarget.id,
+                              dispatchVersion,
+                              tagToPass,
+                              true,
+                            );
+                          } else {
+                            await onDispatchPackagePr(
+                              dispatchTarget.id,
+                              dispatchVersion,
+                              tagToPass,
+                            );
+                          }
+                        } else if (skipAuthOverride) {
                           await onDispatchPackagePr(dispatchTarget.id, dispatchVersion, true);
                         } else {
                           await onDispatchPackagePr(dispatchTarget.id, dispatchVersion);
@@ -1019,6 +1069,21 @@ Installers:
                 </div>
               </div>
               <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1.5 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <span className="text-[11px] text-slate-400 font-mono">Tag:</span>
+                  <input
+                    type="text"
+                    value={selectedTag}
+                    onChange={(e) => {
+                      const newTag = e.target.value;
+                      setSelectedTag(newTag);
+                      fetchManifest(activeManifestTab, true, newTag);
+                    }}
+                    placeholder={activeManifest.release_tag || "v0.8.4"}
+                    data-testid="release-tag-input"
+                    className="w-20 bg-transparent text-xs text-white font-mono placeholder-slate-600 focus:outline-none"
+                  />
+                </div>
                 <button
                   onClick={handleRefreshRelease}
                   disabled={isRefreshingRelease || isLoadingManifest}
