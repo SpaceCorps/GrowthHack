@@ -30,6 +30,18 @@ pub struct PullRequestResponse {
     pub title: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestDetails {
+    pub number: u64,
+    pub state: String,
+    #[serde(default)]
+    pub merged: bool,
+    #[serde(default)]
+    pub merged_at: Option<String>,
+    #[serde(default)]
+    pub html_url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitHubStatusResponse {
     pub configured: bool,
@@ -71,6 +83,36 @@ pub fn extract_github_repo(url: &str) -> Option<(String, String)> {
         return None;
     }
     Some((owner, repo))
+}
+
+pub fn parse_github_pr_url(url: &str) -> Option<(String, String, u64)> {
+    let trimmed = url.trim();
+    let idx = trimmed.find("github.com/")?;
+    let after = &trimmed[idx + "github.com/".len()..];
+    let path = after.split('?').next()?.split('#').next()?;
+    let parts: Vec<&str> = path
+        .split('/')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if parts.len() < 4 {
+        return None;
+    }
+    let owner = parts[0];
+    let mut repo = parts[1];
+    if let Some(stripped) = repo.strip_suffix(".git") {
+        repo = stripped;
+    }
+    let pull_marker = parts[2];
+    if pull_marker != "pull" && pull_marker != "pulls" {
+        return None;
+    }
+    let pr_number: u64 = parts[3].parse().ok()?;
+    if owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some((owner.to_string(), repo.to_string(), pr_number))
 }
 
 pub fn insert_listing_entry(existing_content: &str, entry: &str, category: &str) -> String {
@@ -252,6 +294,58 @@ impl GitHubClient {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
         })
+    }
+
+    pub fn new_unauthenticated() -> Result<Self, String> {
+        let base_url = std::env::var("GITHUB_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.github.com".to_string());
+        Self::new_unauthenticated_with_base_url(&base_url)
+    }
+
+    pub fn new_unauthenticated_with_base_url(base_url: &str) -> Result<Self, String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_static("GrowthHack-UpstreamWorker/0.1.0"),
+        );
+        headers.insert(
+            reqwest::header::HeaderName::from_static("x-github-api-version"),
+            HeaderValue::from_static("2022-11-28"),
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        Ok(Self {
+            client,
+            base_url: base_url.trim_end_matches('/').to_string(),
+        })
+    }
+
+    pub async fn get_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<PullRequestDetails, String> {
+        let url = format!("{}/repos/{}/{}/pulls/{}", self.base_url, owner, repo, number);
+        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!(
+                "GET /repos/{}/{}/pulls/{} failed with status {}: {}",
+                owner, repo, number, status, body
+            ));
+        }
+        resp.json::<PullRequestDetails>().await.map_err(|e| e.to_string())
     }
 
     pub async fn get_authenticated_user(&self) -> Result<GitHubUser, String> {

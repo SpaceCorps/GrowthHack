@@ -74,6 +74,7 @@ describe("ListingBlitz View", () => {
     onCreateListing: vi.fn(),
     onBatchGenerateBlurbs: vi.fn().mockResolvedValue({ targeted_count: 5 }),
     onVerifyBacklink: vi.fn().mockResolvedValue({ verified: true, message: "Backlink verified!" }),
+    githubStatus: { configured: true, username: "testuser", message: "ok" },
   };
 
   beforeEach(() => {
@@ -326,5 +327,69 @@ describe("ListingBlitz View", () => {
     expect(prLink.getAttribute("href")).toBe(
       "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
     );
+  });
+
+  it("renders Sync PR Status button in Batch Runner and updates status to Live upon successful sync", async () => {
+    const onSyncAllPrs = vi.fn().mockResolvedValue({
+      checked_count: 2,
+      merged_count: 1,
+      transitioned_ids: ["list-1"],
+      message: "Checked 2 listings: 1 merged PRs transitioned to Live",
+    });
+    const onUpdateStatus = vi.fn();
+
+    render(
+      <ListingBlitz
+        {...defaultProps}
+        onSyncAllPrs={onSyncAllPrs}
+        onUpdateStatus={onUpdateStatus}
+      />,
+    );
+
+    const syncBtn = screen.getByTestId("sync-all-prs-btn");
+    expect(syncBtn).toBeDefined();
+    expect(syncBtn.textContent).toContain("Sync PR Status");
+
+    fireEvent.click(syncBtn);
+
+    expect(onSyncAllPrs).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(onUpdateStatus).toHaveBeenCalledWith("list-1", "Live");
+      const msg = screen.getByTestId("sync-prs-message");
+      expect(msg.textContent).toContain("1 merged PRs transitioned to Live");
+    });
+  });
+
+  it("renders Check PR Status button on submitted listings and transitions to Live when merged", async () => {
+    const onSyncSinglePr = vi.fn().mockResolvedValue({
+      id: "list-1",
+      pr_url: "https://github.com/e2b-dev/awesome-ai-agents/pull/412",
+      state: "closed",
+      merged: true,
+      status: "Live",
+      message: "Pull request merged! Listing transitioned to Live.",
+    });
+    const onUpdateStatus = vi.fn();
+
+    render(
+      <ListingBlitz
+        {...defaultProps}
+        onSyncSinglePr={onSyncSinglePr}
+        onUpdateStatus={onUpdateStatus}
+      />,
+    );
+
+    const checkBtn = screen.getByTestId("check-pr-list-1");
+    expect(checkBtn).toBeDefined();
+    expect(checkBtn.textContent).toContain("Check PR Status");
+
+    fireEvent.click(checkBtn);
+
+    expect(onSyncSinglePr).toHaveBeenCalledWith("list-1");
+    await vi.waitFor(() => {
+      expect(onUpdateStatus).toHaveBeenCalledWith("list-1", "Live");
+      const badge = screen.getByTestId("check-pr-badge-list-1");
+      expect(badge.textContent).toContain("Pull request merged! Listing transitioned to Live.");
+    });
   });
 });
