@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type {
+  AllContributorsRcResponse,
   AllContributorsResponse,
   ContributingGuideResponse,
   ContributorIssue,
+  ContributorRecord,
+  GenerateAllContributorsPrResponse,
 } from "../types";
 import {
   Users,
@@ -21,6 +24,9 @@ import {
   ChevronUp,
   UserCheck,
   AlertCircle,
+  GitPullRequest,
+  ShieldCheck,
+  Terminal,
 } from "lucide-react";
 
 interface ContributorFlywheelProps {
@@ -72,6 +78,9 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     null,
   );
   const [allContributors, setAllContributors] = useState<AllContributorsResponse | null>(null);
+  const [allContributorsRc, setAllContributorsRc] = useState<AllContributorsRcResponse | null>(
+    null,
+  );
   const [loading, setLoading] = useState<boolean>(true);
 
   // Filter state
@@ -100,20 +109,37 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
   const [claimError, setClaimError] = useState<string | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState<boolean>(false);
 
+  // Verification modal state
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
+  const [verifyIssueId, setVerifyIssueId] = useState<string | undefined>(undefined);
+  const [verifyName, setVerifyName] = useState<string>("");
+  const [verifyHandle, setVerifyHandle] = useState<string>("");
+  const [verifyContributions, setVerifyContributions] = useState<string[]>(["code"]);
+  const [verifyAutoGeneratePr, setVerifyAutoGeneratePr] = useState<boolean>(true);
+  const [isSubmittingVerify, setIsSubmittingVerify] = useState<boolean>(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [generatedPrResult, setGeneratedPrResult] =
+    useState<GenerateAllContributorsPrResponse | null>(null);
+  const [lastGeneratedPr, setLastGeneratedPr] = useState<GenerateAllContributorsPrResponse | null>(
+    null,
+  );
+
   // Copy feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const fetchFlywheelData = async () => {
     try {
       setLoading(true);
-      const [issuesRes, guideRes, contribRes] = await Promise.all([
+      const [issuesRes, guideRes, contribRes, rcRes] = await Promise.all([
         fetch("/api/contributors/issues").then((r) => r.json()),
         fetch("/api/contributors/contributing-md").then((r) => r.json()),
         fetch("/api/contributors/all-contributors").then((r) => r.json()),
+        fetch("/api/contributors/all-contributorsrc").then((r) => r.json()),
       ]);
       setIssues(issuesRes);
       setContributingGuide(guideRes);
       setAllContributors(contribRes);
+      setAllContributorsRc(rcRes);
     } catch (err) {
       console.error("Failed to load contributor flywheel data:", err);
     } finally {
@@ -206,6 +232,97 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
     } finally {
       setIsSubmittingClaim(false);
     }
+  };
+
+  const handleOpenVerifyModal = (issue?: ContributorIssue, contributor?: ContributorRecord) => {
+    setVerifyIssueId(issue?.id);
+    const initialName = contributor?.name || issue?.claimed_by?.replace(/^@/, "") || "";
+    const initialHandle =
+      (contributor?.login ? `@${contributor.login}` : "") ||
+      issue?.claimed_by ||
+      (contributor?.name ? `@${contributor.name.toLowerCase().replace(/\s+/g, "-")}` : "");
+
+    setVerifyName(initialName);
+    setVerifyHandle(initialHandle);
+    setVerifyContributions(
+      contributor?.contributions && contributor.contributions.length > 0
+        ? contributor.contributions
+        : ["code"],
+    );
+    setVerifyAutoGeneratePr(true);
+    setVerifyError(null);
+    setGeneratedPrResult(null);
+    setIsVerifyModalOpen(true);
+  };
+
+  const handleCloseVerifyModal = () => {
+    setIsVerifyModalOpen(false);
+    setVerifyError(null);
+    setGeneratedPrResult(null);
+  };
+
+  const toggleContributionBadge = (badge: string) => {
+    setVerifyContributions((prev) =>
+      prev.includes(badge) ? prev.filter((b) => b !== badge) : [...prev, badge],
+    );
+  };
+
+  const handleConfirmVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verifyName.trim() || !verifyHandle.trim()) {
+      setVerifyError("Contributor name and GitHub handle are required.");
+      return;
+    }
+
+    try {
+      setIsSubmittingVerify(true);
+      setVerifyError(null);
+
+      const res = await fetch("/api/contributors/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issue_id: verifyIssueId || undefined,
+          contributor_name: verifyName.trim(),
+          github_handle: verifyHandle.trim(),
+          contributions: verifyContributions.length > 0 ? verifyContributions : ["code"],
+          auto_generate_pr: verifyAutoGeneratePr,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to verify contributor.");
+      }
+
+      const verifyData = await res.json();
+      if (verifyData.pr) {
+        setGeneratedPrResult(verifyData.pr);
+        setLastGeneratedPr(verifyData.pr);
+      } else {
+        handleCloseVerifyModal();
+      }
+      await fetchFlywheelData();
+    } catch (err: any) {
+      setVerifyError(err.message || "An error occurred while verifying contributor.");
+    } finally {
+      setIsSubmittingVerify(false);
+    }
+  };
+
+  const handleDownloadAllContributorsRc = () => {
+    if (!allContributorsRc) return;
+    const blob = new Blob([allContributorsRc.content], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = ".all-contributorsrc";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Metrics computation
@@ -544,10 +661,33 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                     </div>
 
                     {issue.claimed ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
-                        <UserCheck className="w-3.5 h-3.5" />
-                        Claimed {issue.claimed_by ? `by ${issue.claimed_by}` : ""}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          Claimed {issue.claimed_by ? `by ${issue.claimed_by}` : ""}
+                        </span>
+                        {issue.pr_url ? (
+                          <a
+                            href={issue.pr_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            data-testid={`issue-pr-link-${issue.id}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20"
+                          >
+                            <GitPullRequest className="w-3 h-3" />
+                            PR
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenVerifyModal(issue)}
+                            data-testid={`verify-issue-btn-${issue.id}`}
+                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-cyan-600/80 hover:bg-cyan-500 text-white transition-colors cursor-pointer"
+                          >
+                            Verify & Generate PR
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <button
                         onClick={() => handleOpenClaimModal(issue)}
@@ -613,20 +753,60 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
         </div>
       </section>
 
-      {/* @all-contributors Grid & Badge Builder */}
+      {/* .all-contributorsrc Studio & PR Generator */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-md">
+        {/* Generated PR Banner Notification */}
+        {lastGeneratedPr && (
+          <div
+            data-testid="pr-notification-banner"
+            className="mb-6 p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div>
+                <div className="text-xs font-semibold text-emerald-200">
+                  Pull Request {lastGeneratedPr.status === "submitted" ? "Created" : "Generated"}{" "}
+                  for .all-contributorsrc
+                </div>
+                <div className="text-xs text-emerald-300/80 mt-0.5 font-mono">
+                  Branch: {lastGeneratedPr.branch_name} | {lastGeneratedPr.pr_title}
+                </div>
+              </div>
+            </div>
+            {lastGeneratedPr.pr_url && (
+              <a
+                href={lastGeneratedPr.pr_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors self-start sm:self-auto"
+              >
+                <GitPullRequest className="w-3.5 h-3.5" />
+                View PR on GitHub
+              </a>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
               <Users className="w-5 h-5 text-cyan-400" />
-              @all-contributors Community Recognition
+              .all-contributorsrc Studio &amp; PR Generator
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Celebrate community members with standardized avatar grids and GitHub README badges.
+              Automated configuration manifest and pull request generator for verified contributors.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleOpenVerifyModal()}
+              data-testid="open-verify-modal-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Verify &amp; Generate PR
+            </button>
             <button
               onClick={() => handleCopy(allContributors?.badge_markdown || "", "badge-md")}
               data-testid="copy-badge-md-btn"
@@ -654,40 +834,129 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
           </div>
         </div>
 
-        {/* Visual Avatar Grid Preview */}
+        {/* .all-contributorsrc Manifest Preview */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between bg-slate-950 px-4 py-2.5 rounded-t-xl border border-slate-800 border-b-0">
+            <span className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+              <FileCode className="w-3.5 h-3.5 text-cyan-400" />
+              .all-contributorsrc (
+              {allContributorsRc?.contributor_count ??
+                allContributors?.contributors.length ??
+                0}{" "}
+              contributors)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  handleCopy(allContributorsRc?.content || "", "all-contributorsrc-json")
+                }
+                data-testid="copy-all-contributorsrc-btn"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+              >
+                {copiedKey === "all-contributorsrc-json" ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
+                Copy JSON
+              </button>
+              <button
+                onClick={handleDownloadAllContributorsRc}
+                data-testid="download-all-contributorsrc-btn"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+              >
+                <Download className="w-3 h-3" />
+                Download .all-contributorsrc
+              </button>
+            </div>
+          </div>
+          <pre
+            data-testid="all-contributorsrc-preview"
+            className="bg-slate-950 border border-slate-800 rounded-b-xl p-4 max-h-72 overflow-y-auto font-mono text-xs text-slate-300 leading-relaxed"
+          >
+            {allContributorsRc
+              ? allContributorsRc.content
+              : "Loading .all-contributorsrc manifest..."}
+          </pre>
+        </div>
+
+        {/* Visual Avatar Grid Preview & Contributor Cards */}
         {allContributors && (
           <div
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"
             data-testid="contributors-avatar-grid"
           >
             {allContributors.contributors.map((contributor) => (
               <div
                 key={contributor.name}
-                className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 flex flex-col items-center text-center hover:border-slate-700 transition-colors"
+                data-testid={`contributor-card-${contributor.name}`}
+                className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 flex flex-col items-center text-center hover:border-slate-700 transition-colors justify-between"
               >
-                <img
-                  src={contributor.avatar_url}
-                  alt={contributor.name}
-                  className="w-14 h-14 rounded-full border-2 border-cyan-500/40 mb-2 object-cover"
-                />
-                <a
-                  href={contributor.profile_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs font-semibold text-slate-200 hover:text-cyan-400 flex items-center gap-1"
-                >
-                  {contributor.name}
-                  <ExternalLink className="w-3 h-3 text-slate-500" />
-                </a>
-                <div className="flex flex-wrap gap-1 justify-center mt-2">
-                  {contributor.contributions.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-cyan-300"
-                    >
-                      {tag}
+                <div className="flex flex-col items-center">
+                  <div className="relative mb-2">
+                    <img
+                      src={contributor.avatar_url}
+                      alt={contributor.name}
+                      className="w-14 h-14 rounded-full border-2 border-cyan-500/40 object-cover"
+                    />
+                    {contributor.verified && (
+                      <span
+                        data-testid={`verified-badge-${contributor.name}`}
+                        className="absolute -bottom-1 -right-1 bg-emerald-500 text-slate-950 rounded-full p-0.5"
+                        title="Verified Contributor"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </div>
+                  <a
+                    href={contributor.profile_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-semibold text-slate-200 hover:text-cyan-400 flex items-center gap-1"
+                  >
+                    {contributor.name}
+                    <ExternalLink className="w-3 h-3 text-slate-500" />
+                  </a>
+                  {contributor.login && (
+                    <span className="text-[11px] font-mono text-slate-400">
+                      @{contributor.login}
                     </span>
-                  ))}
+                  )}
+                  <div className="flex flex-wrap gap-1 justify-center mt-2">
+                    {contributor.contributions.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-cyan-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="w-full mt-3 pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
+                  {contributor.pr_url ? (
+                    <a
+                      href={contributor.pr_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-testid={`contributor-pr-link-${contributor.name}`}
+                      className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded text-[11px] font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20"
+                    >
+                      <GitPullRequest className="w-3 h-3" />
+                      View PR
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenVerifyModal(undefined, contributor)}
+                      data-testid={`verify-contributor-card-btn-${contributor.name}`}
+                      className="w-full px-2 py-1 rounded text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                    >
+                      Verify &amp; PR
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -763,6 +1032,216 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Contributor Verification Action Modal */}
+      {isVerifyModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-cyan-400" />
+              Verify Contributor &amp; Generate PR
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Verify contributor completion and generate an automated pull request updating
+              .all-contributorsrc.
+            </p>
+
+            {verifyError && (
+              <div className="mt-4 p-3 bg-red-950/40 border border-red-800/60 rounded-lg text-xs text-red-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span>{verifyError}</span>
+              </div>
+            )}
+
+            {generatedPrResult ? (
+              <div className="mt-4 space-y-4">
+                <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>
+                    Contributor verified successfully! Pull request branch{" "}
+                    <span
+                      data-testid="generated-branch"
+                      className="font-mono font-bold text-emerald-200"
+                    >
+                      {generatedPrResult.branch_name}
+                    </span>{" "}
+                    has been prepared.
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-xs font-semibold text-slate-300 mb-1">PR Title</div>
+                  <div
+                    data-testid="generated-pr-title"
+                    className="text-xs font-mono text-slate-200 bg-slate-950 p-2 rounded-md border border-slate-800"
+                  >
+                    {generatedPrResult.pr_title}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1">
+                      <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                      CLI Execution Commands
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopy(generatedPrResult.cli_commands.join("\n"), "cli-cmds")
+                      }
+                      data-testid="copy-cli-commands-btn"
+                      className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 cursor-pointer"
+                    >
+                      {copiedKey === "cli-cmds" ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      Copy Commands
+                    </button>
+                  </div>
+                  <pre
+                    data-testid="generated-cli-commands"
+                    className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[11px] font-mono text-cyan-300 overflow-x-auto whitespace-pre-wrap leading-relaxed"
+                  >
+                    {generatedPrResult.cli_commands.join("\n")}
+                  </pre>
+                </div>
+
+                {generatedPrResult.pr_url && (
+                  <div className="pt-2">
+                    <a
+                      href={generatedPrResult.pr_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-testid="generated-pr-link"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+                    >
+                      <GitPullRequest className="w-3.5 h-3.5" />
+                      View Pull Request on GitHub
+                    </a>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseVerifyModal}
+                    data-testid="finish-verify-btn"
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleConfirmVerify} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    Contributor Full Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={verifyName}
+                    onChange={(e) => setVerifyName(e.target.value)}
+                    placeholder="e.g. Jane Developer"
+                    data-testid="verify-name-input"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    GitHub Handle <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={verifyHandle}
+                    onChange={(e) => setVerifyHandle(e.target.value)}
+                    placeholder="e.g. @janedev"
+                    data-testid="verify-handle-input"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                    Contribution Badges
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "code",
+                      "doc",
+                      "test",
+                      "review",
+                      "design",
+                      "maintenance",
+                      "package",
+                      "cli",
+                    ].map((badge) => {
+                      const isSelected = verifyContributions.includes(badge);
+                      return (
+                        <button
+                          key={badge}
+                          type="button"
+                          onClick={() => toggleContributionBadge(badge)}
+                          data-testid={`badge-select-${badge}`}
+                          className={`px-2.5 py-1 rounded-md text-xs font-mono transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                              : "bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800"
+                          }`}
+                        >
+                          {badge} {isSelected ? "✓" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="verify-auto-pr-checkbox"
+                    checked={verifyAutoGeneratePr}
+                    onChange={(e) => setVerifyAutoGeneratePr(e.target.checked)}
+                    data-testid="verify-auto-pr-checkbox"
+                    className="rounded border-slate-800 bg-slate-950 text-cyan-500 focus:ring-0 cursor-pointer"
+                  />
+                  <label
+                    htmlFor="verify-auto-pr-checkbox"
+                    className="text-xs text-slate-300 cursor-pointer select-none"
+                  >
+                    Generate Pull Request updating .all-contributorsrc
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseVerifyModal}
+                    data-testid="close-verify-modal-btn"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingVerify}
+                    data-testid="submit-verify-btn"
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingVerify ? "Verifying..." : "Verify & Generate PR"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
