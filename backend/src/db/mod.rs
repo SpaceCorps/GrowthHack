@@ -264,6 +264,8 @@ pub struct GrowthState {
     #[serde(default)]
     pub latest_release: Option<ReleaseInfo>,
     #[serde(default)]
+    pub release_cache: Vec<ReleaseInfo>,
+    #[serde(default)]
     pub recipes: Vec<Recipe>,
     #[serde(default)]
     pub onboarding_metrics: OnboardingMetrics,
@@ -321,6 +323,35 @@ impl GrowthState {
         let content = serde_json::to_string_pretty(self)?;
         fs::write(path, content)?;
         Ok(())
+    }
+
+    pub fn find_cached_release(&self, tag: Option<&str>) -> Option<&ReleaseInfo> {
+        match tag {
+            None | Some("latest") => {
+                self.latest_release.as_ref().filter(|r| !r.is_expired(15 * 60))
+            }
+            Some(t) => {
+                let clean = t.trim_start_matches('v');
+                self.release_cache
+                    .iter()
+                    .chain(self.latest_release.iter())
+                    .find(|r| {
+                        !r.is_expired(15 * 60)
+                            && (r.tag_name == t
+                                || r.version == clean
+                                || r.tag_name == format!("v{}", clean)
+                                || r.tag_name.trim_start_matches('v') == clean)
+                    })
+            }
+        }
+    }
+
+    pub fn update_release_cache(&mut self, release: ReleaseInfo) {
+        if let Some(pos) = self.release_cache.iter().position(|r| r.tag_name == release.tag_name || r.version == release.version) {
+            self.release_cache[pos] = release;
+        } else {
+            self.release_cache.push(release);
+        }
     }
 
     pub fn seed_default() -> Self {
@@ -766,6 +797,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             syndication_settings: SyndicationSettings::default(),
             packages,
             latest_release: None,
+            release_cache: Vec::new(),
             recipes,
             onboarding_metrics: OnboardingMetrics::default(),
             contributor_issues,

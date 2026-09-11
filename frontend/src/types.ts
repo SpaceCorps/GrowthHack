@@ -191,6 +191,11 @@ export interface PackageManifestResponse {
   fetched_at?: string;
 }
 
+export interface ManifestQueryParams {
+  refresh?: boolean;
+  tag?: string;
+}
+
 export interface DispatchPackagePrResponse {
   task_id: string;
   message: string;

@@ -5,9 +5,10 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use growthhack_backend::api::packages::{
-    build_upstream_pr_commands, dispatch_package_pr, extract_gh_account, extract_pr_url,
-    generate_manifest_content, get_gh_auth_status, get_manifest, list_packages,
-    parse_gh_auth_output, update_package_status, DispatchPackagePrRequest, ManifestQuery,
+    build_upstream_pr_commands, compute_sha256_bytes, dispatch_package_pr, extract_gh_account,
+    extract_pr_url, format_release_url, generate_manifest_content, get_gh_auth_status,
+    get_manifest, list_packages, parse_checksums_content, parse_gh_auth_output,
+    update_package_status, DispatchPackagePrRequest, ManifestQuery,
     ReleaseAsset, ReleaseInfo, UpdatePackageStatusRequest,
 };
 use growthhack_backend::db::GrowthState;
@@ -107,7 +108,7 @@ async fn test_get_manifest_endpoint() {
     // Valid target
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
-        Query(ManifestQuery { refresh: None }),
+        Query(ManifestQuery { refresh: None, tag: None }),
         State(ctx.clone()),
     )
     .await;
@@ -118,7 +119,7 @@ async fn test_get_manifest_endpoint() {
     // Invalid target
     let (status_invalid, Json(manifest_invalid)) = get_manifest(
         Path("invalid_key".to_string()),
-        Query(ManifestQuery { refresh: None }),
+        Query(ManifestQuery { refresh: None, tag: None }),
         State(ctx),
     )
     .await;
@@ -344,9 +345,7 @@ async fn test_manifest_endpoint_with_refresh_query() {
 
     let (status, Json(manifest)) = get_manifest(
         Path("homebrew".to_string()),
-        Query(ManifestQuery {
-            refresh: Some(true),
-        }),
+        Query(ManifestQuery { refresh: Some(true), tag: None }),
         State(ctx.clone()),
     )
     .await;
@@ -365,9 +364,7 @@ async fn test_release_cache_fallback_on_network_error() {
     // Even if external network fails or repo is invalid, fallback to cached or default
     let (status, Json(manifest)) = get_manifest(
         Path("winget".to_string()),
-        Query(ManifestQuery {
-            refresh: Some(true),
-        }),
+        Query(ManifestQuery { refresh: Some(true), tag: None }),
         State(ctx.clone()),
     )
     .await;
@@ -461,6 +458,7 @@ async fn test_dispatch_package_pr_endpoint_spawns_task() {
 
     let payload = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
+        tag: None,
         notes: Some("Dispatching test PR for scoop".to_string()),
         skip_auth_check: Some(true),
     };
@@ -615,6 +613,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
 
     let payload_no_skip = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
+        tag: None,
         notes: Some("Dispatching test PR".to_string()),
         skip_auth_check: None,
     };
@@ -633,6 +632,7 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
     // 2. Dispatch with skip_auth_check: Some(true) succeeds despite unauthenticated state
     let payload_skip = DispatchPackagePrRequest {
         version: Some("0.8.5".to_string()),
+        tag: None,
         notes: Some("Dispatching test PR with override".to_string()),
         skip_auth_check: Some(true),
     };
@@ -649,4 +649,122 @@ async fn test_dispatch_package_pr_auth_check_and_skip() {
     assert!(resp_ok.task_id.starts_with("task-pkg-pr-"));
 
     std::env::remove_var("GH_AUTH_STATUS_OVERRIDE");
+}
+
+#[tokio::test]
+async fn test_fetch_release_by_tag_url() {
+    let url_tagged = format_release_url("Ivy-Interactive/Ivy-Tendril", Some("v1.2.0"));
+    assert_eq!(
+        url_tagged,
+        "https://api.github.com/repos/Ivy-Interactive/Ivy-Tendril/releases/tags/v1.2.0"
+    );
+
+    let url_bare_tag = format_release_url("Ivy-Interactive/Ivy-Tendril", Some("1.2.0"));
+    assert_eq!(
+        url_bare_tag,
+        "https://api.github.com/repos/Ivy-Interactive/Ivy-Tendril/releases/tags/v1.2.0"
+    );
+
+    let url_latest = format_release_url("Ivy-Interactive/Ivy-Tendril", None);
+    assert_eq!(
+        url_latest,
+        "https://api.github.com/repos/Ivy-Interactive/Ivy-Tendril/releases/latest"
+    );
+
+    let url_latest_str = format_release_url("Ivy-Interactive/Ivy-Tendril", Some("latest"));
+    assert_eq!(
+        url_latest_str,
+        "https://api.github.com/repos/Ivy-Interactive/Ivy-Tendril/releases/latest"
+    );
+}
+
+#[tokio::test]
+async fn test_dynamic_binary_sha256_computation() {
+    let empty_bytes = b"";
+    let empty_hash = compute_sha256_bytes(empty_bytes);
+    assert_eq!(
+        empty_hash,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+
+    let sample_payload = b"tendril-release-binary-darwin-arm64-payload";
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(sample_payload);
+    let expected_hash = format!("{:x}", hasher.finalize());
+
+    assert_eq!(compute_sha256_bytes(sample_payload), expected_hash);
+}
+
+#[tokio::test]
+async fn test_companion_checksums_file_parsing() {
+    let checksums_content = r#"
+# Checksum file generated for Tendril Release v1.3.0
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  tendril-v1.3.0-darwin-arm64.tar.gz
+ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb *tendril-v1.3.0-darwin-x64.tar.gz
+tendril-v1.3.0-linux-x64.tar.gz: 30c822fc944431e67923485ab921b79f225895782782e4e16d47abcf447f5bb7
+"#;
+
+    let parsed = parse_checksums_content(checksums_content);
+    assert_eq!(
+        parsed.get("tendril-v1.3.0-darwin-arm64.tar.gz"),
+        Some(&"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string())
+    );
+    assert_eq!(
+        parsed.get("tendril-v1.3.0-darwin-x64.tar.gz"),
+        Some(&"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb".to_string())
+    );
+    assert_eq!(
+        parsed.get("tendril-v1.3.0-linux-x64.tar.gz"),
+        Some(&"30c822fc944431e67923485ab921b79f225895782782e4e16d47abcf447f5bb7".to_string())
+    );
+}
+
+#[tokio::test]
+async fn test_manifest_endpoint_with_tag_query() {
+    let ctx = common::create_test_context();
+
+    let (status, Json(manifest)) = get_manifest(
+        Path("homebrew".to_string()),
+        Query(ManifestQuery {
+            refresh: None,
+            tag: Some("v1.3.0".to_string()),
+        }),
+        State(ctx),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let m = manifest.expect("manifest expected");
+    assert_eq!(m.release_tag.as_deref(), Some("v1.3.0"));
+    assert!(m.content.contains("version \"1.3.0\""));
+}
+
+#[tokio::test]
+async fn test_no_hardcoded_checksum_fallback_when_binary_downloaded() {
+    let mut release = ReleaseInfo {
+        tag_name: "v2.0.0".to_string(),
+        version: "2.0.0".to_string(),
+        assets: vec![
+            ReleaseAsset {
+                name: "tendril-v2.0.0-darwin-arm64.tar.gz".to_string(),
+                browser_download_url: "https://example.com/binary".to_string(),
+                digest: None,
+                sha256: None,
+            },
+        ],
+        published_at: None,
+        fetched_at: chrono::Utc::now(),
+    };
+
+    assert!(release.assets[0].sha256.is_none());
+
+    let dynamic_binary_content = b"dynamically-downloaded-native-binary-stream";
+    let computed_hash = compute_sha256_bytes(dynamic_binary_content);
+    release.assets[0].sha256 = Some(computed_hash.clone());
+    release.assets[0].digest = Some(format!("sha256:{}", computed_hash));
+
+    let manifest = generate_manifest_content("homebrew", &release).expect("Manifest generated");
+    assert!(manifest.content.contains(&computed_hash));
+    assert!(!manifest.content.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
 }
