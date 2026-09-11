@@ -15,8 +15,6 @@ import {
   Users,
   Sparkles,
   Clock,
-  Send,
-  Image as ImageIcon,
   Share2,
 } from "lucide-react";
 
@@ -25,7 +23,7 @@ export interface LaunchCampaignProps {
   onCampaignUpdated?: () => void;
 }
 
-type LaunchTab = "timeline" | "show_hn" | "product_hunt" | "testers" | "syndication";
+type LaunchTab = "timeline" | "show_hn" | "testers" | "syndication";
 
 const SHOW_HN_TEMPLATES = [
   {
@@ -63,11 +61,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
   const [authenticity, setAuthenticity] = useState<AuthenticityAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
 
-  // Product Hunt State
-  const [selectedTagline, setSelectedTagline] = useState<string>("");
-  const [customTagline, setCustomTagline] = useState<string>("");
-  const [phFirstComment, setPhFirstComment] = useState<string>("");
-
   // Beta Testers State
   const [testerSearch, setTesterSearch] = useState<string>("");
   const [testerPlatformFilter, setTesterPlatformFilter] = useState<string>("All");
@@ -86,9 +79,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
         setHnTitle(data.show_hn.title);
         setHnComment(data.show_hn.maker_comment);
         setAuthenticity(data.show_hn.score_breakdown || null);
-        setSelectedTagline(data.product_hunt.selected_tagline);
-        setCustomTagline(data.product_hunt.selected_tagline);
-        setPhFirstComment(data.product_hunt.first_comment);
       }
     } catch (err) {
       console.error("Failed to load launch campaign", err);
@@ -103,9 +93,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
       setHnTitle(initialCampaign.show_hn.title);
       setHnComment(initialCampaign.show_hn.maker_comment);
       setAuthenticity(initialCampaign.show_hn.score_breakdown || null);
-      setSelectedTagline(initialCampaign.product_hunt.selected_tagline);
-      setCustomTagline(initialCampaign.product_hunt.selected_tagline);
-      setPhFirstComment(initialCampaign.product_hunt.first_comment);
       setLoading(false);
     } else {
       fetchCampaign();
@@ -206,32 +193,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
     }
   };
 
-  const handleTogglePhChecklist = async (id: string) => {
-    try {
-      const res = await fetch(`/api/launch/product-hunt/checklist/${id}`, {
-        method: "PUT",
-      });
-      if (res.ok) {
-        const updatedItem = await res.json();
-        setCampaign((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            product_hunt: {
-              ...prev.product_hunt,
-              checklist: prev.product_hunt.checklist.map((item) =>
-                item.id === id ? updatedItem : item,
-              ),
-            },
-          };
-        });
-        onCampaignUpdated?.();
-      }
-    } catch (err) {
-      console.error("Failed to toggle Product Hunt checklist", err);
-    }
-  };
-
   const handleUpdateTesterStatus = async (id: string, status: string) => {
     try {
       const res = await fetch(`/api/launch/testers/${id}`, {
@@ -287,9 +248,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
           setHnTitle(data.show_hn.title);
           setHnComment(data.show_hn.maker_comment);
           setAuthenticity(data.show_hn.score_breakdown || null);
-          setSelectedTagline(data.product_hunt.selected_tagline);
-          setCustomTagline(data.product_hunt.selected_tagline);
-          setPhFirstComment(data.product_hunt.first_comment);
           onCampaignUpdated?.();
         }
       } catch (err) {
@@ -350,7 +308,7 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
               </span>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                  Coordinated Show HN & Product Hunt Launch
+                  Coordinated Show HN Launch Campaign
                 </h1>
                 <p className="text-sm text-slate-400">
                   48-Hour High-Density Launch Campaign Orchestrator (GitHub Issue #12)
@@ -440,21 +398,6 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
           <span>Show HN Studio</span>
           <span className="text-xs bg-amber-500/20 px-1.5 py-0.5 rounded-full text-amber-300">
             {authenticity?.score ?? campaign.show_hn.authenticity_score} Score
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("product_hunt")}
-          className={`flex items-center space-x-2 px-4 py-2.5 rounded-lg text-sm font-medium transition cursor-pointer ${
-            activeTab === "product_hunt"
-              ? "bg-orange-500/10 text-orange-400 border border-orange-500/30"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-          }`}
-        >
-          <Send className="w-4 h-4" />
-          <span>Product Hunt Kit</span>
-          <span className="text-xs bg-slate-800 px-1.5 py-0.5 rounded-full text-slate-300">
-            Launch Day
           </span>
         </button>
 
@@ -748,177 +691,7 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Product Hunt Kit */}
-      {activeTab === "product_hunt" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            {/* Tagline Selection */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">
-                    Product Hunt Tagline (Max 60 chars)
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Crisp, punchy summary for the Product Hunt card
-                  </p>
-                </div>
-                <span
-                  className={`text-xs font-mono font-medium ${
-                    customTagline.length > 60 ? "text-red-400" : "text-emerald-400"
-                  }`}
-                >
-                  {customTagline.length}/60 chars
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {campaign.product_hunt.taglines.map((tagline) => (
-                  <div
-                    key={tagline}
-                    onClick={() => {
-                      setSelectedTagline(tagline);
-                      setCustomTagline(tagline);
-                    }}
-                    className={`p-3 rounded-lg border text-xs cursor-pointer flex items-center justify-between transition ${
-                      selectedTagline === tagline
-                        ? "border-orange-500/50 bg-orange-500/10 text-white"
-                        : "border-slate-800 bg-slate-950/50 text-slate-300 hover:border-slate-700"
-                    }`}
-                  >
-                    <span>{tagline}</span>
-                    <span className="text-[11px] text-slate-500 font-mono">
-                      {tagline.length} chars
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-2">
-                <input
-                  type="text"
-                  value={customTagline}
-                  onChange={(e) => setCustomTagline(e.target.value)}
-                  placeholder="Custom 60-character tagline"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500 font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={() => copyToClipboard(customTagline, "ph_tagline")}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-600 hover:bg-orange-500 text-white transition cursor-pointer"
-                >
-                  {copiedKey === "ph_tagline" ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Copied Tagline!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Tagline</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Maker First Comment */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Hunter / Maker First Comment</h3>
-                  <p className="text-xs text-slate-400">Post immediately upon launch zero</p>
-                </div>
-                <button
-                  onClick={() => copyToClipboard(phFirstComment, "ph_comment")}
-                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
-                  title="Copy first comment"
-                >
-                  {copiedKey === "ph_comment" ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-              <textarea
-                value={phFirstComment}
-                onChange={(e) => setPhFirstComment(e.target.value)}
-                rows={6}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-orange-500 font-mono leading-relaxed"
-              />
-            </div>
-          </div>
-
-          {/* Right Column: Asset Specs & Checklist */}
-          <div className="space-y-6">
-            {/* Asset Specs */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-orange-400" />
-                Asset Specifications
-              </h3>
-              <div className="space-y-3">
-                {campaign.product_hunt.asset_specs.map((spec) => (
-                  <div
-                    key={spec.name}
-                    className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-1"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">{spec.name}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-cyan-300 font-mono">
-                        {spec.dimensions}
-                      </span>
-                    </div>
-                    <p className="text-slate-400 text-[11px] leading-relaxed">{spec.requirement}</p>
-                    <div className="pt-1">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          spec.status === "Ready"
-                            ? "bg-emerald-500/20 text-emerald-300"
-                            : "bg-amber-500/20 text-amber-300"
-                        }`}
-                      >
-                        Status: {spec.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Launch Checklist */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                PH Readiness Checklist
-              </h3>
-              <div className="space-y-2">
-                {campaign.product_hunt.checklist.map((item) => (
-                  <label
-                    key={item.id}
-                    className="flex items-start space-x-2.5 text-xs text-slate-300 cursor-pointer select-none"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={item.completed}
-                      onChange={() => handleTogglePhChecklist(item.id)}
-                      className="mt-0.5 rounded border-slate-700 text-orange-500 focus:ring-orange-400"
-                    />
-                    <span className={item.completed ? "line-through text-slate-500" : ""}>
-                      {item.task}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: 20-Person Beta Tester Mobilization Tracker */}
+      {/* Tab 3: 20-Person Beta Tester Mobilization Tracker */}
       {activeTab === "testers" && (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
@@ -1046,7 +819,7 @@ export const LaunchCampaign: React.FC<LaunchCampaignProps> = ({
         </div>
       )}
 
-      {/* Tab 5: Cross-Channel Syndication */}
+      {/* Tab 4: Cross-Channel Syndication */}
       {activeTab === "syndication" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

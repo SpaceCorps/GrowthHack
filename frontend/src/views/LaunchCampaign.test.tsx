@@ -21,46 +21,6 @@ const mockCampaign: LaunchCampaignState = {
       penalty_reasons: [],
     },
   },
-  product_hunt: {
-    taglines: [
-      "Autonomous coding agents in isolated Git worktrees",
-      "Run multi-agent software factories with verification gates",
-    ],
-    selected_tagline: "Autonomous coding agents in isolated Git worktrees",
-    first_comment: "Hey Product Hunt! 👋 We built Ivy-Tendril to solve agent workspace collision.",
-    asset_specs: [
-      {
-        name: "Gallery Images",
-        dimensions: "1270x760",
-        requirement: "3-5 high-resolution screenshots",
-        status: "Ready",
-      },
-      {
-        name: "Thumbnail",
-        dimensions: "240x240",
-        requirement: "Animated GIF or clean SVG icon",
-        status: "Ready",
-      },
-      {
-        name: "Demo Video",
-        dimensions: "1920x1080",
-        requirement: "90s uncut demo video",
-        status: "In Progress",
-      },
-    ],
-    checklist: [
-      {
-        id: "ph-1",
-        task: "Schedule launch for 00:01 AM PST",
-        completed: false,
-      },
-      {
-        id: "ph-2",
-        task: "Verify hunter account permissions",
-        completed: true,
-      },
-    ],
-  },
   beta_testers: [
     {
       id: "tester-1",
@@ -214,7 +174,7 @@ describe("LaunchCampaign Component", () => {
     render(<LaunchCampaign initialCampaign={mockCampaign} />);
 
     // Header title and progress
-    expect(screen.getByText("Coordinated Show HN & Product Hunt Launch")).toBeTruthy();
+    expect(screen.getByText("Coordinated Show HN Launch Campaign")).toBeTruthy();
     expect(screen.getByText(/48-Hour Execution Progress/i)).toBeTruthy();
 
     // Timeline phases
@@ -224,7 +184,6 @@ describe("LaunchCampaign Component", () => {
     // Main navigation tabs
     expect(screen.getByText("48-Hour Timeline")).toBeTruthy();
     expect(screen.getByText("Show HN Studio")).toBeTruthy();
-    expect(screen.getByText("Product Hunt Kit")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Beta Mobilization/i })).toBeTruthy();
     expect(screen.getByText("Cross-Channel Syndication")).toBeTruthy();
   });
@@ -260,32 +219,6 @@ describe("LaunchCampaign Component", () => {
     await waitFor(() => {
       expect(screen.getByText("Excellent technical depth with high authenticity")).toBeTruthy();
     });
-  });
-
-  it("test_product_hunt_kit_copy_snippets", async () => {
-    render(<LaunchCampaign initialCampaign={mockCampaign} />);
-
-    // Navigate to Product Hunt Kit
-    fireEvent.click(screen.getByRole("button", { name: /Product Hunt Kit/i }));
-
-    expect(screen.getByText(/Product Hunt Tagline/i)).toBeTruthy();
-    expect(screen.getByText("Hunter / Maker First Comment")).toBeTruthy();
-
-    // Click Copy Tagline button
-    const copyTaglineBtn = screen.getByRole("button", { name: /Copy Tagline/i });
-    fireEvent.click(copyTaglineBtn);
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      mockCampaign.product_hunt.selected_tagline,
-    );
-
-    // Click Copy first comment button
-    const copyCommentBtn = screen.getByTitle("Copy first comment");
-    fireEvent.click(copyCommentBtn);
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      mockCampaign.product_hunt.first_comment,
-    );
   });
 
   it("test_beta_tester_status_filter_and_update", async () => {

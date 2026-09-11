@@ -541,27 +541,6 @@ export interface ShowHnState {
   score_breakdown?: AuthenticityAnalysis;
 }
 
-export interface ProductHuntAssetSpec {
-  name: string;
-  dimensions: string;
-  requirement: string;
-  status: string;
-}
-
-export interface ProductHuntChecklistItem {
-  id: string;
-  task: string;
-  completed: boolean;
-}
-
-export interface ProductHuntKit {
-  taglines: string[];
-  selected_tagline: string;
-  first_comment: string;
-  asset_specs: ProductHuntAssetSpec[];
-  checklist: ProductHuntChecklistItem[];
-}
-
 export interface BetaTester {
   id: string;
   name: string;
@@ -604,7 +583,6 @@ export interface TimelinePhase {
 
 export interface LaunchCampaignState {
   show_hn: ShowHnState;
-  product_hunt: ProductHuntKit;
   beta_testers: BetaTester[];
   syndication_checklist: SyndicationChecklistItem[];
   timeline: TimelinePhase[];
