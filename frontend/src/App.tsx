@@ -16,21 +16,51 @@ import type {
 } from "./types";
 import { Navigation } from "./components/Navigation";
 import { LiveTerminal } from "./components/LiveTerminal";
-import { ArticleModal } from "./components/ArticleModal";
-import { IssuesHub } from "./views/IssuesHub";
-import { ArticleEngine } from "./views/ArticleEngine";
-import { TrendRadar } from "./views/TrendRadar";
-import { ListingBlitz } from "./views/ListingBlitz";
-import { PackageManagerBlitz } from "./views/PackageManagerBlitz";
-import { VideoDemos } from "./views/VideoDemos";
-import { AgentConsole } from "./views/AgentConsole";
-import { ReviewQueue } from "./views/ReviewQueue";
-import { PrFlywheel } from "./views/PrFlywheel";
-import { RecipeHub } from "./views/RecipeHub";
-import { ContributorFlywheel } from "./views/ContributorFlywheel";
-import { DoctorDemo } from "./views/DoctorDemo";
-import { LaunchCampaign } from "./views/LaunchCampaign";
-import { Playground } from "./views/Playground";
+const IssuesHub = React.lazy(() =>
+  import("./views/IssuesHub").then((m) => ({ default: m.IssuesHub })),
+);
+const ArticleEngine = React.lazy(() =>
+  import("./views/ArticleEngine").then((m) => ({ default: m.ArticleEngine })),
+);
+const TrendRadar = React.lazy(() =>
+  import("./views/TrendRadar").then((m) => ({ default: m.TrendRadar })),
+);
+const ListingBlitz = React.lazy(() =>
+  import("./views/ListingBlitz").then((m) => ({ default: m.ListingBlitz })),
+);
+const PackageManagerBlitz = React.lazy(() =>
+  import("./views/PackageManagerBlitz").then((m) => ({ default: m.PackageManagerBlitz })),
+);
+const VideoDemos = React.lazy(() =>
+  import("./views/VideoDemos").then((m) => ({ default: m.VideoDemos })),
+);
+const AgentConsole = React.lazy(() =>
+  import("./views/AgentConsole").then((m) => ({ default: m.AgentConsole })),
+);
+const ReviewQueue = React.lazy(() =>
+  import("./views/ReviewQueue").then((m) => ({ default: m.ReviewQueue })),
+);
+const PrFlywheel = React.lazy(() =>
+  import("./views/PrFlywheel").then((m) => ({ default: m.PrFlywheel })),
+);
+const RecipeHub = React.lazy(() =>
+  import("./views/RecipeHub").then((m) => ({ default: m.RecipeHub })),
+);
+const ContributorFlywheel = React.lazy(() =>
+  import("./views/ContributorFlywheel").then((m) => ({ default: m.ContributorFlywheel })),
+);
+const DoctorDemo = React.lazy(() =>
+  import("./views/DoctorDemo").then((m) => ({ default: m.DoctorDemo })),
+);
+const LaunchCampaign = React.lazy(() =>
+  import("./views/LaunchCampaign").then((m) => ({ default: m.LaunchCampaign })),
+);
+const Playground = React.lazy(() =>
+  import("./views/Playground").then((m) => ({ default: m.Playground })),
+);
+const ArticleModal = React.lazy(() =>
+  import("./components/ArticleModal").then((m) => ({ default: m.ArticleModal })),
+);
 
 const VALID_TABS: ActiveTab[] = [
   "issues",
@@ -1140,96 +1170,109 @@ export const App: React.FC = () => {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === "recipes" && (
-          <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
-        )}
-        {activeTab === "issues" && (
-          <IssuesHub
-            issues={issues}
-            onRunIssue={handleRunIssue}
-            onUpdateStatus={handleUpdateIssueStatus}
-            onCreateIssue={handleCreateIssue}
-          />
-        )}
+        <React.Suspense
+          fallback={
+            <div className="flex items-center justify-center py-24 text-slate-400">
+              <div className="flex items-center space-x-3">
+                <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm">Loading view...</span>
+              </div>
+            </div>
+          }
+        >
+          {activeTab === "recipes" && (
+            <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
+          )}
+          {activeTab === "issues" && (
+            <IssuesHub
+              issues={issues}
+              onRunIssue={handleRunIssue}
+              onUpdateStatus={handleUpdateIssueStatus}
+              onCreateIssue={handleCreateIssue}
+            />
+          )}
 
-        {activeTab === "articles" && (
-          <ArticleEngine
-            articles={articles}
-            onGenerateArticle={handleGenerateArticle}
-            onGenerateSpotlight={handleGenerateSpotlight}
-            onSelectArticle={(art, tab) => {
-              setSelectedArticle(art);
-              setArticleModalTab(tab || "content");
-            }}
-            onUpdateStatus={handleUpdateArticleStatus}
-            onSyncMetrics={handleSyncMetrics}
-          />
-        )}
+          {activeTab === "articles" && (
+            <ArticleEngine
+              articles={articles}
+              onGenerateArticle={handleGenerateArticle}
+              onGenerateSpotlight={handleGenerateSpotlight}
+              onSelectArticle={(art, tab) => {
+                setSelectedArticle(art);
+                setArticleModalTab(tab || "content");
+              }}
+              onUpdateStatus={handleUpdateArticleStatus}
+              onSyncMetrics={handleSyncMetrics}
+            />
+          )}
 
-        {activeTab === "review" && (
-          <ReviewQueue
-            items={reviewItems}
-            onApprove={handleApproveReviewItem}
-            onReject={handleRejectReviewItem}
-            onRefine={handleRefineReviewItem}
-            onBatchPublish={handleBatchPublish}
-            onAutoPost={handleAutoPostReviewItem}
-          />
-        )}
-        {activeTab === "trends" && (
-          <TrendRadar
-            trends={trends}
-            articles={articles}
-            onScoutTrends={handleScoutTrends}
-            onSynthesizeTrend={handleSynthesizeTrend}
-            onSelectArticle={(art) => setSelectedArticle(art)}
-            onUpdateArticleStatus={handleUpdateArticleStatus}
-          />
-        )}
+          {activeTab === "review" && (
+            <ReviewQueue
+              items={reviewItems}
+              onApprove={handleApproveReviewItem}
+              onReject={handleRejectReviewItem}
+              onRefine={handleRefineReviewItem}
+              onBatchPublish={handleBatchPublish}
+              onAutoPost={handleAutoPostReviewItem}
+            />
+          )}
+          {activeTab === "trends" && (
+            <TrendRadar
+              trends={trends}
+              articles={articles}
+              onScoutTrends={handleScoutTrends}
+              onSynthesizeTrend={handleSynthesizeTrend}
+              onSelectArticle={(art) => setSelectedArticle(art)}
+              onUpdateArticleStatus={handleUpdateArticleStatus}
+            />
+          )}
 
-        {activeTab === "demos" && <VideoDemos onGenerateDemo={handleGenerateDemo} demos={demos} />}
+          {activeTab === "demos" && (
+            <VideoDemos onGenerateDemo={handleGenerateDemo} demos={demos} />
+          )}
 
-        {activeTab === "listings" && (
-          <ListingBlitz
-            listings={listings}
-            onGenerateBlurb={handleGenerateBlurb}
-            onUpdateStatus={handleUpdateListingStatus}
-            onCreateListing={handleCreateListing}
-            onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
-            onVerifyBacklink={handleVerifyBacklink}
-            onSubmitUpstream={handleSubmitUpstream}
-            onBatchSubmitUpstream={handleBatchSubmitUpstream}
-            githubStatus={githubStatus}
-            onSyncAllPrs={handleSyncAllPrs}
-            onSyncSinglePr={handleSyncSinglePr}
-          />
-        )}
+          {activeTab === "listings" && (
+            <ListingBlitz
+              listings={listings}
+              onGenerateBlurb={handleGenerateBlurb}
+              onUpdateStatus={handleUpdateListingStatus}
+              onCreateListing={handleCreateListing}
+              onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+              onVerifyBacklink={handleVerifyBacklink}
+              onSubmitUpstream={handleSubmitUpstream}
+              onBatchSubmitUpstream={handleBatchSubmitUpstream}
+              githubStatus={githubStatus}
+              onSyncAllPrs={handleSyncAllPrs}
+              onSyncSinglePr={handleSyncSinglePr}
+            />
+          )}
 
-        {activeTab === "packages" && (
-          <PackageManagerBlitz
-            packages={packages}
-            onUpdatePackageStatus={handleUpdatePackageStatus}
-            onDispatchPackagePr={handleDispatchPackagePr}
-          />
-        )}
+          {activeTab === "packages" && (
+            <PackageManagerBlitz
+              packages={packages}
+              onUpdatePackageStatus={handleUpdatePackageStatus}
+              onDispatchPackagePr={handleDispatchPackagePr}
+            />
+          )}
 
-        {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
+          {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
 
-        {activeTab === "flywheel" && <PrFlywheel />}
+          {activeTab === "flywheel" && <PrFlywheel />}
 
-        {activeTab === "launch" && (
-          <LaunchCampaign
-            initialCampaign={launchCampaign || undefined}
-            onCampaignUpdated={fetchAll}
-          />
-        )}
+          {activeTab === "launch" && (
+            <LaunchCampaign
+              initialCampaign={launchCampaign || undefined}
+              onCampaignUpdated={fetchAll}
+            />
+          )}
 
-        {activeTab === "agent" && (
-          <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
-        )}
+          {activeTab === "agent" && (
+            <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
+          )}
 
-        {activeTab === "doctor" && <DoctorDemo />}
-        {activeTab === "playground" && <Playground />}
+          {activeTab === "doctor" && <DoctorDemo />}
+          {activeTab === "playground" && <Playground />}
+        </React.Suspense>
       </main>
 
       {/* Footer */}
@@ -1266,16 +1309,20 @@ export const App: React.FC = () => {
       />
 
       {/* Article Detail & Markdown Viewer Modal */}
-      <ArticleModal
-        article={selectedArticle}
-        initialTab={articleModalTab}
-        onClose={() => setSelectedArticle(null)}
-        onUpdateStatus={handleUpdateArticleStatus}
-        onArticleUpdated={(updated) => {
-          setSelectedArticle(updated);
-          fetchAll();
-        }}
-      />
+      {selectedArticle && (
+        <React.Suspense fallback={null}>
+          <ArticleModal
+            article={selectedArticle}
+            initialTab={articleModalTab}
+            onClose={() => setSelectedArticle(null)}
+            onUpdateStatus={handleUpdateArticleStatus}
+            onArticleUpdated={(updated) => {
+              setSelectedArticle(updated);
+              fetchAll();
+            }}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };
