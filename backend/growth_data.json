@@ -220,16 +220,16 @@
     {
       "id": "issue-12",
       "number": 12,
-      "title": "Coordinated 'Show HN' (Hacker News) & Product Hunt Launch Campaign",
+      "title": "Coordinated 'Show HN' (Hacker News) Launch Campaign",
       "category": "Distribution & Launches",
       "status": "In Progress",
       "priority": "Critical",
-      "description": "Orchestrate a high-density 48-hour launch event across Hacker News, Product Hunt, and developer communities to trigger the initial 2,000–5,000 star influx and trend #1 globally on GitHub.",
+      "description": "Orchestrate a high-density 48-hour launch event across Hacker News and developer communities to trigger the initial 2,000–5,000 star influx and trend #1 globally on GitHub.",
       "direct_actions": [
         "Draft an engineering-first, high-authenticity Show HN post: 'Show HN: Tendril – Run multiple coding agents safely in isolated Git worktrees'",
         "Prepare a 90-second uncut technical demo video showcasing simultaneous agent execution and automated test verification",
         "Recruit and coordinate 20 technical beta testers from the community to seed substantive technical discussion within the first 60 minutes",
-        "Submit coordinated launch across Product Hunt, Reddit r/programming, and developer newsletters (TLDR, Console.dev, Changelog)"
+        "Submit coordinated launch across Reddit r/programming and developer newsletters (TLDR, Console.dev, Changelog)"
       ],
       "routine_schedule": null,
       "run_count": 0,
@@ -690,18 +690,6 @@
       "pr_url": null,
       "submission_blurb": "Ivy-Tendril: Autonomous plan management and multi-agent orchestration engine.",
       "notes": "Developer tool discovery catalog.",
-      "blurb_status": "Pending",
-      "updated_at": "2026-09-10T17:54:59Z"
-    },
-    {
-      "id": "list-25",
-      "name": "ProductHunt",
-      "category": "Dev Directory",
-      "url": "https://www.producthunt.com/",
-      "status": "Targeted",
-      "pr_url": null,
-      "submission_blurb": "Ivy-Tendril is an autonomous engineering software factory that writes code, runs tests, and opens PRs.",
-      "notes": "Product Hunt upcoming launch.",
       "blurb_status": "Pending",
       "updated_at": "2026-09-10T17:54:59Z"
     },

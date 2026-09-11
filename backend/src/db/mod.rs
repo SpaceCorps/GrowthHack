@@ -408,30 +408,6 @@ pub struct ShowHnState {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct ProductHuntAssetSpec {
-    pub name: String,
-    pub dimensions: String,
-    pub requirement: String,
-    pub status: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct ProductHuntChecklistItem {
-    pub id: String,
-    pub task: String,
-    pub completed: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct ProductHuntKit {
-    pub taglines: Vec<String>,
-    pub selected_tagline: String,
-    pub first_comment: String,
-    pub asset_specs: Vec<ProductHuntAssetSpec>,
-    pub checklist: Vec<ProductHuntChecklistItem>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BetaTester {
     pub id: String,
     pub name: String,
@@ -472,7 +448,6 @@ pub struct TimelinePhase {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct LaunchCampaignState {
     pub show_hn: ShowHnState,
-    pub product_hunt: ProductHuntKit,
     pub beta_testers: Vec<BetaTester>,
     pub syndication_checklist: Vec<SyndicationChecklistItem>,
     pub timeline: Vec<TimelinePhase>,
@@ -1385,18 +1360,6 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 pr_url: None,
                 submission_blurb: "Ivy-Tendril: Autonomous plan management and multi-agent orchestration engine.".to_string(),
                 notes: "Developer tool discovery catalog.".to_string(),
-                blurb_status: Some("Pending".to_string()),
-                updated_at: now,
-            },
-            Listing {
-                id: "list-25".to_string(),
-                name: "ProductHunt".to_string(),
-                category: "Dev Directory".to_string(),
-                url: "https://www.producthunt.com/".to_string(),
-                status: "Targeted".to_string(),
-                pr_url: None,
-                submission_blurb: "Ivy-Tendril is an autonomous engineering software factory that writes code, runs tests, and opens PRs.".to_string(),
-                notes: "Product Hunt upcoming launch.".to_string(),
                 blurb_status: Some("Pending".to_string()),
                 updated_at: now,
             },
@@ -2781,14 +2744,13 @@ steps:
         GrowthIssue {
             id: "issue-12".to_string(),
             number: 12,
-            title: "Coordinated 'Show HN' & Product Hunt Launch Campaign".to_string(),
+            title: "Coordinated 'Show HN' Launch Campaign".to_string(),
             category: "Launch Orchestrator".to_string(),
             status: "In Progress".to_string(),
             priority: "Critical".to_string(),
-            description: "Coordinate a synchronized 48-hour launch blitz across Hacker News, Product Hunt, Reddit, and developer newsletters. Includes authenticity score evaluator, maker comment generator, Product Hunt asset kit, 20-person beta tester mobilization tracker, and cross-channel countdown.".to_string(),
+            description: "Coordinate a synchronized 48-hour launch blitz across Hacker News, Reddit, and developer newsletters. Includes authenticity score evaluator, maker comment generator, 20-person beta tester mobilization tracker, and cross-channel countdown.".to_string(),
             direct_actions: vec![
                 "Optimize Show HN title and technical maker comment for HN community norms with authenticity scoring".to_string(),
-                "Generate Product Hunt collateral with 60-char tagline, maker first comment, and asset specifications".to_string(),
                 "Mobilize 20 technical beta testers for early launch hour engagement and feedback".to_string(),
                 "Execute 7-phase 48-hour syndication blitz across Reddit (r/programming), Twitter/X threads, and newsletters".to_string(),
             ],
@@ -2824,63 +2786,6 @@ steps:
                 ],
                 penalty_reasons: vec![],
             }),
-        };
-
-        let product_hunt = ProductHuntKit {
-            taglines: vec![
-                "Autonomous coding agents in isolated Git worktrees".to_string(),
-                "Run multi-agent software factories with verification gates".to_string(),
-                "Zero-conflict AI coding agents for production engineering".to_string(),
-            ],
-            selected_tagline: "Autonomous coding agents in isolated Git worktrees".to_string(),
-            first_comment: "Hey Product Hunt! 👋 We built Ivy-Tendril to solve the single biggest headache with autonomous coding agents: workspace collision and unverified code changes. Tendril gives every agent an isolated Git worktree and runs strict verification gates before git commit. Excited to hear your thoughts and see what you build!".to_string(),
-            asset_specs: vec![
-                ProductHuntAssetSpec {
-                    name: "Gallery Images".to_string(),
-                    dimensions: "1270x760".to_string(),
-                    requirement: "3-5 high-resolution screenshots showing multi-worktree terminal, verification gates, and diff review".to_string(),
-                    status: "Ready".to_string(),
-                },
-                ProductHuntAssetSpec {
-                    name: "Thumbnail".to_string(),
-                    dimensions: "240x240".to_string(),
-                    requirement: "Animated GIF or clean SVG icon with high contrast on dark mode".to_string(),
-                    status: "Ready".to_string(),
-                },
-                ProductHuntAssetSpec {
-                    name: "Demo Video".to_string(),
-                    dimensions: "1920x1080 (16:9)".to_string(),
-                    requirement: "90s uncut demo video showing issue intake, worktree provisioning, passing tests, and verified PR".to_string(),
-                    status: "In Progress".to_string(),
-                },
-            ],
-            checklist: vec![
-                ProductHuntChecklistItem {
-                    id: "ph-1".to_string(),
-                    task: "Schedule launch for 00:01 AM PST (Hunter timezone sync)".to_string(),
-                    completed: false,
-                },
-                ProductHuntChecklistItem {
-                    id: "ph-2".to_string(),
-                    task: "Verify hunter account permissions and notification settings".to_string(),
-                    completed: true,
-                },
-                ProductHuntChecklistItem {
-                    id: "ph-3".to_string(),
-                    task: "Upload 1270x760 gallery images and 240x240 icon".to_string(),
-                    completed: true,
-                },
-                ProductHuntChecklistItem {
-                    id: "ph-4".to_string(),
-                    task: "Review maker comment and prepare first-hour replies".to_string(),
-                    completed: false,
-                },
-                ProductHuntChecklistItem {
-                    id: "ph-5".to_string(),
-                    task: "Embed Product Hunt badge in Ivy-Tendril README.md".to_string(),
-                    completed: false,
-                },
-            ],
         };
 
         let beta_testers = vec![
@@ -3186,12 +3091,6 @@ steps:
                 timing: "Launch hour (00:01 PST / 08:00 UTC)".to_string(),
                 tasks: vec![
                     TimelineTask {
-                        id: "task-t0-1".to_string(),
-                        title: "Submit Product Hunt listing at 00:01 AM PST".to_string(),
-                        description: "Publish with selected tagline and post maker first comment.".to_string(),
-                        completed: false,
-                    },
-                    TimelineTask {
                         id: "task-t0-2".to_string(),
                         title: "Submit Show HN post at 06:30 AM PST".to_string(),
                         description: "Post title and immediate in-depth technical comment.".to_string(),
@@ -3200,7 +3099,7 @@ steps:
                     TimelineTask {
                         id: "task-t0-3".to_string(),
                         title: "Notify committed beta testers in private Discord/Slack".to_string(),
-                        description: "Request genuine technical feedback and discussion on HN/PH.".to_string(),
+                        description: "Request genuine technical feedback and discussion on Hacker News.".to_string(),
                         completed: false,
                     },
                 ],
@@ -3214,12 +3113,6 @@ steps:
                         id: "task-tp2-1".to_string(),
                         title: "Monitor Show HN new queue and reply to every comment within 5 mins".to_string(),
                         description: "Answer technical architecture questions thoroughly with repo links.".to_string(),
-                        completed: false,
-                    },
-                    TimelineTask {
-                        id: "task-tp2-2".to_string(),
-                        title: "Respond to Product Hunt reviews and Hunter feedback".to_string(),
-                        description: "Thank early supporters and log feature suggestions.".to_string(),
                         completed: false,
                     },
                 ],
@@ -3291,7 +3184,6 @@ steps:
 
         LaunchCampaignState {
             show_hn,
-            product_hunt,
             beta_testers,
             syndication_checklist,
             timeline,
