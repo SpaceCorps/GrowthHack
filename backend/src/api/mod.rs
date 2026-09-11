@@ -224,7 +224,20 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         )
         .route("/api/doctor/fix", post(doctor::fix_diagnostics))
         // Zero-Config Demo Simulator
-        .route("/api/demo/scenarios", get(demo::list_scenarios))
+        .route(
+            "/api/demo/scenarios",
+            get(demo::list_scenarios).post(demo::create_scenario),
+        )
+        .route(
+            "/api/demo/scenarios/reset",
+            post(demo::reset_scenarios),
+        )
+        .route(
+            "/api/demo/scenarios/{id}",
+            get(demo::get_scenario)
+                .put(demo::update_scenario)
+                .delete(demo::delete_scenario),
+        )
         .route("/api/demo/status", get(demo::get_status))
         .route("/api/demo/start", post(demo::start_demo))
         .route("/api/demo/stream/{task_id}", get(demo::stream_demo_logs))

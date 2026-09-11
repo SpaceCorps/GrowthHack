@@ -1,10 +1,11 @@
+use crate::api::demo::{get_sample_scenarios, DemoScenario};
+use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::api::packages::ReleaseInfo;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthIssue {
@@ -158,11 +159,11 @@ pub struct VideoDemo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageManagerTarget {
     pub id: String,
-    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub target_key: String,    // "homebrew", "winget", "scoop", "npx"
     pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
-    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub os: String,   // "macOS / Linux", "Windows", "Cross-Platform"
     pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
-    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub package_id: String,    // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
     pub install_command: String,
     pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
     pub pr_url: Option<String>,
@@ -271,6 +272,8 @@ pub struct GrowthState {
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
+    #[serde(default)]
+    pub demo_scenarios: Vec<DemoScenario>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -305,6 +308,22 @@ impl GrowthState {
                     if state.contributors.is_empty() {
                         state.contributors = Self::seed_contributors();
                         let _ = state.save(path);
+                    }
+                    if state.demo_scenarios.is_empty() {
+                        state.demo_scenarios = get_sample_scenarios();
+                        let _ = state.save(path);
+                    }
+                    let external_scenarios_path = Path::new("demo_scenarios.json");
+                    if external_scenarios_path.exists() {
+                        if let Ok(content) = fs::read_to_string(external_scenarios_path) {
+                            if let Ok(custom) = serde_json::from_str::<Vec<DemoScenario>>(&content)
+                            {
+                                if !custom.is_empty() {
+                                    state.demo_scenarios = custom;
+                                    let _ = state.save(path);
+                                }
+                            }
+                        }
                     }
                     return state;
                 }
@@ -770,6 +789,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             onboarding_metrics: OnboardingMetrics::default(),
             contributor_issues,
             contributors,
+            demo_scenarios: get_sample_scenarios(),
         }
     }
 
@@ -2099,25 +2119,41 @@ steps:
                 name: "Rory Chatt".to_string(),
                 avatar_url: "https://github.com/rorychatt.png".to_string(),
                 profile_url: "https://github.com/rorychatt".to_string(),
-                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "architecture".to_string(),
+                    "review".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Alex Vance".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
                 profile_url: "https://github.com/alex-spacecorps".to_string(),
-                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "backend".to_string(),
+                    "test".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Sarah Jenkins".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
                 profile_url: "https://github.com/sarah-ui".to_string(),
-                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+                contributions: vec![
+                    "design".to_string(),
+                    "frontend".to_string(),
+                    "a11y".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Elena Rostova".to_string(),
                 avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
                 profile_url: "https://github.com/dev-elena".to_string(),
-                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "doc".to_string(),
+                    "maintenance".to_string(),
+                ],
             },
             ContributorRecord {
                 name: "Marcus Chen".to_string(),
