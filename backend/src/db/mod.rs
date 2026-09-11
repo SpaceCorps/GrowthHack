@@ -59,6 +59,20 @@ pub struct EngagementSnapshot {
     pub channels: std::collections::HashMap<String, ChannelMetrics>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementMilestoneAlert {
+    pub id: String,
+    pub article_id: String,
+    pub article_title: String,
+    pub milestone_type: String, // "views", "reactions", "comments", "viral"
+    pub threshold: u32,
+    pub message: String,
+    pub badge_awarded: String,
+    pub triggered_at: DateTime<Utc>,
+    #[serde(default)]
+    pub acknowledged: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExportRecord {
     pub channel: String, // "ivy-web", "Dev.to", "Hashnode", "Medium", "Substack", "LinkedIn", "XThread"
@@ -93,6 +107,10 @@ pub struct Article {
     pub engagement: Option<EngagementMetrics>,
     #[serde(default)]
     pub engagement_snapshots: Vec<EngagementSnapshot>,
+    #[serde(default)]
+    pub engagement_badges: Vec<String>,
+    #[serde(default)]
+    pub milestone_alerts: Vec<EngagementMilestoneAlert>,
 }
 
 impl Default for Article {
@@ -114,6 +132,8 @@ impl Default for Article {
             exports: Vec::new(),
             engagement: None,
             engagement_snapshots: Vec::new(),
+            engagement_badges: Vec::new(),
+            milestone_alerts: Vec::new(),
         }
     }
 }
@@ -494,6 +514,8 @@ pub struct GrowthState {
     pub launch_campaign: Option<LaunchCampaignState>,
     #[serde(default)]
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
+    #[serde(default)]
+    pub engagement_alerts: Vec<EngagementMilestoneAlert>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -892,6 +914,8 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                 ],
                 engagement: None,
                 engagement_snapshots: Vec::new(),
+                engagement_badges: Vec::new(),
+                milestone_alerts: Vec::new(),
             },
             Article {
                 id: "art-2".to_string(),
@@ -901,25 +925,13 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                 angle: "Tutorial".to_string(),
                 summary: "Step-by-step guide showing how to connect Ivy-Tendril to your GitHub repository, assign an issue to an autonomous agent, and verify passing tests before human code review.".to_string(),
                 content: r#"# From GitHub Issue to Verified Pull Request: The 15-Minute Autonomous Loop
+Automating the path from an opened issue to a passing pull request drastically shortens delivery time.
 
-Most "autonomous coding agent" demos stop at generating a code snippet in a chat window. But engineering teams don't need snippets—they need **verified pull requests**.
+With Ivy-Tendril:
+1. Issue intake parses reproduction steps and expected outcomes.
+2. A plan is drafted with isolated worktrees.
+3. Tests and linters run automatically inside the worktree.
 
-Here is the exact workflow for taking a production GitHub issue and turning it into a tested PR in 15 minutes using [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril).
-
-## Step 1: Import the GitHub Issue
-Tendril connects directly to your repository issues. Select the issue and Tendril extracts:
-- Problem description & reproduction steps
-- Affected modules and stack traces
-- Labels and acceptance criteria
-
-## Step 2: Planning & Worktree Provisioning
-Rather than making blind edits, Tendril generates an execution plan and clones your repo into a temporary Git worktree.
-
-## Step 3: Verification Gates (The Differentiator)
-Before opening the PR, Tendril executes your test suite:
-```bash
-cargo test --workspace
-```
 If a test fails, the agent self-corrects within the worktree. Only when tests pass is the PR opened.
 
 Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril) to run this workflow locally.
@@ -947,6 +959,8 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 ],
                 engagement: None,
                 engagement_snapshots: Vec::new(),
+                engagement_badges: Vec::new(),
+                milestone_alerts: Vec::new(),
             },
         ];
 
@@ -1019,6 +1033,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             demo_scenarios: get_sample_scenarios(),
             launch_campaign: Some(Self::seed_launch_campaign(now)),
             global_engagement_snapshots: Vec::new(),
+            engagement_alerts: Vec::new(),
         }
     }
 

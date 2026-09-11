@@ -33,6 +33,7 @@ import {
   TrendingDown,
   Minus,
   Activity,
+  Award,
 } from "lucide-react";
 import { EngagementVelocityChart } from "./EngagementVelocityChart";
 import {
@@ -219,6 +220,15 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     };
   }, [article?.id, selectedChannel, activeTab]);
 
+  const currentBannerSvg = useMemo(() => {
+    return generateClientBannerSvg(
+      bannerTitle || article?.title || "Ivy Autonomous Growth",
+      bannerCategory || article?.angle || "Architecture",
+      bannerSummary || article?.summary || "",
+      bannerTheme,
+    );
+  }, [bannerTitle, bannerCategory, bannerSummary, bannerTheme, article]);
+
   if (!article) return null;
 
   const currentSlug =
@@ -325,15 +335,6 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       setIsSyncingHero(false);
     }
   };
-
-  const currentBannerSvg = useMemo(() => {
-    return generateClientBannerSvg(
-      bannerTitle || article?.title || "Ivy Autonomous Growth",
-      bannerCategory || article?.angle || "Architecture",
-      bannerSummary || article?.summary || "",
-      bannerTheme,
-    );
-  }, [bannerTitle, bannerCategory, bannerSummary, bannerTheme, article]);
 
   const handleSyncRenderedPng = async () => {
     if (!article) return;
@@ -1676,6 +1677,97 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                 velocity={articleHistory?.velocity}
                 title={`${article.title}: Historical Velocity and Trend`}
               />
+
+              {/* Engagement Milestones Card */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Award className="w-4 h-4 text-amber-400" />
+                    <span>Engagement Milestones ({article.engagement_badges?.length || 0})</span>
+                  </div>
+                </h4>
+
+                {/* Unlocked milestone badges */}
+                <div className="mb-4">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-2">
+                    Unlocked Milestone Badges:
+                  </span>
+                  {!article.engagement_badges || article.engagement_badges.length === 0 ? (
+                    <div className="text-xs text-slate-500 italic py-1">
+                      No milestones unlocked yet. Reach 100+ views, 25+ reactions, or 10+ comments
+                      to earn badges.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {article.engagement_badges.map((badge) => {
+                        const lower = badge.toLowerCase();
+                        const badgeColor = lower.includes("view")
+                          ? "bg-amber-950/80 text-amber-300 border-amber-800"
+                          : lower.includes("react")
+                            ? "bg-pink-950/80 text-pink-300 border-pink-800"
+                            : lower.includes("comment")
+                              ? "bg-cyan-950/80 text-cyan-300 border-cyan-800"
+                              : "bg-purple-950/80 text-purple-300 border-purple-800";
+                        return (
+                          <span
+                            key={badge}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${badgeColor}`}
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            <span>{badge}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Chronological Milestone Alerts History */}
+                <div className="pt-3 border-t border-slate-800/80">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-2">
+                    Milestone Achievement History:
+                  </span>
+                  {!article.milestone_alerts || article.milestone_alerts.length === 0 ? (
+                    <div className="text-xs text-slate-500 italic py-1">
+                      No milestone alerts recorded yet.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-56 overflow-y-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                            <th className="pb-2 font-medium">Triggered At</th>
+                            <th className="pb-2 font-medium">Milestone</th>
+                            <th className="pb-2 font-medium">Badge</th>
+                            <th className="pb-2 font-medium text-right">Threshold</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850">
+                          {article.milestone_alerts
+                            .slice()
+                            .reverse()
+                            .map((alert) => (
+                              <tr key={alert.id} className="hover:bg-slate-900/40">
+                                <td className="py-2 text-slate-300">
+                                  {new Date(alert.triggered_at).toLocaleString()}
+                                </td>
+                                <td className="py-2 text-slate-200 capitalize">
+                                  {alert.milestone_type}
+                                </td>
+                                <td className="py-2 text-amber-300 font-bold">
+                                  {alert.badge_awarded}
+                                </td>
+                                <td className="py-2 text-right text-cyan-400 font-bold">
+                                  {alert.threshold}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Snapshot Timeline History */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">

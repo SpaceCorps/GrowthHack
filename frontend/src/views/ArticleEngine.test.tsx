@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { ArticleEngine } from "./ArticleEngine";
+import { ArticleModal } from "../components/ArticleModal";
 import type { Article } from "../types";
 
 // @ts-expect-error global flag for react act support
@@ -523,5 +524,143 @@ describe("ArticleEngine Component", () => {
     expect(btn24h!.className).toContain("bg-indigo-950");
 
     fetchSpy.mockRestore();
+  });
+
+  it("renders engagement milestone badges on article card", async () => {
+    const article: Article = {
+      id: "art-1",
+      title: "Worktree Magic",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Tutorial",
+      summary: "Worktree tutorial",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: ["100+ Views", "25+ Reactions"],
+    };
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[article]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("100+ Views");
+    expect(container!.textContent).toContain("25+ Reactions");
+  });
+
+  it("renders active engagement milestone alerts banner and handles acknowledge", async () => {
+    const alerts = [
+      {
+        id: "alert-1",
+        article_id: "art-1",
+        article_title: "Worktree Magic",
+        milestone_type: "views",
+        threshold: 100,
+        message: "'Worktree Magic' reached 100+ Views!",
+        badge_awarded: "100+ Views",
+        triggered_at: new Date().toISOString(),
+        acknowledged: false,
+      },
+    ];
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (typeof url === "string" && url.includes("/api/articles/alerts?unacknowledged=true")) {
+        return new Response(JSON.stringify(alerts), { status: 200 });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/alerts/alert-1/acknowledge")) {
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return new Response(JSON.stringify({ snapshots: [], velocity: null }), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("Milestone Achievement Alerts");
+    expect(container!.textContent).toContain("Worktree Magic");
+    expect(container!.textContent).toContain("100+ Views");
+
+    const ackButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Acknowledge"),
+    );
+    expect(ackButton).toBeDefined();
+
+    await act(async () => {
+      ackButton!.click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/articles/alerts/alert-1/acknowledge",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("displays unlocked milestones in article modal engagement tab", async () => {
+    const article: Article = {
+      id: "art-modal-test",
+      title: "Worktree Deep Dive",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Tutorial",
+      summary: "Summary",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: ["100+ Views", "25+ Reactions"],
+      milestone_alerts: [
+        {
+          id: "alert-1",
+          article_id: "art-modal-test",
+          article_title: "Worktree Deep Dive",
+          milestone_type: "views",
+          threshold: 100,
+          message: "Reached 100+ Views!",
+          badge_awarded: "100+ Views",
+          triggered_at: new Date().toISOString(),
+          acknowledged: false,
+        },
+      ],
+    };
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    expect(container!.textContent).toContain("Engagement Milestones");
+    expect(container!.textContent).toContain("100+ Views");
+    expect(container!.textContent).toContain("25+ Reactions");
+    expect(container!.textContent).toContain("Milestone Achievement History");
+    expect(container!.textContent).toContain("100");
   });
 });

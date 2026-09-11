@@ -64,6 +64,18 @@ export interface EngagementHistoryResponse {
   velocity: EngagementVelocity;
 }
 
+export interface EngagementMilestoneAlert {
+  id: string;
+  article_id: string;
+  article_title: string;
+  milestone_type: "views" | "reactions" | "comments" | "viral" | string;
+  threshold: number;
+  message: string;
+  badge_awarded: string;
+  triggered_at: string;
+  acknowledged: boolean;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
@@ -91,6 +103,8 @@ export interface Article {
   exports?: ExportRecord[];
   engagement?: EngagementMetrics;
   engagement_snapshots?: EngagementSnapshot[];
+  engagement_badges?: string[];
+  milestone_alerts?: EngagementMilestoneAlert[];
 }
 
 export interface ExportIvyWebRequest {
