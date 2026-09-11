@@ -1,10 +1,10 @@
+use crate::api::packages::ReleaseInfo;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::api::packages::ReleaseInfo;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthIssue {
@@ -33,6 +33,17 @@ pub struct EngagementMetrics {
     pub views: u32,
     #[serde(default)]
     pub last_synced_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementSnapshot {
+    pub timestamp: DateTime<Utc>,
+    #[serde(default)]
+    pub views: u32,
+    #[serde(default)]
+    pub reactions: u32,
+    #[serde(default)]
+    pub comments: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +78,8 @@ pub struct Article {
     pub exports: Vec<ExportRecord>,
     #[serde(default)]
     pub engagement: Option<EngagementMetrics>,
+    #[serde(default)]
+    pub engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -125,6 +138,8 @@ pub struct SyndicationSettings {
     pub hashnode_publication_id: Option<String>,
     #[serde(default)]
     pub github_token: Option<String>,
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
     #[serde(default = "default_publish_as_draft")]
     pub publish_as_draft: bool,
 }
@@ -136,9 +151,38 @@ impl Default for SyndicationSettings {
             hashnode_api_key: None,
             hashnode_publication_id: None,
             github_token: None,
+            webhook_secret: None,
             publish_as_draft: true,
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoryboardScene {
+    pub stage: String, // "Hook", "WorktreeIsolation", "TestVerification", "PrBadgeOutro"
+    pub start_second: u32,
+    pub end_second: u32,
+    pub title: String,
+    pub visual_action: String,
+    #[serde(default)]
+    pub playwright_action: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlatformCopy {
+    pub linkedin_post: String,
+    #[serde(default)]
+    pub twitter_thread: Vec<String>,
+    pub youtube_shorts_caption: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutomationConfig {
+    pub generator_path: String,
+    pub playwright_script: String,
+    pub transcode_format: String, // "mp4" or "webm"
+    #[serde(default)]
+    pub output_video_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -153,16 +197,22 @@ pub struct VideoDemo {
     pub status: String, // "Pending", "Approved", "Rejected", "Published"
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub scenes: Vec<StoryboardScene>,
+    #[serde(default)]
+    pub platform_copy: Option<PlatformCopy>,
+    #[serde(default)]
+    pub automation_config: Option<AutomationConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageManagerTarget {
     pub id: String,
-    pub target_key: String, // "homebrew", "winget", "scoop", "npx"
+    pub target_key: String,    // "homebrew", "winget", "scoop", "npx"
     pub name: String, // "Homebrew (tap & core)", "Windows Package Manager (winget)", "Scoop (Extras)", "npx Zero-Install"
-    pub os: String, // "macOS / Linux", "Windows", "Cross-Platform"
+    pub os: String,   // "macOS / Linux", "Windows", "Cross-Platform"
     pub registry_repo: String, // "ivy-interactive/homebrew-tap", "microsoft/winget-pkgs", "ScoopInstaller/Extras", "npm"
-    pub package_id: String, // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
+    pub package_id: String,    // "tendril", "Ivy.Tendril", "@ivy-interactive/tendril"
     pub install_command: String,
     pub status: String, // "Targeted", "PR Submitted", "Under Review", "Merged", "Live"
     pub pr_url: Option<String>,
@@ -215,7 +265,7 @@ pub struct Recipe {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ContributorIssue {
     pub id: String,
     pub title: String,
@@ -230,6 +280,14 @@ pub struct ContributorIssue {
     pub claimed_by: Option<String>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub pr_url: Option<String>,
+    #[serde(default)]
+    pub github_issue_number: Option<u64>,
+    #[serde(default)]
+    pub github_repo: Option<String>,
+    #[serde(default)]
+    pub github_sync_status: Option<String>,
+    #[serde(default)]
+    pub github_sync_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -273,6 +331,15 @@ pub struct AllContributorsConfig {
     pub link_to_usage: bool,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PlaygroundMetrics {
+    pub total_sessions: u32,
+    pub walkthroughs_completed: u32,
+    pub issues_imported: u32,
+    pub github_stars_clicked: u32,
+    pub avg_completion_seconds: f64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
@@ -293,9 +360,13 @@ pub struct GrowthState {
     #[serde(default)]
     pub onboarding_metrics: OnboardingMetrics,
     #[serde(default)]
+    pub playground_metrics: PlaygroundMetrics,
+    #[serde(default)]
     pub contributor_issues: Vec<ContributorIssue>,
     #[serde(default)]
     pub contributors: Vec<ContributorRecord>,
+    #[serde(default)]
+    pub global_engagement_snapshots: Vec<EngagementSnapshot>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -321,6 +392,10 @@ impl GrowthState {
                     }
                     if !state.issues.iter().any(|i| i.number == 11) {
                         state.issues.push(Self::seed_issue_11(Utc::now()));
+                        let _ = state.save(path);
+                    }
+                    if !state.issues.iter().any(|i| i.number == 16) {
+                        state.issues.push(Self::seed_issue_16(Utc::now()));
                         let _ = state.save(path);
                     }
                     if state.contributor_issues.is_empty() {
@@ -571,6 +646,7 @@ impl GrowthState {
                 updated_at: now,
             },
             Self::seed_issue_11(now),
+            Self::seed_issue_16(now),
         ];
 
         let articles = vec![
@@ -634,6 +710,7 @@ Explore the complete architecture in the [Ivy-Tendril GitHub Repository](https:/
                     },
                 ],
                 engagement: None,
+                engagement_snapshots: Vec::new(),
             },
             Article {
                 id: "art-2".to_string(),
@@ -688,6 +765,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                     },
                 ],
                 engagement: None,
+                engagement_snapshots: Vec::new(),
             },
         ];
 
@@ -736,68 +814,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
         let packages = Self::seed_packages(now);
         let recipes = Self::seed_recipes(now);
 
-        let video_demos = vec![
-            VideoDemo {
-                id: "demo-1".to_string(),
-                feature: "Git Worktrees".to_string(),
-                target_platform: "LinkedIn".to_string(),
-                duration_seconds: 30,
-                headline: "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)".to_string(),
-                body: "If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nHere is what we do differently in Ivy-Tendril:\nEvery agent gets its own ephemeral Git worktree.\n\n1️⃣ Agent A edits src/auth.ts in /tendril-task-1\n2️⃣ Agent B runs full test suite in /tendril-task-2\n3️⃣ Zero merge collisions. Zero index locks.\n\nWatch the 30-second demo below ⬇️\n\nCheck it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub".to_string(),
-                storyboard: "00:00 - 00:05: Split terminal showing git collision error in traditional setups.\n00:05 - 00:15: Tendril creates 2 isolated worktrees instantly in the background.\n00:15 - 00:25: Both agents work in parallel; tests pass without contention.\n00:25 - 00:30: Verification badge and pull request opened. Tendril GitHub star CTA.".to_string(),
-                status: "Pending".to_string(),
-                created_at: now,
-                updated_at: now,
-            },
-            VideoDemo {
-                id: "demo-2".to_string(),
-                feature: "Issue to Verified PR".to_string(),
-                target_platform: "LinkedIn".to_string(),
-                duration_seconds: 45,
-                headline: "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡".to_string(),
-                body: "Chatbot coding demos stop at \"here is a snippet.\"\n\nEngineering teams do not need snippets. They need verified pull requests with passing test suites.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril spins up an agent in an isolated worktree\n3. The agent edits code AND runs your unit tests\n4. Only when the tests pass does it open the PR\n\nSee the autonomous loop in action in the video below ⬇️\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#GitHub #CodingAgents #DevOps #CICD #SoftwareTesting #OpenSource".to_string(),
-                storyboard: "00:00 - 00:06: Import GitHub issue #184 into Tendril.\n00:06 - 00:20: Agent formulates plan, identifies files, writes fix.\n00:20 - 00:35: Automated test runner executes: cargo test passes.\n00:35 - 00:45: PR created with diff breakdown and verification badge.".to_string(),
-                status: "Pending".to_string(),
-                created_at: now,
-                updated_at: now,
-            },
-            VideoDemo {
-                id: "demo-3".to_string(),
-                feature: "Multi-Agent Orchestration".to_string(),
-                target_platform: "LinkedIn".to_string(),
-                duration_seconds: 35,
-                headline: "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?".to_string(),
-                body: "Single-agent coding is 2024. Multi-agent software factories are 2026.\n\nWith Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:\n- Claude Code refactors legacy services\n- Codex updates unit test coverage\n- Gemini drafts migration documentation\n\nAll isolated. All verified before git commit.\n\nCheck out the demo ⬇️\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#MultiAgent #ClaudeCode #Gemini #OpenCode #AIProgramming #DevTools".to_string(),
-                storyboard: "00:00 - 00:05: Tendril dashboard launching 3 agent tasks concurrently.\n00:05 - 00:20: Live terminal views showing Claude and Codex executing simultaneously.\n00:20 - 00:30: Individual worktree diffs consolidating into verified commits.\n00:30 - 00:35: Outro with Tendril architecture link.".to_string(),
-                status: "Pending".to_string(),
-                created_at: now,
-                updated_at: now,
-            },
-            VideoDemo {
-                id: "demo-4".to_string(),
-                feature: "Voice Control".to_string(),
-                target_platform: "LinkedIn".to_string(),
-                duration_seconds: 25,
-                headline: "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️".to_string(),
-                body: "Typing 500-word prompt context in terminal windows slows down flow state.\n\nIvy-Tendril has built-in voice intelligence:\nSpeak your architectural intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nWatch this 25-second walkthrough ⬇️\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#VoiceAI #Productivity #DeveloperExperience #CodingTools #OpenSource".to_string(),
-                storyboard: "00:00 - 00:05: Developer speaking task instruction into mic.\n00:05 - 00:15: Real-time speech-to-plan transformation in Tendril UI.\n00:15 - 00:25: Agent executes task and opens diff review.".to_string(),
-                status: "Pending".to_string(),
-                created_at: now,
-                updated_at: now,
-            },
-            VideoDemo {
-                id: "demo-5".to_string(),
-                feature: "Tunneling & Preview".to_string(),
-                target_platform: "LinkedIn".to_string(),
-                duration_seconds: 20,
-                headline: "Instant Live Previews for AI-Generated Web Features 🌐".to_string(),
-                body: "When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nSee how it works in 20 seconds ⬇️\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#WebDev #FullStack #Staging #DevTools #ProductDesign".to_string(),
-                storyboard: "00:00 - 00:05: Agent finishes web UI change.\n00:05 - 00:12: Click \"Tunnel\" -> instant public URL generated.\n00:12 - 00:20: Live interactive preview loaded on mobile and desktop.".to_string(),
-                status: "Pending".to_string(),
-                created_at: now,
-                updated_at: now,
-            },
-        ];
+        let video_demos = Self::seed_video_demos(now);
 
         let contributor_issues = Self::seed_contributor_issues(now);
         let contributors = Self::seed_contributors();
@@ -814,8 +831,10 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             latest_release: None,
             recipes,
             onboarding_metrics: OnboardingMetrics::default(),
+            playground_metrics: PlaygroundMetrics::default(),
             contributor_issues,
             contributors,
+            global_engagement_snapshots: Vec::new(),
         }
     }
 
@@ -833,6 +852,31 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
                 "Implement 1-click remediation command copying for quick developer fix execution".to_string(),
                 "Create replayable zero-config demo simulator modeling intake, isolated worktree, verification gates, and PR diff".to_string(),
                 "Add celebration modal with GitHub star call-to-action on successful first-run completion".to_string(),
+            ],
+            routine_schedule: None,
+            run_count: 1,
+            last_run_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn seed_issue_16(now: DateTime<Utc>) -> GrowthIssue {
+        GrowthIssue {
+            id: "issue-16".to_string(),
+            number: 16,
+            title: "Interactive Browser Web Playground (tendril.run)".to_string(),
+            category: "Developer Experience".to_string(),
+            status: "In Progress".to_string(),
+            priority: "Critical".to_string(),
+            description: "Zero-barrier interactive simulation sandbox (tendril.run) demonstrating Tendril's issue-to-verified-PR workflow in 30 seconds with simulated worktrees, live terminal logs, verification gates, diff viewer, and embeddable README banners.".to_string(),
+            direct_actions: vec![
+                "Build zero-barrier interactive browser playground simulation engine in backend/src/api/playground.rs".to_string(),
+                "Support curated developer scenarios and custom GitHub issue intake (POST /api/playground/import-issue)".to_string(),
+                "Implement simulated worktree filesystem tree state with file status badges (GET /api/playground/tree)".to_string(),
+                "Create live agent terminal execution, verification gate inspection, and syntax-highlighted diff viewer".to_string(),
+                "Add embed banner generator for README and website with Markdown and HTML snippets".to_string(),
+                "Provide high-conversion 1-click GitHub star CTA upon walkthrough completion with conversion metrics".to_string(),
             ],
             routine_schedule: None,
             run_count: 1,
@@ -1480,6 +1524,319 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
         ]
     }
 
+    pub fn seed_video_demos(now: DateTime<Utc>) -> Vec<VideoDemo> {
+        vec![
+            VideoDemo {
+                id: "demo-1".to_string(),
+                feature: "Git Worktrees".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 30,
+                headline: "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)".to_string(),
+                body: "If you have ever run Claude Code, Codex, or Gemini CLI concurrently on a repository, you know the pain:\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nHere is what we do differently in Ivy-Tendril:\nEvery agent gets its own ephemeral Git worktree.\n\n1️⃣ Agent A edits src/auth.ts in /tendril-task-1\n2️⃣ Agent B runs full test suite in /tendril-task-2\n3️⃣ Zero merge collisions. Zero index locks.\n\nWatch the 30-second demo below ⬇️\n\nCheck it out and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub".to_string(),
+                storyboard: "00:00 - 00:05: Split terminal showing git collision error in traditional setups.\n00:05 - 00:15: Tendril creates 2 isolated worktrees instantly in the background.\n00:15 - 00:25: Both agents work in parallel; tests pass without contention.\n00:25 - 00:30: Verification badge and pull request opened. Tendril GitHub star CTA.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+                scenes: vec![
+                    StoryboardScene {
+                        stage: "Hook".to_string(),
+                        start_second: 0,
+                        end_second: 5,
+                        title: "Git Index Collision Error".to_string(),
+                        visual_action: "Split terminal showing git index lock collision error during concurrent agent execution.".to_string(),
+                        playwright_action: Some("await page.goto('/terminal'); await page.click('[data-testid=\"conflict-demo\"]');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "WorktreeIsolation".to_string(),
+                        start_second: 5,
+                        end_second: 15,
+                        title: "Automatic Worktree Provisioning".to_string(),
+                        visual_action: "Tendril spins up two isolated git worktrees concurrently in the background.".to_string(),
+                        playwright_action: Some("await page.click('#spawn-worktree'); await page.waitForSelector('.worktree-active');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "TestVerification".to_string(),
+                        start_second: 15,
+                        end_second: 25,
+                        title: "Parallel Test Suite Execution".to_string(),
+                        visual_action: "Parallel test verification running across both worktrees with green checkmarks.".to_string(),
+                        playwright_action: Some("await page.click('#run-tests'); await page.waitForSelector('.test-pass');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "PrBadgeOutro".to_string(),
+                        start_second: 25,
+                        end_second: 30,
+                        title: "Verified Pull Request Outro".to_string(),
+                        visual_action: "Verified PR badge and link with GitHub star call to action.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.pr-badge'); await page.screenshot({ path: 'outro.png' });".to_string()),
+                    },
+                ],
+                platform_copy: Some(PlatformCopy {
+                    linkedin_post: "🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it)\n\nDirty index collisions. Hallucinated file states. Broken test runs.\n\nEvery agent gets its own ephemeral Git worktree in Ivy-Tendril.\n\n1️⃣ Agent A edits src/auth.ts in /tendril-task-1\n2️⃣ Agent B runs full test suite in /tendril-task-2\n3️⃣ Zero merge collisions. Zero index locks.\n\nCheck out the demo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#AI #DevTools #SoftwareEngineering #AgenticAI #OpenSource #GitHub".to_string(),
+                    twitter_thread: vec![
+                        "1/4 🚨 Why your AI coding agents keep breaking each other (and how Git worktrees fix it) 🧵".to_string(),
+                        "2/4 Concurrent agents on the same working tree corrupt index state, race on lock files, and break CI.".to_string(),
+                        "3/4 In @IvyTendril, every task runs in an isolated ephemeral worktree with dedicated verification gates.".to_string(),
+                        "4/4 Zero locks. Zero collisions. Parallel agent factories: https://github.com/Ivy-Interactive/Ivy-Tendril #DevTools".to_string(),
+                    ],
+                    youtube_shorts_caption: "Stop AI coding agents from fighting over git lock files! Watch Tendril isolate agents with git worktrees ⚡ Star on GitHub #Shorts #Coding #AI".to_string(),
+                }),
+                automation_config: Some(AutomationConfig {
+                    generator_path: "/Users/rorychatt/git/web-demo-generator".to_string(),
+                    playwright_script: r#"import { test } from '@playwright/test'; test('worktrees demo', async ({ page }) => { await page.goto('http://localhost:5173'); await page.click('[data-testid="worktree-demo"]'); });"#.to_string(),
+                    transcode_format: "mp4".to_string(),
+                    output_video_path: None,
+                }),
+            },
+            VideoDemo {
+                id: "demo-2".to_string(),
+                feature: "Issue to Verified PR".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 45,
+                headline: "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡".to_string(),
+                body: "Chatbot coding demos stop at \"here is a snippet.\"\n\nEngineering teams do not need snippets. They need verified pull requests with passing test suites.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril spins up an agent in an isolated worktree\n3. The agent edits code AND runs your unit tests\n4. Only when the tests pass does it open the PR\n\nSee the autonomous loop in action in the video below ⬇️\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#GitHub #CodingAgents #DevOps #CICD #SoftwareTesting #OpenSource".to_string(),
+                storyboard: "00:00 - 00:06: Import GitHub issue #184 into Tendril.\n00:06 - 00:20: Agent formulates plan, identifies files, writes fix.\n00:20 - 00:35: Automated test runner executes: cargo test passes.\n00:35 - 00:45: PR created with diff breakdown and verification badge.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+                scenes: vec![
+                    StoryboardScene {
+                        stage: "Hook".to_string(),
+                        start_second: 0,
+                        end_second: 6,
+                        title: "Issue Intake & Bug Triage".to_string(),
+                        visual_action: "Import GitHub issue #184 into Tendril dashboard with reproduction test failure.".to_string(),
+                        playwright_action: Some("await page.goto('/issues'); await page.click('#issue-184');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "WorktreeIsolation".to_string(),
+                        start_second: 6,
+                        end_second: 20,
+                        title: "Autonomous Implementation".to_string(),
+                        visual_action: "Agent formulates execution plan and edits codebase in dedicated git worktree.".to_string(),
+                        playwright_action: Some("await page.click('#execute-plan'); await page.waitForSelector('.executing-badge');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "TestVerification".to_string(),
+                        start_second: 20,
+                        end_second: 35,
+                        title: "Verification Suite Pass".to_string(),
+                        visual_action: "Automated test runner executes: cargo test passes with 100% green suites.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.verification-pass');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "PrBadgeOutro".to_string(),
+                        start_second: 35,
+                        end_second: 45,
+                        title: "Verified PR Submission".to_string(),
+                        visual_action: "PR created with diff breakdown, verification badge, and GitHub star CTA.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.pr-link');".to_string()),
+                    },
+                ],
+                platform_copy: Some(PlatformCopy {
+                    linkedin_post: "From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡\n\nChatbot coding demos stop at snippets. Engineering teams need verified pull requests.\n\nWith Ivy-Tendril:\n1. Select any GitHub issue\n2. Tendril launches in an isolated worktree\n3. The agent edits code AND runs tests\n4. Only when tests pass does it open the PR\n\nStar the project on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril #GitHub #DevOps".to_string(),
+                    twitter_thread: vec![
+                        "1/4 From GitHub Issue to Merged Pull Request in 15 Minutes Flat ⚡".to_string(),
+                        "2/4 Chatbot demos stop at code snippets. Ivy-Tendril gives you verified PRs with passing test suites.".to_string(),
+                        "3/4 Agents plan, implement in worktrees, and pass verification before ever pushing code.".to_string(),
+                        "4/4 Check the autonomous loop & star us: https://github.com/Ivy-Interactive/Ivy-Tendril #DevOps #CICD".to_string(),
+                    ],
+                    youtube_shorts_caption: "Turn GitHub issues into verified pull requests autonomously with Ivy-Tendril 🚀 #DevTools #GitHub #Coding".to_string(),
+                }),
+                automation_config: Some(AutomationConfig {
+                    generator_path: "/Users/rorychatt/git/web-demo-generator".to_string(),
+                    playwright_script: r#"import { test } from '@playwright/test'; test('issue to pr demo', async ({ page }) => { await page.goto('http://localhost:5173'); await page.click('#issue-to-pr'); });"#.to_string(),
+                    transcode_format: "mp4".to_string(),
+                    output_video_path: None,
+                }),
+            },
+            VideoDemo {
+                id: "demo-3".to_string(),
+                feature: "Multi-Agent Orchestration".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 35,
+                headline: "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?".to_string(),
+                body: "Single-agent coding is 2024. Multi-agent software factories are 2026.\n\nWith Ivy-Tendril, you don't pick between Claude Code or Codex. You run them side-by-side:\n- Claude Code refactors legacy services\n- Codex updates unit test coverage\n- Gemini drafts migration documentation\n\nAll isolated. All verified before git commit.\n\nCheck out the demo ⬇️\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#MultiAgent #ClaudeCode #Gemini #OpenCode #AIProgramming #DevTools".to_string(),
+                storyboard: "00:00 - 00:05: Tendril dashboard launching 3 agent tasks concurrently.\n00:05 - 00:20: Live terminal views showing Claude and Codex executing simultaneously.\n00:20 - 00:30: Individual worktree diffs consolidating into verified commits.\n00:30 - 00:35: Outro with Tendril architecture link.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+                scenes: vec![
+                    StoryboardScene {
+                        stage: "Hook".to_string(),
+                        start_second: 0,
+                        end_second: 5,
+                        title: "Multi-Agent Launch".to_string(),
+                        visual_action: "Tendril dashboard launching Claude Code, Codex, and Gemini tasks concurrently.".to_string(),
+                        playwright_action: Some("await page.goto('/tasks'); await page.click('#multi-agent-launch');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "WorktreeIsolation".to_string(),
+                        start_second: 5,
+                        end_second: 20,
+                        title: "Parallel Execution Streams".to_string(),
+                        visual_action: "Live terminal views showing 3 agents executing simultaneously without conflict.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.agent-stream-grid');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "TestVerification".to_string(),
+                        start_second: 20,
+                        end_second: 30,
+                        title: "Consolidated Verification".to_string(),
+                        visual_action: "Individual worktree diffs consolidating into passing verification test suites.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.all-suites-passed');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "PrBadgeOutro".to_string(),
+                        start_second: 30,
+                        end_second: 35,
+                        title: "Software Factory Outro".to_string(),
+                        visual_action: "Outro with Tendril architecture link and GitHub star call to action.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.outro-card');".to_string()),
+                    },
+                ],
+                platform_copy: Some(PlatformCopy {
+                    linkedin_post: "What happens when you run Claude Code, Codex, and Gemini CLI at the exact same time?\n\nMulti-agent software factories are here with Ivy-Tendril.\n\nRun them side-by-side without collisions in isolated worktrees.\n\nGitHub repo: https://github.com/Ivy-Interactive/Ivy-Tendril #MultiAgent #AIProgramming".to_string(),
+                    twitter_thread: vec![
+                        "1/4 What happens when you run Claude Code, Codex, and Gemini CLI simultaneously? 🧵".to_string(),
+                        "2/4 Single-agent coding is bottlenecked. Multi-agent software factories run models concurrently.".to_string(),
+                        "3/4 Claude handles refactors, Codex writes tests, Gemini documents. All isolated in Tendril worktrees.".to_string(),
+                        "4/4 Scale your dev team 10x: https://github.com/Ivy-Interactive/Ivy-Tendril #AI".to_string(),
+                    ],
+                    youtube_shorts_caption: "Running Claude Code and Codex side by side without git collisions! Watch Ivy-Tendril orchestrate multi-agent factories 🤖 #AI #Shorts".to_string(),
+                }),
+                automation_config: Some(AutomationConfig {
+                    generator_path: "/Users/rorychatt/git/web-demo-generator".to_string(),
+                    playwright_script: r#"import { test } from '@playwright/test'; test('multi agent demo', async ({ page }) => { await page.goto('http://localhost:5173'); await page.click('#multi-agent-demo'); });"#.to_string(),
+                    transcode_format: "mp4".to_string(),
+                    output_video_path: None,
+                }),
+            },
+            VideoDemo {
+                id: "demo-4".to_string(),
+                feature: "Voice Control".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 25,
+                headline: "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️".to_string(),
+                body: "Typing 500-word prompt context in terminal windows slows down flow state.\n\nIvy-Tendril has built-in voice intelligence:\nSpeak your architectural intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nWatch this 25-second walkthrough ⬇️\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#VoiceAI #Productivity #DeveloperExperience #CodingTools #OpenSource".to_string(),
+                storyboard: "00:00 - 00:05: Developer speaking task instruction into mic.\n00:05 - 00:15: Real-time speech-to-plan transformation in Tendril UI.\n00:15 - 00:25: Agent executes task and opens diff review.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+                scenes: vec![
+                    StoryboardScene {
+                        stage: "Hook".to_string(),
+                        start_second: 0,
+                        end_second: 5,
+                        title: "Voice Intent Capture".to_string(),
+                        visual_action: "Developer speaking complex architectural refactoring intent into microphone.".to_string(),
+                        playwright_action: Some("await page.goto('/'); await page.click('#voice-mic-btn');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "WorktreeIsolation".to_string(),
+                        start_second: 5,
+                        end_second: 15,
+                        title: "Speech-to-Plan Synthesis".to_string(),
+                        visual_action: "Real-time speech-to-plan transformation showing structured steps appearing.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.speech-plan-card');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "TestVerification".to_string(),
+                        start_second: 15,
+                        end_second: 20,
+                        title: "Hands-Free Verification".to_string(),
+                        visual_action: "Agent autonomously implements the voice plan and runs test verifications.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.test-results-badge');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "PrBadgeOutro".to_string(),
+                        start_second: 20,
+                        end_second: 25,
+                        title: "Diff Review Outro".to_string(),
+                        visual_action: "Agent opens diff review ready for one-click merge with GitHub star CTA.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.diff-review-ready');".to_string()),
+                    },
+                ],
+                platform_copy: Some(PlatformCopy {
+                    linkedin_post: "Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️\n\nTyping 500-word prompt context in terminal windows slows down flow state.\n\nSpeak your intent, and Tendril translates speech into structured worktree plans and launches the CLI agent automatically.\n\nStar us on GitHub: https://github.com/Ivy-Interactive/Ivy-Tendril #VoiceAI #Productivity".to_string(),
+                    twitter_thread: vec![
+                        "1/3 Look Ma, No Hands: Hands-Free Voice Coding with Ivy-Tendril 🎙️".to_string(),
+                        "2/3 Speak your architectural intent, and Tendril turns voice into structured plans and runs agents.".to_string(),
+                        "3/3 Watch the walkthrough and star the repo: https://github.com/Ivy-Interactive/Ivy-Tendril #VoiceAI".to_string(),
+                    ],
+                    youtube_shorts_caption: "Hands-free coding with voice commands in Ivy-Tendril! Speak architecture, get verified pull requests 🎙️ #VoiceAI #DevTools #Shorts".to_string(),
+                }),
+                automation_config: Some(AutomationConfig {
+                    generator_path: "/Users/rorychatt/git/web-demo-generator".to_string(),
+                    playwright_script: r#"import { test } from '@playwright/test'; test('voice demo', async ({ page }) => { await page.goto('http://localhost:5173'); await page.click('#voice-demo'); });"#.to_string(),
+                    transcode_format: "mp4".to_string(),
+                    output_video_path: None,
+                }),
+            },
+            VideoDemo {
+                id: "demo-5".to_string(),
+                feature: "Tunneling & Preview".to_string(),
+                target_platform: "LinkedIn".to_string(),
+                duration_seconds: 20,
+                headline: "Instant Live Previews for AI-Generated Web Features 🌐".to_string(),
+                body: "When an agent builds a web component, reviewing it locally isn't enough. You want to test it on your phone and share it with teammates.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nSee how it works in 20 seconds ⬇️\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril\n\n#WebDev #FullStack #Staging #DevTools #ProductDesign".to_string(),
+                storyboard: "00:00 - 00:05: Agent finishes web UI change.\n00:05 - 00:12: Click \"Tunnel\" -> instant public URL generated.\n00:12 - 00:20: Live interactive preview loaded on mobile and desktop.".to_string(),
+                status: "Pending".to_string(),
+                created_at: now,
+                updated_at: now,
+                scenes: vec![
+                    StoryboardScene {
+                        stage: "Hook".to_string(),
+                        start_second: 0,
+                        end_second: 5,
+                        title: "Web UI Change Complete".to_string(),
+                        visual_action: "Agent finishes web UI modification in isolated worktree.".to_string(),
+                        playwright_action: Some("await page.goto('/preview'); await page.waitForSelector('.preview-card');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "WorktreeIsolation".to_string(),
+                        start_second: 5,
+                        end_second: 10,
+                        title: "Instant HTTPS Tunneling".to_string(),
+                        visual_action: "Click 'Tunnel' generating instant public HTTPS preview URL with QR code.".to_string(),
+                        playwright_action: Some("await page.click('#tunnel-btn'); await page.waitForSelector('.qr-code');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "TestVerification".to_string(),
+                        start_second: 10,
+                        end_second: 15,
+                        title: "Live Mobile & Desktop Testing".to_string(),
+                        visual_action: "Side-by-side interactive preview rendering live on mobile and desktop viewports.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.multi-device-preview');".to_string()),
+                    },
+                    StoryboardScene {
+                        stage: "PrBadgeOutro".to_string(),
+                        start_second: 15,
+                        end_second: 20,
+                        title: "Shareable Link Outro".to_string(),
+                        visual_action: "One-click approval and GitHub star call to action.".to_string(),
+                        playwright_action: Some("await page.waitForSelector('.share-outro');".to_string()),
+                    },
+                ],
+                platform_copy: Some(PlatformCopy {
+                    linkedin_post: "Instant Live Previews for AI-Generated Web Features 🌐\n\nWhen an agent builds a web component, reviewing locally isn't enough.\n\nIvy-Tendril creates instant, secure HTTPS tunnels directly to the agent's worktree server with one click.\n\nGitHub: https://github.com/Ivy-Interactive/Ivy-Tendril #WebDev #FullStack".to_string(),
+                    twitter_thread: vec![
+                        "1/3 Instant Live Previews for AI-Generated Web Features 🌐".to_string(),
+                        "2/3 Ivy-Tendril generates secure public HTTPS tunnels straight to your agent worktrees.".to_string(),
+                        "3/3 Test on mobile instantly and share with teammates: https://github.com/Ivy-Interactive/Ivy-Tendril #WebDev".to_string(),
+                    ],
+                    youtube_shorts_caption: "Preview AI web changes on your phone in seconds! Ivy-Tendril instant tunneling 📱 #WebDev #Coding #Shorts".to_string(),
+                }),
+                automation_config: Some(AutomationConfig {
+                    generator_path: "/Users/rorychatt/git/web-demo-generator".to_string(),
+                    playwright_script: r#"import { test } from '@playwright/test'; test('tunneling demo', async ({ page }) => { await page.goto('http://localhost:5173'); await page.click('#tunnel-demo'); });"#.to_string(),
+                    transcode_format: "mp4".to_string(),
+                    output_video_path: None,
+                }),
+            },
+        ]
+    }
+
     pub fn seed_packages(now: DateTime<Utc>) -> Vec<PackageManagerTarget> {
         vec![
             PackageManagerTarget {
@@ -1850,6 +2207,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(14),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-2".to_string(),
@@ -1869,6 +2229,9 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                github_issue_number: Some(15),
+                github_repo: Some("SpaceCorps/GrowthHack".to_string()),
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-3".to_string(),
@@ -1888,6 +2251,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-4".to_string(),
@@ -1907,6 +2271,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-5".to_string(),
@@ -1926,6 +2291,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-6".to_string(),
@@ -1945,6 +2311,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-7".to_string(),
@@ -1964,6 +2331,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-8".to_string(),
@@ -1983,6 +2351,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-9".to_string(),
@@ -2002,6 +2371,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-10".to_string(),
@@ -2021,6 +2391,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-11".to_string(),
@@ -2040,6 +2411,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-12".to_string(),
@@ -2059,6 +2431,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-13".to_string(),
@@ -2078,6 +2451,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-14".to_string(),
@@ -2097,6 +2471,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
             ContributorIssue {
                 id: "cf-issue-15".to_string(),
@@ -2116,6 +2491,7 @@ steps:
                 claimed_by: None,
                 claimed_at: None,
                 pr_url: None,
+                ..Default::default()
             },
         ]
     }
@@ -2128,7 +2504,11 @@ steps:
                 login: Some("rorychatt".to_string()),
                 avatar_url: "https://github.com/rorychatt.png".to_string(),
                 profile_url: "https://github.com/rorychatt".to_string(),
-                contributions: vec!["code".to_string(), "architecture".to_string(), "review".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "architecture".to_string(),
+                    "review".to_string(),
+                ],
                 verified: true,
                 verified_at: Some(now),
                 pr_url: None,
@@ -2138,7 +2518,11 @@ steps:
                 login: Some("alex-spacecorps".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10001?v=4".to_string(),
                 profile_url: "https://github.com/alex-spacecorps".to_string(),
-                contributions: vec!["code".to_string(), "backend".to_string(), "test".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "backend".to_string(),
+                    "test".to_string(),
+                ],
                 verified: true,
                 verified_at: Some(now),
                 pr_url: None,
@@ -2148,7 +2532,11 @@ steps:
                 login: Some("sarah-ui".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10002?v=4".to_string(),
                 profile_url: "https://github.com/sarah-ui".to_string(),
-                contributions: vec!["design".to_string(), "frontend".to_string(), "a11y".to_string()],
+                contributions: vec![
+                    "design".to_string(),
+                    "frontend".to_string(),
+                    "a11y".to_string(),
+                ],
                 verified: true,
                 verified_at: Some(now),
                 pr_url: None,
@@ -2158,7 +2546,11 @@ steps:
                 login: Some("dev-elena".to_string()),
                 avatar_url: "https://avatars.githubusercontent.com/u/10003?v=4".to_string(),
                 profile_url: "https://github.com/dev-elena".to_string(),
-                contributions: vec!["code".to_string(), "doc".to_string(), "maintenance".to_string()],
+                contributions: vec![
+                    "code".to_string(),
+                    "doc".to_string(),
+                    "maintenance".to_string(),
+                ],
                 verified: true,
                 verified_at: Some(now),
                 pr_url: None,

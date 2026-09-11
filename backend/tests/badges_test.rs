@@ -31,7 +31,9 @@ async fn test_generate_minimal_badge() {
         .unwrap();
     let res: GenerateBadgeResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert!(res.markdown.contains("⚡ Orchestrated with [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"));
+    assert!(res.markdown.contains(
+        "⚡ Orchestrated with [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril)"
+    ));
     assert!(res.markdown.contains("3 agents in isolated worktrees"));
     assert!(res.svg_url.is_none());
     assert!(res.estimated_reach > 0);
@@ -60,7 +62,9 @@ async fn test_generate_shield_svg_badge() {
     let res: GenerateBadgeResponse = serde_json::from_slice(&body_bytes).unwrap();
 
     assert!(res.markdown.contains("[![Orchestrated with Ivy-Tendril]"));
-    assert!(res.markdown.contains("https://github.com/Ivy-Interactive/Ivy-Tendril"));
+    assert!(res
+        .markdown
+        .contains("https://github.com/Ivy-Interactive/Ivy-Tendril"));
     assert!(res.svg_url.is_some());
     assert!(res.svg_url.unwrap().contains("shields.io"));
 }
@@ -89,7 +93,9 @@ async fn test_generate_summary_card() {
     let res: GenerateBadgeResponse = serde_json::from_slice(&body_bytes).unwrap();
 
     assert!(res.markdown.contains("<details>"));
-    assert!(res.markdown.contains("<summary><b>⚡ Ivy-Tendril Verification Summary</b>: 28 tests passed</summary>"));
+    assert!(res.markdown.contains(
+        "<summary><b>⚡ Ivy-Tendril Verification Summary</b>: 28 tests passed</summary>"
+    ));
     assert!(res.markdown.contains("| **Plan** | 00291 - PR Flywheel |"));
     assert!(res.markdown.contains(&diff_url));
     assert!(res.markdown.contains("</details>"));
@@ -106,7 +112,12 @@ async fn test_render_svg_badge_endpoint() {
     let response = render_svg_badge(Query(query)).await.into_response();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(content_type, "image/svg+xml");
 
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -131,15 +142,36 @@ async fn test_get_workflows_endpoint() {
         .unwrap();
     let res: WorkflowTemplatesResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert!(res.action_yml.contains("name: \"Tendril Verification & PR Flywheel\""));
+    assert!(res
+        .action_yml
+        .contains("name: \"Tendril Verification & PR Flywheel\""));
     assert!(res.action_yml.contains("inputs:"));
     assert!(res.action_yml.contains("<!-- tendril-flywheel-badge -->"));
     assert!(res.action_yml.contains("EXISTING_COMMENT_ID"));
-    assert!(res.action_yml.contains("gh api \"repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}\""));
+    assert!(
+        res.action_yml.contains("Resource not accessible")
+            || res.action_yml.contains("Fork PR Read-Only Permissions")
+    );
+    assert!(res
+        .action_yml
+        .contains("gh api \"repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}\""));
     assert!(res.action_yml.contains("gh pr comment \"${PR_NUMBER}\""));
-    assert!(res.workflow_yml.contains("name: Tendril Verification & PR Flywheel"));
+    assert!(res
+        .workflow_yml
+        .contains("name: Tendril Verification & PR Flywheel"));
     assert!(res.workflow_yml.contains("on:"));
     assert!(res.workflow_yml.contains("pull_request:"));
     assert!(res.workflow_yml.contains("pull-requests: write"));
     assert!(res.workflow_yml.contains("issues: write"));
+
+    assert!(res.companion_workflow_yml.is_some());
+    let companion = res.companion_workflow_yml.unwrap();
+    assert!(companion.contains("workflow_run:"));
+    assert!(companion.contains("workflows: [\"Tendril Verification & PR Flywheel\"]"));
+    assert!(companion.contains("pull-requests: write"));
+
+    assert!(res.fork_guide_md.is_some());
+    let guide = res.fork_guide_md.unwrap();
+    assert!(guide.contains("GitHub Actions Fork Security"));
+    assert!(guide.contains("workflow_run"));
 }

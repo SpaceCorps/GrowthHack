@@ -21,6 +21,28 @@ export interface EngagementMetrics {
   last_synced_at?: string;
 }
 
+export interface EngagementSnapshot {
+  timestamp: string;
+  views: number;
+  reactions: number;
+  comments: number;
+}
+
+export interface EngagementVelocity {
+  views_per_day: number;
+  reactions_per_day: number;
+  comments_per_day: number;
+  views_delta_24h: number;
+  reactions_delta_24h: number;
+  comments_delta_24h: number;
+  trend: "Accelerating" | "Steady" | "Decelerating" | "Flat" | string;
+}
+
+export interface EngagementHistoryResponse {
+  snapshots: EngagementSnapshot[];
+  velocity: EngagementVelocity;
+}
+
 export interface ExportRecord {
   channel: string;
   exported_at: string;
@@ -47,6 +69,7 @@ export interface Article {
   image_path?: string;
   exports?: ExportRecord[];
   engagement?: EngagementMetrics;
+  engagement_snapshots?: EngagementSnapshot[];
 }
 
 export interface ExportIvyWebRequest {
@@ -111,6 +134,28 @@ export interface ReviewItem {
   rawId: string;
 }
 
+export interface StoryboardScene {
+  stage: "Hook" | "WorktreeIsolation" | "TestVerification" | "PrBadgeOutro" | string;
+  start_second: number;
+  end_second: number;
+  title: string;
+  visual_action: string;
+  playwright_action?: string;
+}
+
+export interface PlatformCopy {
+  linkedin_post: string;
+  twitter_thread: string[];
+  youtube_shorts_caption: string;
+}
+
+export interface AutomationConfig {
+  generator_path: string;
+  playwright_script: string;
+  transcode_format: "mp4" | "webm" | string;
+  output_video_path?: string;
+}
+
 export interface VideoDemo {
   id: string;
   feature: string;
@@ -122,6 +167,9 @@ export interface VideoDemo {
   status: "Pending" | "Approved" | "Rejected" | "Published" | string;
   created_at: string;
   updated_at: string;
+  scenes?: StoryboardScene[];
+  platform_copy?: PlatformCopy;
+  automation_config?: AutomationConfig;
 }
 
 export interface TrendTopic {
@@ -199,6 +247,12 @@ export interface DispatchPackagePrResponse {
   commands: string[];
 }
 
+export interface GhAuthStatus {
+  authenticated: boolean;
+  account?: string;
+  message: string;
+}
+
 export interface AgentStatus {
   is_available: boolean;
   agy_path: string;
@@ -217,7 +271,8 @@ export type ActiveTab =
   | "flywheel"
   | "contributors"
   | "recipes"
-  | "doctor";
+  | "doctor"
+  | "playground";
 
 export interface DiagnosticCheck {
   id: string;
@@ -335,6 +390,10 @@ export interface ContributorIssue {
   claimed_by?: string;
   claimed_at?: string;
   pr_url?: string;
+  github_issue_number?: number;
+  github_repo?: string;
+  github_sync_status?: string;
+  github_sync_message?: string;
 }
 
 export interface ContributorRecord {
@@ -419,6 +478,7 @@ export interface SyndicationSettings {
   devto_api_key?: string;
   hashnode_api_key?: string;
   hashnode_publication_id?: string;
+  webhook_secret?: string;
   publish_as_draft: boolean;
 }
 
@@ -428,5 +488,71 @@ export interface SyndicationStatusResponse {
   hashnode_configured: boolean;
   hashnode_key_preview?: string;
   hashnode_publication_id?: string;
+  webhook_secret_configured: boolean;
+  webhook_secret_preview?: string;
   publish_as_draft: boolean;
+}
+
+export interface WorktreeFileNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  status: "Unchanged" | "Modified" | "Created" | string;
+  children?: WorktreeFileNode[];
+}
+
+export interface PlaygroundScenario {
+  id: string;
+  title: string;
+  description: string;
+  target_branch: string;
+  estimated_seconds: number;
+  file_tree: WorktreeFileNode[];
+  diff: string;
+  pr_summary: string;
+}
+
+export interface VerificationGateItem {
+  name: string;
+  command: string;
+  status: "Pending" | "Running" | "Passed" | "Failed" | string;
+  duration_ms: number;
+  output: string;
+}
+
+export interface PlaygroundRunState {
+  id: string;
+  scenario_id: string;
+  status: "Idle" | "Running" | "Completed" | "Failed" | string;
+  current_step: number;
+  step_progress_pct: number;
+  logs: string[];
+  verification_gates: VerificationGateItem[];
+  diff_preview?: string;
+  pr_summary?: string;
+  elapsed_seconds: number;
+  speed_multiplier: number;
+}
+
+export interface PlaygroundMetrics {
+  total_sessions: number;
+  walkthroughs_completed: number;
+  issues_imported: number;
+  github_stars_clicked: number;
+  avg_completion_seconds: number;
+}
+
+export interface BannerEmbedInfo {
+  title: string;
+  badge_url: string;
+  target_url: string;
+  markdown_snippet: string;
+  html_snippet: string;
+  raw_svg: string;
+}
+
+export interface ImportIssueRequest {
+  issue_url?: string;
+  title?: string;
+  description?: string;
 }

@@ -50,3 +50,18 @@ jobs:
           verification-mode: "all"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save Verification Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p tendril-attribution
+          echo "${{ github.event.pull_request.number }}" > tendril-attribution/pr_number.txt
+
+      - name: Upload Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tendril-verification-summary
+          path: tendril-attribution/
+          retention-days: 1

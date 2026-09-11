@@ -18,10 +18,20 @@ pub struct ContributorIssuesQuery {
     pub max_time: Option<u32>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ClaimIssueRequest {
     pub contributor_name: String,
     pub github_handle: Option<String>,
+    #[serde(default)]
+    pub github_issue_number: Option<u64>,
+    #[serde(default)]
+    pub auto_sync_github: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct LinkGitHubIssueRequest {
+    pub github_issue_number: Option<u64>,
+    pub github_repo: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -155,12 +165,150 @@ pub async fn claim_contributor_issue(
 
     let claimer = payload
         .github_handle
+        .as_ref()
         .filter(|h| !h.trim().is_empty())
+        .cloned()
         .unwrap_or_else(|| payload.contributor_name.trim().to_string());
 
     issue.claimed = true;
-    issue.claimed_by = Some(claimer);
+    issue.claimed_by = Some(claimer.clone());
     issue.claimed_at = Some(Utc::now());
+
+    let resolved_issue_number = payload.github_issue_number.or(issue.github_issue_number);
+    if let Some(num) = payload.github_issue_number {
+        issue.github_issue_number = Some(num);
+    }
+
+    if let Some(num) = resolved_issue_number {
+        if payload.auto_sync_github != Some(false) {
+            let raw_handle = payload
+                .github_handle
+                .as_deref()
+                .filter(|h| !h.trim().is_empty())
+                .unwrap_or(&claimer);
+            let normalized_handle = raw_handle.trim().trim_start_matches('@').trim().to_string();
+
+            let token = ctx.get_github_token();
+            match token {
+                None => {
+                    issue.github_sync_status = Some("Skipped (No GitHub Token)".to_string());
+                    issue.github_sync_message =
+                        Some("GitHub token not configured; local claim recorded.".to_string());
+                }
+                Some(tok) if tok.trim().is_empty() => {
+                    issue.github_sync_status = Some("Skipped (No GitHub Token)".to_string());
+                    issue.github_sync_message =
+                        Some("GitHub token not configured; local claim recorded.".to_string());
+                }
+                Some(tok) => {
+                    let client_res = GitHubClient::new(&tok);
+                    match client_res {
+                        Err(e) => {
+                            issue.github_sync_status = Some("Failed".to_string());
+                            issue.github_sync_message =
+                                Some(format!("Failed to initialize GitHub client: {}", e));
+                        }
+                        Ok(client) => {
+                            let repo_target = issue
+                                .github_repo
+                                .as_deref()
+                                .unwrap_or("SpaceCorps/GrowthHack");
+                            let (owner, repo_name) = match repo_target.split_once('/') {
+                                Some((o, r)) => (o.trim(), r.trim()),
+                                None => ("SpaceCorps", "GrowthHack"),
+                            };
+
+                            let mut sync_errors = Vec::new();
+                            let mut assigned_logins = Vec::new();
+
+                            // 1. Add label 'claimed'
+                            match client.add_issue_labels(owner, repo_name, num, &["claimed"]).await {
+                                Ok(_) => {}
+                                Err(e) => sync_errors.push(format!("Labeling failed: {}", e)),
+                            }
+
+                            // 2. Assign user if handle available
+                            if !normalized_handle.is_empty() {
+                                match client
+                                    .add_issue_assignees(owner, repo_name, num, &[&normalized_handle])
+                                    .await
+                                {
+                                    Ok(logins) => assigned_logins = logins,
+                                    Err(e) => sync_errors.push(format!("Assignment failed: {}", e)),
+                                }
+                            }
+
+                            // 3. Post notification comment
+                            let comment_body = format!(
+                                "Issue claimed by @{} via SpaceCorps GrowthHack Contributor Flywheel.",
+                                normalized_handle
+                            );
+                            match client
+                                .create_issue_comment(owner, repo_name, num, &comment_body)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => sync_errors.push(format!("Comment failed: {}", e)),
+                            }
+
+                            if sync_errors.is_empty() {
+                                issue.github_sync_status = Some("Synced".to_string());
+                                let msg = if !assigned_logins.is_empty() {
+                                    format!(
+                                        "Assigned to @{}; labeled 'claimed'",
+                                        assigned_logins.join(", @")
+                                    )
+                                } else {
+                                    "Labeled 'claimed'; comment posted".to_string()
+                                };
+                                issue.github_sync_message = Some(msg);
+                            } else {
+                                issue.github_sync_status = Some("Failed".to_string());
+                                issue.github_sync_message = Some(sync_errors.join("; "));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let updated_issue = issue.clone();
+    let _ = state.save(&ctx.data_file);
+
+    Ok((StatusCode::OK, Json(updated_issue)))
+}
+
+pub async fn link_github_issue(
+    State(ctx): State<Arc<AppContext>>,
+    Path(id): Path<String>,
+    Json(payload): Json<LinkGitHubIssueRequest>,
+) -> Result<(StatusCode, Json<ContributorIssue>), (StatusCode, Json<ErrorResponse>)> {
+    let mut state = ctx.state.write().await;
+
+    let issue = state
+        .contributor_issues
+        .iter_mut()
+        .find(|item| item.id == id);
+
+    let issue = match issue {
+        Some(i) => i,
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("Contributor issue with id '{}' not found", id),
+                }),
+            ));
+        }
+    };
+
+    if let Some(num) = payload.github_issue_number {
+        issue.github_issue_number = Some(num);
+    }
+    if let Some(repo) = payload.github_repo {
+        issue.github_repo = Some(repo);
+    }
 
     let updated_issue = issue.clone();
     let _ = state.save(&ctx.data_file);

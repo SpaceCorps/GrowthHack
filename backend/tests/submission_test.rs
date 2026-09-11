@@ -16,9 +16,16 @@ fn create_test_context(token: Option<String>) -> Arc<AppContext> {
     let state = Arc::new(RwLock::new(GrowthState::seed_default()));
     let runner = AgentRunner::new(PathBuf::from("nonexistent_agy_binary_for_tests"));
     let task_manager = TaskManager::new(runner);
-    let data_file = std::env::temp_dir().join(format!("growth_data_sub_test_{}.json", uuid::Uuid::new_v4()));
-    let ivy_web_content_path = std::env::temp_dir().join(format!("growth_sub_ivy_web_test_{}", uuid::Uuid::new_v4()));
-    let ivy_web_images_path = std::env::temp_dir().join(format!("growth_sub_ivy_images_test_{}", uuid::Uuid::new_v4()));
+    let data_file = std::env::temp_dir().join(format!(
+        "growth_data_sub_test_{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    let ivy_web_content_path =
+        std::env::temp_dir().join(format!("growth_sub_ivy_web_test_{}", uuid::Uuid::new_v4()));
+    let ivy_web_images_path = std::env::temp_dir().join(format!(
+        "growth_sub_ivy_images_test_{}",
+        uuid::Uuid::new_v4()
+    ));
 
     let mut config = growthhack_backend::config::Config::load();
     config.github_token = token;
@@ -30,6 +37,9 @@ fn create_test_context(token: Option<String>) -> Arc<AppContext> {
         ivy_web_content_path,
         ivy_web_images_path,
         config,
+        rate_limiter: Arc::new(
+            growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
+        ),
     })
 }
 
@@ -79,8 +89,14 @@ fn test_insert_listing_entry_alphabetical_placement() {
     let tendril_pos = result.find("[Ivy-Tendril]").unwrap();
     let metagpt_pos = result.find("[MetaGPT]").unwrap();
 
-    assert!(autogpt_pos < tendril_pos, "Ivy-Tendril should come after AutoGPT");
-    assert!(tendril_pos < metagpt_pos, "Ivy-Tendril should come before MetaGPT");
+    assert!(
+        autogpt_pos < tendril_pos,
+        "Ivy-Tendril should come after AutoGPT"
+    );
+    assert!(
+        tendril_pos < metagpt_pos,
+        "Ivy-Tendril should come before MetaGPT"
+    );
 }
 
 #[test]
@@ -91,12 +107,16 @@ Here is a list.
 ## Contributing
 Submit PRs!
 "#;
-    let entry = "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.";
+    let entry =
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.";
     let res = insert_listing_entry(doc, entry, "Unknown");
     assert!(res.contains("[Ivy-Tendril]"));
     let tendril_pos = res.find("[Ivy-Tendril]").unwrap();
     let contrib_pos = res.find("## Contributing").unwrap();
-    assert!(tendril_pos < contrib_pos, "Should insert before ## Contributing");
+    assert!(
+        tendril_pos < contrib_pos,
+        "Should insert before ## Contributing"
+    );
 
     // Test duplicate prevention
     let second = insert_listing_entry(&res, entry, "Unknown");
@@ -109,7 +129,11 @@ async fn test_submission_endpoint_validation() {
     let ctx_no_token = create_test_context(None);
 
     // Test non-existent listing ID -> 404 Not Found
-    let (code_not_found, _) = submit_upstream(Path("non-existent-id".to_string()), State(ctx_no_token.clone())).await;
+    let (code_not_found, _) = submit_upstream(
+        Path("non-existent-id".to_string()),
+        State(ctx_no_token.clone()),
+    )
+    .await;
     assert_eq!(code_not_found, StatusCode::NOT_FOUND);
 
     // Create a listing with non-github URL
@@ -131,7 +155,8 @@ async fn test_submission_endpoint_validation() {
     }
 
     // Test invalid URL (non-GitHub) -> 400 Bad Request
-    let (code_bad_url, res) = submit_upstream(Path("list-non-gh".to_string()), State(ctx_no_token.clone())).await;
+    let (code_bad_url, res) =
+        submit_upstream(Path("list-non-gh".to_string()), State(ctx_no_token.clone())).await;
     assert_eq!(code_bad_url, StatusCode::BAD_REQUEST);
     assert!(res.message.contains("not a valid GitHub repository"));
 
@@ -154,7 +179,11 @@ async fn test_submission_endpoint_validation() {
     }
 
     // Test missing token -> 400 Bad Request
-    let (code_no_token, res_token) = submit_upstream(Path("list-gh-valid".to_string()), State(ctx_no_token.clone())).await;
+    let (code_no_token, res_token) = submit_upstream(
+        Path("list-gh-valid".to_string()),
+        State(ctx_no_token.clone()),
+    )
+    .await;
     assert_eq!(code_no_token, StatusCode::BAD_REQUEST);
     assert!(res_token.message.contains("GitHub token is not configured"));
 }
@@ -168,5 +197,8 @@ async fn test_get_github_status_endpoint_contract() {
 
     // 2. When configured in context
     let ctx_with_token = create_test_context(Some("ghp_dummy_token_for_tests".to_string()));
-    assert_eq!(ctx_with_token.get_github_token(), Some("ghp_dummy_token_for_tests".to_string()));
+    assert_eq!(
+        ctx_with_token.get_github_token(),
+        Some("ghp_dummy_token_for_tests".to_string())
+    );
 }
