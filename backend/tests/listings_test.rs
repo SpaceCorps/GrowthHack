@@ -4,8 +4,8 @@ use axum::extract::{Path, State};
 use axum::Json;
 use growthhack_backend::api::listings::{
     build_pr_submission_prompt, build_tailored_prompt, check_backlink_content, create_listing,
-    generate_batch_listings, list_listings, submit_listing_pr, update_listing, verify_backlink,
-    CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
+    extract_pr_url, generate_batch_listings, list_listings, submit_listing_pr, update_listing,
+    verify_backlink, CreateListingRequest, GenerateBatchRequest, UpdateListingRequest,
 };
 use growthhack_backend::db::{GrowthState, Listing};
 use std::collections::HashSet;
@@ -25,24 +25,79 @@ async fn test_seed_database_contains_50_plus_targets_across_5_categories() {
         .map(|l| l.category.clone())
         .collect();
 
-    assert!(categories.contains("Awesome Repo"), "Missing Awesome Repo category");
-    assert!(categories.contains("Dev Directory"), "Missing Dev Directory category");
-    assert!(categories.contains("Software Factory"), "Missing Software Factory category");
-    assert!(categories.contains("Package Manager"), "Missing Package Manager category");
-    assert!(categories.contains("Community"), "Missing Community category");
+    assert!(
+        categories.contains("Awesome Repo"),
+        "Missing Awesome Repo category"
+    );
+    assert!(
+        categories.contains("Dev Directory"),
+        "Missing Dev Directory category"
+    );
+    assert!(
+        categories.contains("Software Factory"),
+        "Missing Software Factory category"
+    );
+    assert!(
+        categories.contains("Package Manager"),
+        "Missing Package Manager category"
+    );
+    assert!(
+        categories.contains("Community"),
+        "Missing Community category"
+    );
     assert_eq!(categories.len(), 5, "Expected exactly 5 categories");
 
-    let awesome_count = default_state.listings.iter().filter(|l| l.category == "Awesome Repo").count();
-    let directory_count = default_state.listings.iter().filter(|l| l.category == "Dev Directory").count();
-    let factory_count = default_state.listings.iter().filter(|l| l.category == "Software Factory").count();
-    let package_count = default_state.listings.iter().filter(|l| l.category == "Package Manager").count();
-    let community_count = default_state.listings.iter().filter(|l| l.category == "Community").count();
+    let awesome_count = default_state
+        .listings
+        .iter()
+        .filter(|l| l.category == "Awesome Repo")
+        .count();
+    let directory_count = default_state
+        .listings
+        .iter()
+        .filter(|l| l.category == "Dev Directory")
+        .count();
+    let factory_count = default_state
+        .listings
+        .iter()
+        .filter(|l| l.category == "Software Factory")
+        .count();
+    let package_count = default_state
+        .listings
+        .iter()
+        .filter(|l| l.category == "Package Manager")
+        .count();
+    let community_count = default_state
+        .listings
+        .iter()
+        .filter(|l| l.category == "Community")
+        .count();
 
-    assert!(awesome_count >= 20, "Expected at least 20 Awesome Repos, found {}", awesome_count);
-    assert!(directory_count >= 12, "Expected at least 12 Dev Directories, found {}", directory_count);
-    assert!(factory_count >= 8, "Expected at least 8 Software Factories, found {}", factory_count);
-    assert!(package_count >= 6, "Expected at least 6 Package Managers, found {}", package_count);
-    assert!(community_count >= 6, "Expected at least 6 Community targets, found {}", community_count);
+    assert!(
+        awesome_count >= 20,
+        "Expected at least 20 Awesome Repos, found {}",
+        awesome_count
+    );
+    assert!(
+        directory_count >= 12,
+        "Expected at least 12 Dev Directories, found {}",
+        directory_count
+    );
+    assert!(
+        factory_count >= 8,
+        "Expected at least 8 Software Factories, found {}",
+        factory_count
+    );
+    assert!(
+        package_count >= 6,
+        "Expected at least 6 Package Managers, found {}",
+        package_count
+    );
+    assert!(
+        community_count >= 6,
+        "Expected at least 6 Community targets, found {}",
+        community_count
+    );
 }
 
 #[tokio::test]
@@ -58,7 +113,9 @@ async fn test_list_and_create_and_update_listing() {
         name: "test-awesome-list (testorg)".to_string(),
         category: "Awesome Repo".to_string(),
         url: "https://github.com/testorg/test-awesome-list".to_string(),
-        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb".to_string(),
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
         notes: "Test listing notes".to_string(),
         blurb_status: None,
     };
@@ -203,10 +260,18 @@ async fn test_generate_batch_listings_endpoint() {
 #[tokio::test]
 async fn test_backlink_verification_logic_and_endpoint() {
     // 1. Content check unit test
-    assert!(check_backlink_content("Here is a link to https://github.com/Ivy-Interactive/Ivy-Tendril for multi-agent coding."));
-    assert!(check_backlink_content("- [Ivy-Tendril](https://tendril.dev) - Agent sandbox"));
-    assert!(check_backlink_content("We recommend tendril for workflow orchestration."));
-    assert!(!check_backlink_content("This page only discusses Cursor and Copilot without any references."));
+    assert!(check_backlink_content(
+        "Here is a link to https://github.com/Ivy-Interactive/Ivy-Tendril for multi-agent coding."
+    ));
+    assert!(check_backlink_content(
+        "- [Ivy-Tendril](https://tendril.dev) - Agent sandbox"
+    ));
+    assert!(check_backlink_content(
+        "We recommend tendril for workflow orchestration."
+    ));
+    assert!(!check_backlink_content(
+        "This page only discusses Cursor and Copilot without any references."
+    ));
 
     // 2. Mock web server for verify_backlink endpoint
     use axum::routing::get;
@@ -242,14 +307,19 @@ async fn test_backlink_verification_logic_and_endpoint() {
         state.listings.push(test_listing);
     }
 
-    let (status, Json(resp)) = verify_backlink(Path("list-verify-test".to_string()), State(ctx.clone())).await;
+    let (status, Json(resp)) =
+        verify_backlink(Path("list-verify-test".to_string()), State(ctx.clone())).await;
     assert_eq!(status, axum::http::StatusCode::OK);
     assert!(resp.verified, "Backlink should be verified");
     assert_eq!(resp.status, "Live", "Status should transition to Live");
 
     // Verify persisted state
     let state = ctx.state.read().await;
-    let verified_listing = state.listings.iter().find(|l| l.id == "list-verify-test").unwrap();
+    let verified_listing = state
+        .listings
+        .iter()
+        .find(|l| l.id == "list-verify-test")
+        .unwrap();
     assert_eq!(verified_listing.status, "Live");
 }
 
@@ -266,7 +336,9 @@ async fn test_submit_listing_pr_promotes_status_and_spawns_task() {
         url: "https://github.com/e2b-dev/awesome-ai-agents".to_string(),
         status: "Targeted".to_string(),
         pr_url: None,
-        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory.".to_string(),
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Multi-agent factory."
+                .to_string(),
         notes: "Test notes".to_string(),
         blurb_status: Some("Approved".to_string()),
         updated_at: old_time,
@@ -277,7 +349,8 @@ async fn test_submit_listing_pr_promotes_status_and_spawns_task() {
         state.listings.push(test_listing);
     }
 
-    let (status, Json(resp)) = submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+    let (status, Json(resp)) =
+        submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
     assert_eq!(status, axum::http::StatusCode::ACCEPTED);
     assert!(!resp.task_id.is_empty());
     assert!(resp.task_id.starts_with("task-pr-"));
@@ -299,7 +372,9 @@ async fn test_pr_submission_prompt_tailoring() {
         url: "https://github.com/frenck/awesome-devtools".to_string(),
         status: "Targeted".to_string(),
         pr_url: None,
-        submission_blurb: "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents.".to_string(),
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents."
+                .to_string(),
         notes: "Devtools list".to_string(),
         blurb_status: Some("Approved".to_string()),
         updated_at: chrono::Utc::now(),
@@ -310,7 +385,9 @@ async fn test_pr_submission_prompt_tailoring() {
     assert!(prompt.contains("URL: https://github.com/frenck/awesome-devtools"));
     assert!(prompt.contains("Category: Awesome Repo"));
     assert!(prompt.contains("Approved Submission Blurb:"));
-    assert!(prompt.contains("- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents."));
+    assert!(prompt.contains(
+        "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Parallel dev agents."
+    ));
     assert!(prompt.contains("gh pr create"));
 
     // Test with empty blurb fallback
@@ -327,7 +404,8 @@ async fn test_pr_submission_prompt_tailoring() {
         updated_at: chrono::Utc::now(),
     };
     let empty_prompt = build_pr_submission_prompt(&empty_blurb_listing);
-    assert!(empty_prompt.contains("No custom blurb provided. Use standard Ivy-Tendril submission entry."));
+    assert!(empty_prompt
+        .contains("No custom blurb provided. Use standard Ivy-Tendril submission entry."));
 }
 
 #[tokio::test]
@@ -444,4 +522,139 @@ async fn test_update_listing_resets_blurb_status_on_text_change() {
     assert_eq!(status, axum::http::StatusCode::OK);
     let updated = updated_opt.expect("Listing should exist");
     assert_eq!(updated.blurb_status, None);
+}
+
+#[tokio::test]
+async fn test_pr_submission_prompt_includes_pr_url_instruction() {
+    let listing = Listing {
+        id: "list-prompt-url-test".to_string(),
+        name: "testorg/testrepo".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/testrepo".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let prompt = build_pr_submission_prompt(&listing);
+    assert!(prompt.contains("[PR_URL] <pr_url>"));
+    assert!(prompt.contains("output the final PR URL on a single line starting with:"));
+}
+
+#[tokio::test]
+async fn test_listing_pr_url_extraction_and_state_update() {
+    let (ctx, data_file) = common::create_test_context_with_file();
+
+    let listing_id = "list-extract-test".to_string();
+    let old_time = chrono::Utc::now() - chrono::Duration::hours(2);
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "Targeted".to_string(),
+        pr_url: None,
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Test notes".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: old_time,
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+        let _ = state.save(&data_file);
+    }
+
+    // 1. Verify tagged output extraction
+    let tagged_output =
+        "Creating pull request...\n[PR_URL] https://github.com/testorg/awesome-list/pull/42\nDone!";
+    let extracted_tagged = extract_pr_url(tagged_output);
+    assert_eq!(
+        extracted_tagged,
+        Some("https://github.com/testorg/awesome-list/pull/42".to_string())
+    );
+
+    // 2. Verify raw URL extraction without tag
+    let raw_output =
+        "PR created: https://github.com/testorg/awesome-list/pull/99 in branch feat/add-tendril";
+    let extracted_raw = extract_pr_url(raw_output);
+    assert_eq!(
+        extracted_raw,
+        Some("https://github.com/testorg/awesome-list/pull/99".to_string())
+    );
+
+    // 3. Verify state update and persistence to data_file
+    let pr_url = extracted_tagged.unwrap();
+    {
+        let mut state = ctx.state.write().await;
+        if let Some(l) = state.listings.iter_mut().find(|l| l.id == listing_id) {
+            l.pr_url = Some(pr_url.clone());
+            l.status = "PR Submitted".to_string();
+            l.updated_at = chrono::Utc::now();
+        }
+        let _ = state.save(&data_file);
+    }
+
+    // Read back from file
+    let loaded_state = GrowthState::load_or_init(&data_file);
+    let updated_listing = loaded_state
+        .listings
+        .iter()
+        .find(|l| l.id == listing_id)
+        .expect("Listing should exist in persisted file");
+    assert_eq!(
+        updated_listing.pr_url,
+        Some("https://github.com/testorg/awesome-list/pull/42".to_string())
+    );
+    assert_eq!(updated_listing.status, "PR Submitted");
+    assert!(updated_listing.updated_at > old_time);
+}
+
+#[tokio::test]
+async fn test_submit_listing_pr_preserves_pr_url_on_resubmission() {
+    let ctx = common::create_test_context();
+
+    let listing_id = "list-resubmit-test".to_string();
+    let existing_pr_url = "https://github.com/testorg/awesome-list/pull/101".to_string();
+    let old_time = chrono::Utc::now() - chrono::Duration::hours(1);
+    let test_listing = Listing {
+        id: listing_id.clone(),
+        name: "testorg/awesome-list".to_string(),
+        category: "Awesome Repo".to_string(),
+        url: "https://github.com/testorg/awesome-list".to_string(),
+        status: "PR Submitted".to_string(),
+        pr_url: Some(existing_pr_url.clone()),
+        submission_blurb:
+            "- [Ivy-Tendril](https://github.com/Ivy-Interactive/Ivy-Tendril) - Test blurb"
+                .to_string(),
+        notes: "Already submitted once".to_string(),
+        blurb_status: Some("Approved".to_string()),
+        updated_at: old_time,
+    };
+
+    {
+        let mut state = ctx.state.write().await;
+        state.listings.push(test_listing);
+    }
+
+    // Call submit_listing_pr on already submitted listing
+    let (status, Json(resp)) =
+        submit_listing_pr(Path(listing_id.clone()), State(ctx.clone())).await;
+    assert_eq!(status, axum::http::StatusCode::ACCEPTED);
+    assert!(!resp.task_id.is_empty());
+
+    let state = ctx.state.read().await;
+    let listing = state.listings.iter().find(|l| l.id == listing_id).unwrap();
+    // Existing pr_url is preserved
+    assert_eq!(listing.pr_url, Some(existing_pr_url));
+    assert_eq!(listing.status, "PR Submitted");
+    assert!(listing.updated_at > old_time);
 }
