@@ -360,6 +360,7 @@ export interface SyndicationSettings {
   devto_api_key?: string;
   hashnode_api_key?: string;
   hashnode_publication_id?: string;
+  webhook_secret?: string;
   publish_as_draft: boolean;
 }
 
@@ -369,5 +370,7 @@ export interface SyndicationStatusResponse {
   hashnode_configured: boolean;
   hashnode_key_preview?: string;
   hashnode_publication_id?: string;
+  webhook_secret_configured: boolean;
+  webhook_secret_preview?: string;
   publish_as_draft: boolean;
 }
