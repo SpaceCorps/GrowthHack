@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   Article,
+  ExportIvyWebRequest,
   ExportRecord,
   SyndicationSettings,
   SyndicationStatusResponse,
@@ -128,6 +129,33 @@ describe("Article & Export Pipeline Types", () => {
     expect(parsed.target_images_dir).toBe(
       "/Users/rorychatt/git/ivy-web/apps/web-new/public/site/images",
     );
+    expect(parsed.sync_hero_image).toBe(true);
+  });
+
+  it("test_export_ivy_web_request_hero_format: verifies serialization of ExportIvyWebRequest with hero_format values (dual, svg, png)", () => {
+    const formats: Array<"dual" | "svg" | "png"> = ["dual", "svg", "png"];
+    for (const fmt of formats) {
+      const request: ExportIvyWebRequest = {
+        target_dir: "/content/posts",
+        target_images_dir: "/site/images",
+        sync_hero_image: true,
+        hero_format: fmt,
+      };
+      const serialized = JSON.stringify(request);
+      const parsed: ExportIvyWebRequest = JSON.parse(serialized);
+      expect(parsed.hero_format).toBe(fmt);
+      expect(parsed.sync_hero_image).toBe(true);
+    }
+  });
+
+  it("verifies batch publish payload serialization preserves hero_format", () => {
+    const batchPayload = {
+      sync_hero_image: true,
+      hero_format: "dual" as const,
+    };
+    const serialized = JSON.stringify(batchPayload);
+    const parsed = JSON.parse(serialized);
+    expect(parsed.hero_format).toBe("dual");
     expect(parsed.sync_hero_image).toBe(true);
   });
 
