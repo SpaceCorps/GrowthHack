@@ -406,6 +406,8 @@ export interface ContributorIssue {
   github_repo?: string;
   github_sync_status?: string;
   github_sync_message?: string;
+  closed?: boolean;
+  closed_at?: string;
 }
 
 export interface ContributorRecord {
