@@ -21,7 +21,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-pub use issues::AppContext;
+pub use issues::{AppContext, TestContextGuard};
 
 pub fn router(ctx: Arc<AppContext>) -> Router {
     Router::new()
