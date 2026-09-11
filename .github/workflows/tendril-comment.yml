@@ -1,0 +1,46 @@
+name: Tendril Fork PR Comment
+
+on:
+  workflow_run:
+    workflows: ["Tendril Verification & PR Flywheel"]
+    types: [completed]
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download Verification Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tendril-verification-summary
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: tendril-attribution/
+        continue-on-error: true
+
+      - name: Upsert PR Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f "tendril-attribution/pr_number.txt" ]; then
+            echo "No PR attribution metadata artifact found. Skipping fork comment."
+            exit 0
+          fi
+          PR_NUMBER=$(cat tendril-attribution/pr_number.txt)
+          MARKER="<!-- tendril-flywheel-badge -->"
+          EXISTING_COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n 1)
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            echo "Updating comment $EXISTING_COMMENT_ID on PR #$PR_NUMBER"
+            gh api "repos/${GH_REPO}/issues/comments/${EXISTING_COMMENT_ID}" -X PATCH -F body=@tendril-attribution/comment.md
+          else
+            echo "Creating new comment on PR #$PR_NUMBER"
+            gh pr comment "${PR_NUMBER}" --body-file tendril-attribution/comment.md
+          fi

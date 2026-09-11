@@ -8,6 +8,8 @@ import {
   FileCode2,
   Workflow,
   Shield,
+  ShieldCheck,
+  BookOpen,
   LayoutTemplate,
   ExternalLink,
   Users,
@@ -70,14 +72,31 @@ runs:
         EOF
 
         MARKER="<!-- tendril-flywheel-badge -->"
-        EXISTING_COMMENT_ID=$(gh api "repos/\${GH_REPO}/issues/\${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\\"\${MARKER}\\")) | .id" | head -n 1)
+        mkdir -p tendril-attribution
+        echo "\${PR_NUMBER}" > tendril-attribution/pr_number.txt
+        cp comment.md tendril-attribution/comment.md
+
+        if ! EXISTING_COMMENT_OUTPUT=$(gh api "repos/\${GH_REPO}/issues/\${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\\"\${MARKER}\\")) | .id" 2>&1); then
+          if echo "$EXISTING_COMMENT_OUTPUT" | grep -iqE "Resource not accessible|403|HttpError"; then
+            echo "::warning title=Fork PR Read-Only Permissions::GITHUB_TOKEN is read-only on fork pull_request runs. PR comment attribution was skipped. Use the companion workflow_run pattern (tendril-comment.yml) for open-source fork commenting."
+            exit 0
+          fi
+          echo "::warning title=GitHub API Error::Failed to fetch comments: $EXISTING_COMMENT_OUTPUT"
+          exit 0
+        fi
+
+        EXISTING_COMMENT_ID=$(echo "$EXISTING_COMMENT_OUTPUT" | head -n 1)
 
         if [ -n "$EXISTING_COMMENT_ID" ]; then
           echo "Updating existing PR comment ID: $EXISTING_COMMENT_ID"
-          gh api "repos/\${GH_REPO}/issues/comments/\${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md
+          if ! PATCH_OUTPUT=$(gh api "repos/\${GH_REPO}/issues/comments/\${EXISTING_COMMENT_ID}" -X PATCH -F body=@comment.md 2>&1); then
+            echo "::warning title=Comment Update Failed::Unable to update PR comment: $PATCH_OUTPUT"
+          fi
         else
           echo "Creating new PR comment on PR #$PR_NUMBER"
-          gh pr comment "\${PR_NUMBER}" --body-file comment.md
+          if ! POST_OUTPUT=$(gh pr comment "\${PR_NUMBER}" --body-file comment.md 2>&1); then
+            echo "::warning title=Comment Creation Failed::Unable to create PR comment: $POST_OUTPUT"
+          fi
         fi
 `;
 
@@ -133,6 +152,113 @@ jobs:
           verification-mode: "all"
           post-comment: "true"
           github-token: \${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save Verification Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p tendril-attribution
+          echo "\${{ github.event.pull_request.number }}" > tendril-attribution/pr_number.txt
+
+      - name: Upload Attribution Artifact
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tendril-verification-summary
+          path: tendril-attribution/
+          retention-days: 1
+`;
+
+export const DEFAULT_COMPANION_WORKFLOW_YML = `name: Tendril Fork PR Comment
+
+on:
+  workflow_run:
+    workflows: ["Tendril Verification & PR Flywheel"]
+    types: [completed]
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download Verification Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tendril-verification-summary
+          run-id: \${{ github.event.workflow_run.id }}
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          path: tendril-attribution/
+        continue-on-error: true
+
+      - name: Upsert PR Comment
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: \${{ github.repository }}
+        run: |
+          if [ ! -f "tendril-attribution/pr_number.txt" ]; then
+            echo "No PR attribution metadata artifact found. Skipping fork comment."
+            exit 0
+          fi
+          PR_NUMBER=$(cat tendril-attribution/pr_number.txt)
+          MARKER="<!-- tendril-flywheel-badge -->"
+          EXISTING_COMMENT_ID=$(gh api "repos/\${GH_REPO}/issues/\${PR_NUMBER}/comments" --jq ".[] | select(.body | contains(\\"\${MARKER}\\")) | .id" | head -n 1)
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            echo "Updating comment $EXISTING_COMMENT_ID on PR #$PR_NUMBER"
+            gh api "repos/\${GH_REPO}/issues/comments/\${EXISTING_COMMENT_ID}" -X PATCH -F body=@tendril-attribution/comment.md
+          else
+            echo "Creating new comment on PR #$PR_NUMBER"
+            gh pr comment "\${PR_NUMBER}" --body-file tendril-attribution/comment.md
+          fi
+`;
+
+export const DEFAULT_FORK_GUIDE_MD = `# GitHub Actions Fork Security & PR Permissions Guide
+
+When open-source contributors submit pull requests from external repository forks, GitHub enforces strict security boundaries to prevent malicious code from accessing repository secrets or modifying repository contents.
+
+---
+
+## 1. Why Fork Pull Request Tokens are Read-Only
+
+Under the standard \`pull_request\` event trigger:
+- The execution context runs code from the contributor fork branch.
+- GitHub automatically assigns a read-only \`GITHUB_TOKEN\` (even if your workflow YAML declares \`permissions: { pull-requests: write }\`).
+- Repository secrets and write tokens are withheld.
+- Calls to \`gh pr comment\` or the GitHub Issues Comments API fail with \`HTTP 403: Resource not accessible by integration\`.
+
+This behavior is intentional by GitHub security design to protect open-source repositories against arbitrary code execution attacks.
+
+---
+
+## 2. Two Solutions for Tendril Attribution & Verification
+
+### Option A: Single Workflow with Graceful Fallback (Default)
+In \`action.yml\`, the token error check detects HTTP 403 / \`Resource not accessible\` responses from \`gh api\` and logs an informational warning notice (\`::warning\`) rather than failing the overall verification job:
+- **Internal PRs (branches within repo):** The verification comment and badge are upserted immediately.
+- **Fork PRs (external contributors):** The verification passes cleanly; comment creation is skipped without breaking CI.
+
+### Option B: Companion \`workflow_run\` Pattern (Recommended for Open Source)
+To guarantee that verification summary comments are posted on fork pull requests without sacrificing repository security:
+1. The primary verification workflow (\`tendril-verify.yml\`) runs on \`pull_request\` in untrusted fork context and uploads the attribution summary as a build artifact.
+2. The companion workflow (\`tendril-comment.yml\`) triggers on \`workflow_run\` after the primary workflow completes successfully.
+3. Because \`workflow_run\` executes in the context of the base default branch (not the fork branch), it safely receives write permissions (\`pull-requests: write\`), downloads the artifact, and posts the comment on the contributor PR.
+
+---
+
+## 3. GitHub Repository Configuration Checklist
+
+1. **Workflow Permissions**:
+   Navigate to **Settings > Actions > General > Workflow permissions**.
+   Ensure **Read repository contents and packages permissions** (or **Read and write permissions**) is selected according to your team policy.
+2. **Fork Pull Request Workflows**:
+   Under **Fork pull request workflows from outside collaborators**, choose **Require approval for first-time contributors** (recommended) or your preferred approval model.
+3. **Artifact Retention**:
+   Attribution artifacts are lightweight text files. Keep retention set to \`1\` day in \`tendril-verify.yml\` to minimize artifact storage.
 `;
 
 export const PrFlywheel: React.FC = () => {
@@ -153,6 +279,14 @@ export const PrFlywheel: React.FC = () => {
   // Workflow Templates from API
   const [actionYml, setActionYml] = useState<string>(DEFAULT_ACTION_YML);
   const [workflowYml, setWorkflowYml] = useState<string>(DEFAULT_WORKFLOW_YML);
+  const [companionWorkflowYml, setCompanionWorkflowYml] = useState<string>(
+    DEFAULT_COMPANION_WORKFLOW_YML,
+  );
+  const [forkGuideMd, setForkGuideMd] = useState<string>(DEFAULT_FORK_GUIDE_MD);
+  const [workflowMode, setWorkflowMode] = useState<"single" | "companion">("single");
+  const [activeTemplateTab, setActiveTemplateTab] = useState<
+    "action" | "verify" | "comment" | "guide"
+  >("action");
 
   // Clipboard copy state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -165,6 +299,8 @@ export const PrFlywheel: React.FC = () => {
           const data = await res.json();
           if (data.action_yml) setActionYml(data.action_yml);
           if (data.workflow_yml) setWorkflowYml(data.workflow_yml);
+          if (data.companion_workflow_yml) setCompanionWorkflowYml(data.companion_workflow_yml);
+          if (data.fork_guide_md) setForkGuideMd(data.fork_guide_md);
         }
       } catch {
         // Fallback to defaults if backend unavailable
@@ -746,12 +882,23 @@ export const PrFlywheel: React.FC = () => {
 
           {/* Workflow and Action Templates Card */}
           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <FileCode2 className="w-4 h-4 text-emerald-400" />
-                CI Automation Templates (.github/workflows)
-              </h3>
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <FileCode2 className="w-4 h-4 text-emerald-400" />
+                  CI Automation Templates (.github/workflows)
+                </h3>
+                <div
+                  data-testid="fork-safe-badge"
+                  title="Fork PRs are protected against 403 errors: token errors are gracefully caught, and companion workflow_run pattern enables secure open-source commenting."
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60 text-[11px] font-medium cursor-help"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Fork Safe</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   data-testid="copy-action-yml-btn"
@@ -788,31 +935,213 @@ export const PrFlywheel: React.FC = () => {
                     </>
                   )}
                 </button>
+                <button
+                  type="button"
+                  data-testid="copy-companion-yml-btn"
+                  onClick={() => copyToClipboard("companion_yml", companionWorkflowYml)}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                >
+                  {copiedKey === "companion_yml" ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span>Copied Companion Workflow</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3 text-emerald-400" />
+                      <span>Copy Companion Workflow</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  data-testid="copy-fork-guide-btn"
+                  onClick={() => copyToClipboard("fork_guide", forkGuideMd)}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                >
+                  {copiedKey === "fork_guide" ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span>Copied Fork Guide</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookOpen className="w-3 h-3 text-amber-400" />
+                      <span>Copy Fork Guide</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* action.yml snippet */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                  <span>action.yml</span>
-                  <span className="text-[10px] text-slate-500">Composite Action</span>
+            {/* Fork Safe Alert Banner */}
+            <div
+              data-testid="fork-safe-banner"
+              className="bg-emerald-950/40 border border-emerald-800/60 rounded-lg p-3 text-xs text-slate-300 flex items-start gap-2.5"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold text-emerald-300 flex items-center gap-2">
+                  <span>Fork-Safe PR Commenting Active</span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 bg-emerald-900/80 text-emerald-200 rounded border border-emerald-700/60">
+                    Protected against 403 errors
+                  </span>
                 </div>
-                <pre className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-48 overflow-y-auto">
-                  {actionYml}
-                </pre>
+                <p className="text-slate-400 leading-relaxed">
+                  GitHub assigns read-only tokens on fork pull requests. The composite action
+                  gracefully catches 403 permissions and logs an informational warning notice
+                  instead of breaking CI, while the companion workflow_run pattern securely posts
+                  verification summaries with write permissions.
+                </p>
+              </div>
+            </div>
+
+            {/* Architecture Mode Selector */}
+            <div className="flex items-center justify-between bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+              <div className="text-xs text-slate-300">
+                <span className="font-medium text-white mr-2">Architecture Mode:</span>
+                <span className="text-slate-400 text-[11px]">
+                  {workflowMode === "single"
+                    ? "Single Workflow (action.yml gracefully catches 403 errors on fork PRs)"
+                    : "Companion Pattern (tendril-comment.yml posts comments securely via workflow_run)"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="mode-single"
+                  onClick={() => setWorkflowMode("single")}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                    workflowMode === "single"
+                      ? "bg-slate-800 text-emerald-300 border border-emerald-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Single Workflow
+                </button>
+                <button
+                  type="button"
+                  data-testid="mode-companion"
+                  onClick={() => setWorkflowMode("companion")}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                    workflowMode === "companion"
+                      ? "bg-slate-800 text-cyan-300 border border-cyan-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  Companion Pattern
+                </button>
+              </div>
+            </div>
+
+            {/* Template Navigation Tabs */}
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 pb-2">
+              <button
+                type="button"
+                data-testid="tab-action-yml"
+                onClick={() => setActiveTemplateTab("action")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  activeTemplateTab === "action"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
+                    : "bg-slate-800/60 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                action.yml
+              </button>
+              <button
+                type="button"
+                data-testid="tab-verify-yml"
+                onClick={() => setActiveTemplateTab("verify")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  activeTemplateTab === "verify"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
+                    : "bg-slate-800/60 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                tendril-verify.yml
+              </button>
+              <button
+                type="button"
+                data-testid="tab-comment-yml"
+                onClick={() => setActiveTemplateTab("comment")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  activeTemplateTab === "comment"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
+                    : "bg-slate-800/60 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                tendril-comment.yml
+              </button>
+              <button
+                type="button"
+                data-testid="tab-fork-guide"
+                onClick={() => setActiveTemplateTab("guide")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  activeTemplateTab === "guide"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
+                    : "bg-slate-800/60 text-slate-400 border border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                }`}
+              >
+                Fork Permissions Guide
+              </button>
+            </div>
+
+            {/* Active Template Content Viewer */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <span>
+                  {activeTemplateTab === "action" &&
+                    "action.yml (Composite Action with Graceful Fork Fallback)"}
+                  {activeTemplateTab === "verify" &&
+                    ".github/workflows/tendril-verify.yml (Primary PR Verification & Artifact Exporter)"}
+                  {activeTemplateTab === "comment" &&
+                    ".github/workflows/tendril-comment.yml (Companion Workflow Run Commenter)"}
+                  {activeTemplateTab === "guide" &&
+                    "FORK_PERMISSIONS_GUIDE.md (GitHub Actions Fork Security & Token Scoping)"}
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {activeTemplateTab === "action" && "Composite Action"}
+                  {activeTemplateTab === "verify" && "PR Verification Workflow"}
+                  {activeTemplateTab === "comment" && "Companion Workflow Run"}
+                  {activeTemplateTab === "guide" && "Documentation Guide"}
+                </span>
               </div>
 
-              {/* tendril-verify.yml snippet */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                  <span>.github/workflows/tendril-verify.yml</span>
-                  <span className="text-[10px] text-slate-500">PR Workflow</span>
-                </div>
-                <pre className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-48 overflow-y-auto">
+              {activeTemplateTab === "action" && (
+                <pre
+                  data-testid="action-yml-preview"
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-56 overflow-y-auto"
+                >
+                  {actionYml}
+                </pre>
+              )}
+
+              {activeTemplateTab === "verify" && (
+                <pre
+                  data-testid="workflow-yml-preview"
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-56 overflow-y-auto"
+                >
                   {workflowYml}
                 </pre>
-              </div>
+              )}
+
+              {activeTemplateTab === "comment" && (
+                <pre
+                  data-testid="companion-workflow-preview"
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-56 overflow-y-auto"
+                >
+                  {companionWorkflowYml}
+                </pre>
+              )}
+
+              {activeTemplateTab === "guide" && (
+                <pre
+                  data-testid="fork-guide-preview"
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-[10px] text-slate-300 font-mono h-56 overflow-y-auto whitespace-pre-wrap"
+                >
+                  {forkGuideMd}
+                </pre>
+              )}
             </div>
           </div>
         </div>

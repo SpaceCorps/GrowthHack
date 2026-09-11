@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
-import { PrFlywheel, DEFAULT_ACTION_YML, DEFAULT_WORKFLOW_YML } from "./PrFlywheel";
+import {
+  PrFlywheel,
+  DEFAULT_ACTION_YML,
+  DEFAULT_WORKFLOW_YML,
+  DEFAULT_COMPANION_WORKFLOW_YML,
+  DEFAULT_FORK_GUIDE_MD,
+} from "./PrFlywheel";
 
 describe("PrFlywheel Component", () => {
   beforeEach(() => {
@@ -21,6 +27,8 @@ describe("PrFlywheel Component", () => {
           Promise.resolve({
             action_yml: 'name: "Tendril Verification & PR Flywheel"\ninputs:\n',
             workflow_yml: "name: Tendril Verification & PR Flywheel\non:\n",
+            companion_workflow_yml: "name: Tendril Fork PR Comment\non:\n  workflow_run:\n",
+            fork_guide_md: "# GitHub Actions Fork Security & PR Permissions Guide\n",
           }),
       }),
     );
@@ -144,5 +152,51 @@ describe("PrFlywheel Component", () => {
 
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
     expect(screen.getByText("Copied action.yml")).toBeDefined();
+  });
+
+  it("switches to companion workflow tab and copies companion workflow YAML", async () => {
+    render(<PrFlywheel />);
+
+    const commentTab = screen.getByTestId("tab-comment-yml");
+    fireEvent.click(commentTab);
+
+    const companionPreview = screen.getByTestId("companion-workflow-preview");
+    expect(companionPreview).toBeDefined();
+    expect(companionPreview.textContent).toContain("Tendril Fork PR Comment");
+    expect(companionPreview.textContent).toContain("workflow_run");
+
+    const copyCompanionBtn = screen.getByTestId("copy-companion-yml-btn");
+    fireEvent.click(copyCompanionBtn);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    expect(screen.getByText("Copied Companion Workflow")).toBeDefined();
+  });
+
+  it("renders and inspects fork permissions guide with security details", async () => {
+    render(<PrFlywheel />);
+
+    // Verify fork safe badge and banner
+    expect(screen.getByTestId("fork-safe-badge")).toBeDefined();
+    expect(screen.getByTestId("fork-safe-banner")).toBeDefined();
+
+    const guideTab = screen.getByTestId("tab-fork-guide");
+    fireEvent.click(guideTab);
+
+    const guidePreview = screen.getByTestId("fork-guide-preview");
+    expect(guidePreview).toBeDefined();
+    expect(guidePreview.textContent).toContain("GitHub Actions Fork Security");
+
+    const copyGuideBtn = screen.getByTestId("copy-fork-guide-btn");
+    fireEvent.click(copyGuideBtn);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    expect(screen.getByText("Copied Fork Guide")).toBeDefined();
+  });
+
+  it("verifies DEFAULT_COMPANION_WORKFLOW_YML contains workflow_run and pull-requests write", () => {
+    expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("workflow_run");
+    expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("pull-requests: write");
+    expect(DEFAULT_ACTION_YML).toContain("Fork PR Read-Only Permissions");
+    expect(DEFAULT_FORK_GUIDE_MD).toContain("GitHub Actions Fork Security");
   });
 });
