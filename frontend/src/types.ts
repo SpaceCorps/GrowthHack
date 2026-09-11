@@ -613,6 +613,8 @@ export interface PlaygroundScenario {
   file_tree: WorktreeFileNode[];
   diff: string;
   pr_summary: string;
+  labels?: string[];
+  issue_url?: string;
 }
 
 export interface VerificationGateItem {

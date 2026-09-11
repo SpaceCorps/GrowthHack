@@ -34,6 +34,8 @@ const mockScenarios: PlaygroundScenario[] = [
     ],
     diff: "diff --git a/backend/src/api/health.rs b/backend/src/api/health.rs\n+ pub async fn health_check() {}",
     pr_summary: "Pull Request: Add health check endpoint\nAll verifications passed.",
+    labels: ["backend", "api", "metrics"],
+    issue_url: "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/42",
   },
   {
     id: "scenario-rate-limiter",
@@ -477,5 +479,35 @@ describe("Playground View Component", () => {
     );
 
     vi.useRealTimers();
+  });
+
+  it("renders imported labels and GitHub issue link when a scenario contains live metadata", async () => {
+    await act(async () => {
+      render(<Playground />);
+    });
+
+    // Check labels on scenario cards and banner
+    expect(screen.getAllByText("backend").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("api").length).toBeGreaterThanOrEqual(1);
+
+    // Check direct link to GitHub issue
+    const githubLink = screen.getByText("View GitHub Issue").closest("a");
+    expect(githubLink).toBeDefined();
+    expect(githubLink?.getAttribute("href")).toBe(
+      "https://github.com/Ivy-Interactive/Ivy-Tendril/issues/42",
+    );
+    expect(githubLink?.getAttribute("target")).toBe("_blank");
+
+    // Open import modal and check live metadata indicator
+    const openImportBtn = screen.getByText("Import Custom GitHub Issue");
+    await act(async () => {
+      fireEvent.click(openImportBtn);
+    });
+
+    expect(
+      screen.getByText(
+        /Live issue title, description, and labels will be imported automatically when a GitHub token is configured./,
+      ),
+    ).toBeDefined();
   });
 });
