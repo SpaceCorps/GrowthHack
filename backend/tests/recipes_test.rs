@@ -78,15 +78,19 @@ async fn test_recipe_parameters_and_cli_snippet_generation() {
 
     // Default parameters
     let default_cmd = resolve_cli_snippet(bugfixer, &HashMap::new());
-    assert_eq!(default_cmd, "tendril run recipe/bugfixer --issue=42");
+    assert_eq!(
+        default_cmd,
+        "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"issue_id\":\"42\"}}'"
+    );
 
     // Overridden parameters
     let mut overrides = HashMap::new();
     overrides.insert("issue_id".to_string(), "104".to_string());
     overrides.insert("worktree_name".to_string(), "hotfix-auth".to_string());
     let custom_cmd = resolve_cli_snippet(bugfixer, &overrides);
-    assert!(custom_cmd.contains("tendril run recipe/bugfixer --issue=104"));
-    assert!(custom_cmd.contains("--worktree_name=hotfix-auth"));
+    assert!(custom_cmd.contains("curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run"));
+    assert!(custom_cmd.contains("\"issue_id\":\"104\""));
+    assert!(custom_cmd.contains("\"worktree_name\":\"hotfix-auth\""));
 }
 
 #[tokio::test]
@@ -112,7 +116,10 @@ async fn test_run_recipe_endpoint_dispatches_task() {
 
     assert!(response_data.task_id.starts_with("task-"));
     assert_eq!(response_data.recipe_id, "recipe-bugfixer");
-    assert_eq!(response_data.cli_command, "tendril run recipe/bugfixer --issue=88");
+    assert_eq!(
+        response_data.cli_command,
+        "curl -s -X POST http://localhost:4200/api/recipes/bugfixer/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"issue_id\":\"88\"}}'"
+    );
 
     // Check task recorded in state
     let state = ctx.state.read().await;
@@ -145,7 +152,7 @@ async fn test_submit_community_recipe_success() {
             param_type: "string".to_string(),
             options: None,
         }],
-        cli_snippet: Some("tendril run recipe/docstring-generator --path=<target_path>".to_string()),
+        cli_snippet: Some("curl -s -X POST http://localhost:4200/api/recipes/docstring-generator/run -H \"Content-Type: application/json\" -d '{\"parameters\":{\"target_path\":\"<target_path>\"}}'".to_string()),
     };
 
     let result = submit_recipe(State(ctx.clone()), Json(payload)).await;

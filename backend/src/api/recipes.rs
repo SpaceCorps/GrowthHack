@@ -56,7 +56,7 @@ pub struct ErrorResponse {
 pub fn resolve_cli_snippet(recipe: &Recipe, overrides: &HashMap<String, String>) -> String {
     let mut snippet = recipe.cli_snippet.clone();
     if snippet.trim().is_empty() {
-        snippet = format!("tendril run recipe/{}", recipe.slug);
+        snippet = format!("curl -s -X POST http://localhost:4200/api/recipes/{}/run", recipe.slug);
     }
 
     let mut applied_keys = Vec::new();
@@ -74,13 +74,39 @@ pub fn resolve_cli_snippet(recipe: &Recipe, overrides: &HashMap<String, String>)
         }
     }
 
-    for (k, v) in overrides {
-        if !applied_keys.contains(k) {
-            let flag = format!("--{}={}", k, v);
-            if !snippet.contains(&flag) {
-                snippet.push_str(&format!(" {}", flag));
+    let unapplied: Vec<(&String, &String)> = overrides
+        .iter()
+        .filter(|(k, _)| !applied_keys.contains(k))
+        .collect();
+
+    if !unapplied.is_empty() {
+        if let Some(start) = snippet.find("-d '") {
+            let json_start = start + 4;
+            if let Some(end) = snippet[json_start..].rfind('\'') {
+                let json_str = &snippet[json_start..json_start + end];
+                if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    if let Some(params) = val.get_mut("parameters").and_then(|p| p.as_object_mut()) {
+                        for (k, v) in &unapplied {
+                            params.insert((*k).clone(), serde_json::Value::String((*v).clone()));
+                        }
+                        if let Ok(new_json) = serde_json::to_string(&val) {
+                            snippet = format!("{}'{}'{}", &snippet[..start + 3], new_json, &snippet[json_start + end + 1..]);
+                            return snippet;
+                        }
+                    }
+                }
             }
         }
+
+        let mut params = serde_json::Map::new();
+        for (k, v) in unapplied {
+            params.insert(k.clone(), serde_json::Value::String(v.clone()));
+        }
+        let body = serde_json::json!({ "parameters": params });
+        if !snippet.contains("-H \"Content-Type: application/json\"") {
+            snippet.push_str(" -H \"Content-Type: application/json\"");
+        }
+        snippet.push_str(&format!(" -d '{}'", body));
     }
 
     snippet
@@ -299,7 +325,7 @@ pub async fn submit_recipe(
         .unwrap_or_else(|| "Community Contributor".to_string());
 
     let cli_snippet = payload.cli_snippet.unwrap_or_else(|| {
-        format!("tendril run recipe/{}", slug_trimmed)
+        format!("curl -s -X POST http://localhost:4200/api/recipes/{}/run", slug_trimmed)
     });
 
     let new_recipe = Recipe {
