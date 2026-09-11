@@ -110,7 +110,7 @@ describe("DoctorDemo View Component", () => {
 
     vi.spyOn(window, "open").mockImplementation(() => null);
 
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
       if (url.includes("/api/doctor/diagnose")) {
         return Promise.resolve({
           ok: true,
@@ -131,6 +131,19 @@ describe("DoctorDemo View Component", () => {
         });
       }
       if (url.includes("/api/demo/scenarios")) {
+        if (options?.method === "POST") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: "scenario-custom-test",
+                title: "Custom Test Scenario",
+                description: "Description of custom test",
+                target_branch: "master",
+                estimated_duration_sec: 15,
+              }),
+          });
+        }
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(mockScenarios),
@@ -457,5 +470,81 @@ describe("DoctorDemo View Component", () => {
     } finally {
       delete (global as any).EventSource;
     }
+  });
+
+  it("renders dynamic scenario list and updates active scenario selection", async () => {
+    await act(async () => {
+      render(<DoctorDemo />);
+    });
+
+    // Check that scenarios from mockScenarios are rendered
+    expect(screen.getByText("Add health check endpoint with uptime metrics")).toBeDefined();
+    expect(screen.getByText("Add token bucket rate limiter to public endpoints")).toBeDefined();
+
+    // Verify branch & estimated duration
+    expect(screen.getByText("Branch: master • Est. 15s")).toBeDefined();
+    expect(screen.getByText("Branch: master • Est. 20s")).toBeDefined();
+
+    // Select second scenario
+    const rateLimiterButton = screen.getByText("Add token bucket rate limiter to public endpoints");
+    await act(async () => {
+      fireEvent.click(rateLimiterButton);
+    });
+
+    // Click start demo
+    const startButton = screen.getByText("Start Replayable Demo");
+    await act(async () => {
+      fireEvent.click(startButton);
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/demo/start",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          scenario_id: "scenario-rate-limiter",
+          speed_multiplier: 1.0,
+        }),
+      }),
+    );
+  });
+
+  it("opens Add Scenario modal, submits custom scenario, and selects it", async () => {
+    await act(async () => {
+      render(<DoctorDemo />);
+    });
+
+    const addScenarioButton = screen.getByText("Add Scenario");
+    await act(async () => {
+      fireEvent.click(addScenarioButton);
+    });
+
+    // Verify modal is open
+    expect(screen.getByText("Create Custom Demo Scenario")).toBeDefined();
+
+    // Fill form
+    const idInput = screen.getByPlaceholderText("scenario-my-workflow");
+    const titleInput = screen.getByPlaceholderText(
+      "Add JWT authentication and refresh token rotation",
+    );
+    const descInput = screen.getByPlaceholderText(
+      "Simulates an autonomous agent creating auth middleware with token validation tests in an isolated worktree.",
+    );
+
+    fireEvent.change(idInput, { target: { value: "scenario-custom-test" } });
+    fireEvent.change(titleInput, { target: { value: "Custom Test Scenario" } });
+    fireEvent.change(descInput, { target: { value: "Description of custom test" } });
+
+    const submitButton = screen.getByText("Create Scenario");
+    await act(async () => {
+      fireEvent.click(submitButton);
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/demo/scenarios",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
   });
 });
