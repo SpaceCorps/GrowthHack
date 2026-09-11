@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type { Recipe, SubmitRecipeRequest } from "../types";
 import {
   Sparkles,
@@ -828,14 +829,15 @@ steps:
                 >
                   Cancel
                 </button>
-                <button
+                <ActionButton
                   type="submit"
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-950/20 disabled:opacity-50 transition-colors"
+                  loading={isSubmitting}
+                  loadingText="Submitting..."
+                  icon={<Sparkles className="w-3.5 h-3.5" />}
+                  size="md"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isSubmitting ? "Submitting..." : "Submit Recipe"}</span>
-                </button>
+                  Submit Recipe
+                </ActionButton>
               </div>
             </form>
           </div>

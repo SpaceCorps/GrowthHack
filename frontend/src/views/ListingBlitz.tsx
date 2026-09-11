@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type { Listing } from "../types";
 import {
   ListTree,
@@ -563,19 +564,17 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
             </span>
           </button>
 
-          <button
+          <ActionButton
+            variant="gradient"
+            loading={isSyncingAllPrs}
+            loadingText="Syncing..."
+            icon={<RefreshCw className="w-4 h-4" />}
             onClick={handleSyncAllPrs}
-            disabled={isSyncingAllPrs}
             data-testid="sync-all-prs-btn"
-            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-bold transition-all shadow-md shadow-emerald-950/20 disabled:opacity-50"
+            size="md"
           >
-            {isSyncingAllPrs ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            <span>{isSyncingAllPrs ? "Syncing PRs..." : "Sync PR Status"}</span>
-          </button>
+            Sync PR Status
+          </ActionButton>
         </div>
       </div>
 

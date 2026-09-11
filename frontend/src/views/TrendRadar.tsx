@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { ActionButton } from "../components/ActionButton";
 import type { Article, TrendTopic } from "../types";
 import {
   Radio,
@@ -638,14 +639,14 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
                     <span>{copiedId === art.id ? "Copied" : "Copy MD"}</span>
                   </button>
 
-                  <button
+                  <ActionButton
                     onClick={() => onUpdateArticleStatus(art.id, "Published")}
-                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02]"
+                    icon={<Send className="w-3.5 h-3.5" />}
                     title="Approve and mark article published"
+                    className="hover:scale-[1.02]"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>1-Click Approve & Publish</span>
-                  </button>
+                    1-Click Approve & Publish
+                  </ActionButton>
                 </div>
               </div>
             ))}
