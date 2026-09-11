@@ -1,41 +1,15 @@
+mod common;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use growthhack_backend::agent::{AgentRunner, TaskManager};
-use growthhack_backend::api::{self, AppContext};
-use growthhack_backend::db::GrowthState;
+use growthhack_backend::api;
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower::ServiceExt;
-
-fn create_test_context() -> (Arc<AppContext>, std::path::PathBuf) {
-    let temp_dir = std::env::temp_dir();
-    let file_id = uuid::Uuid::new_v4().simple().to_string();
-    let data_file = temp_dir.join(format!("test_growth_data_{}.json", file_id));
-
-    let state = GrowthState::seed_default();
-    let _ = state.save(&data_file);
-
-    let state_arc = Arc::new(RwLock::new(state));
-    let runner = AgentRunner::new(std::path::PathBuf::from("agy"));
-    let task_manager = TaskManager::new(runner);
-
-    let ctx = Arc::new(AppContext {
-        state: state_arc,
-        task_manager,
-        data_file: data_file.clone(),
-        ivy_web_content_path: temp_dir.clone(),
-        ivy_web_images_path: temp_dir.clone(),
-        config: growthhack_backend::config::Config::load(),
-    });
-
-    (ctx, data_file)
-}
 
 #[tokio::test]
 async fn test_doctor_diagnose_endpoint() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -60,15 +34,16 @@ async fn test_doctor_diagnose_endpoint() {
 
     // Verify summary
     assert!(report.get("summary").is_some());
-    assert_eq!(report["summary"]["total"].as_u64().unwrap(), checks.len() as u64);
-
-    let _ = std::fs::remove_file(data_file);
+    assert_eq!(
+        report["summary"]["total"].as_u64().unwrap(),
+        checks.len() as u64
+    );
 }
 
 #[tokio::test]
 async fn test_doctor_fix_endpoint() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     let response = app
         .oneshot(
@@ -76,7 +51,9 @@ async fn test_doctor_fix_endpoint() {
                 .uri("/api/doctor/fix")
                 .method("POST")
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"check_ids": ["key_anthropic", "key_gemini"]}"#))
+                .body(Body::from(
+                    r#"{"check_ids": ["key_anthropic", "key_gemini"]}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -91,14 +68,12 @@ async fn test_doctor_fix_endpoint() {
     let anthropic_check = checks.iter().find(|c| c["id"] == "key_anthropic");
     assert!(anthropic_check.is_some());
     assert_eq!(anthropic_check.unwrap()["status"], "Pass");
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_demo_scenarios_and_start() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx);
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     // 1. Verify GET /api/demo/scenarios
     let scenarios_res = app
@@ -114,7 +89,9 @@ async fn test_demo_scenarios_and_start() {
         .unwrap();
 
     assert_eq!(scenarios_res.status(), StatusCode::OK);
-    let body = to_bytes(scenarios_res.into_body(), usize::MAX).await.unwrap();
+    let body = to_bytes(scenarios_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let scenarios: Value = serde_json::from_slice(&body).unwrap();
     assert!(scenarios.as_array().unwrap().len() >= 3);
 
@@ -126,7 +103,9 @@ async fn test_demo_scenarios_and_start() {
                 .uri("/api/demo/start")
                 .method("POST")
                 .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"scenario_id": "scenario-health-check", "speed_multiplier": 100.0}"#))
+                .body(Body::from(
+                    r#"{"scenario_id": "scenario-health-check", "speed_multiplier": 100.0}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -159,14 +138,12 @@ async fn test_demo_scenarios_and_start() {
     assert_eq!(final_state["status"], "Completed");
     assert_eq!(final_state["current_step"], 4);
     assert!(final_state["diff_preview"].as_str().is_some());
-
-    let _ = std::fs::remove_file(data_file);
 }
 
 #[tokio::test]
 async fn test_demo_metrics_and_persistence() {
-    let (ctx, data_file) = create_test_context();
-    let app = api::router(ctx.clone());
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
 
     // 1. Check initial metrics
     let metrics_res = app
@@ -202,9 +179,7 @@ async fn test_demo_metrics_and_persistence() {
     assert_eq!(updated_metrics["github_starred"], true);
 
     // Verify persisted on disk
-    let file_content = std::fs::read_to_string(&data_file).unwrap();
+    let file_content = std::fs::read_to_string(guard.data_file()).unwrap();
     let disk_state: Value = serde_json::from_str(&file_content).unwrap();
     assert_eq!(disk_state["onboarding_metrics"]["github_starred"], true);
-
-    let _ = std::fs::remove_file(data_file);
 }
