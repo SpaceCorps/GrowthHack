@@ -193,10 +193,30 @@ describe("PrFlywheel Component", () => {
     expect(screen.getByText("Copied Fork Guide")).toBeDefined();
   });
 
-  it("verifies DEFAULT_COMPANION_WORKFLOW_YML contains workflow_run and pull-requests write", () => {
+  it("verifies DEFAULT_COMPANION_WORKFLOW_YML contains workflow_run, dispatch, and defensive guards", () => {
     expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("workflow_run");
     expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("pull-requests: write");
+    expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("workflow_dispatch:");
+    expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("dry_run");
+    expect(DEFAULT_COMPANION_WORKFLOW_YML).toContain("comment.md");
+    expect(DEFAULT_WORKFLOW_YML).toContain("Test Companion Workflow Run Trigger");
+    expect(DEFAULT_WORKFLOW_YML).toContain('python3 -c "import yaml');
     expect(DEFAULT_ACTION_YML).toContain("Fork PR Read-Only Permissions");
     expect(DEFAULT_FORK_GUIDE_MD).toContain("GitHub Actions Fork Security");
+    expect(DEFAULT_FORK_GUIDE_MD).toContain("Automated Workflow Testing in CI");
+  });
+
+  it("renders workflow CI testing card with copyable dispatch command", () => {
+    render(<PrFlywheel />);
+
+    expect(screen.getByTestId("workflow-ci-testing-card")).toBeDefined();
+    expect(screen.getByTestId("ci-testing-badge")).toBeDefined();
+    expect(screen.getByText("Workflow CI Testing Active")).toBeDefined();
+
+    const copyDispatchBtn = screen.getByTestId("copy-dispatch-cmd-btn");
+    fireEvent.click(copyDispatchBtn);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    expect(screen.getByText("Copied CLI Command")).toBeDefined();
   });
 });

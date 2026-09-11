@@ -27,6 +27,7 @@ import {
   GitPullRequest,
   ShieldCheck,
   Terminal,
+  RefreshCw,
 } from "lucide-react";
 
 interface ContributorFlywheelProps {
@@ -129,6 +130,68 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
 
   // Copy feedback
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Claim timeout and unclaim state
+  const [isCheckingTimeouts, setIsCheckingTimeouts] = useState<boolean>(false);
+  const [isUnclaimingIssue, setIsUnclaimingIssue] = useState<string | null>(null);
+
+  const getClaimTimeoutInfo = (claimedAtStr?: string, prUrl?: string) => {
+    if (!claimedAtStr || prUrl) return null;
+    const claimedAt = new Date(claimedAtStr).getTime();
+    if (isNaN(claimedAt)) return null;
+    const now = Date.now();
+    const diffDays = Math.floor((now - claimedAt) / (1000 * 60 * 60 * 24));
+    const daysLeft = 7 - diffDays;
+    if (daysLeft <= 0) {
+      return {
+        text: "Timeout due",
+        isDue: true,
+      };
+    }
+    return {
+      text: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left before timeout`,
+      isDue: false,
+    };
+  };
+
+  const handleUnclaimIssue = async (issueId: string) => {
+    try {
+      setIsUnclaimingIssue(issueId);
+      const res = await fetch(`/api/contributors/issues/${issueId}/unclaim`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to unclaim issue.");
+      }
+      await fetchFlywheelData();
+      if (onIssueClaimed) {
+        onIssueClaimed();
+      }
+    } catch (err: any) {
+      console.error("Failed to unclaim issue:", err);
+    } finally {
+      setIsUnclaimingIssue(null);
+    }
+  };
+
+  const handleCheckTimeouts = async () => {
+    try {
+      setIsCheckingTimeouts(true);
+      const res = await fetch("/api/contributors/issues/check-timeouts", {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to check claim timeouts.");
+      }
+      await fetchFlywheelData();
+    } catch (err: any) {
+      console.error("Failed to check timeouts:", err);
+    } finally {
+      setIsCheckingTimeouts(false);
+    }
+  };
 
   const fetchFlywheelData = async () => {
     try {
@@ -341,7 +404,10 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
 
   // Metrics computation
   const totalIssues = issues.length;
-  const unclaimedCount = useMemo(() => issues.filter((i) => !i.claimed).length, [issues]);
+  const unclaimedCount = useMemo(
+    () => issues.filter((i) => !i.claimed && !i.closed).length,
+    [issues],
+  );
   const activeMentors = useMemo(() => {
     const mentors = new Set(issues.map((i) => i.mentor));
     return mentors.size;
@@ -359,10 +425,13 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
       if (timeFilter !== "all" && issue.estimated_minutes > parseInt(timeFilter, 10)) {
         return false;
       }
-      if (statusFilter === "unclaimed" && issue.claimed) {
+      if (statusFilter === "unclaimed" && (issue.claimed || issue.closed)) {
         return false;
       }
       if (statusFilter === "claimed" && !issue.claimed) {
+        return false;
+      }
+      if (statusFilter === "closed" && !issue.closed) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -512,6 +581,19 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCheckTimeouts}
+              disabled={isCheckingTimeouts}
+              data-testid="check-timeouts-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+              title="Evaluate claim timeouts and release inactive claims"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isCheckingTimeouts ? "animate-spin text-cyan-400" : "text-slate-400"}`}
+              />
+              Check Timeouts
+            </button>
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
               <input
@@ -576,6 +658,7 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                 <option value="all">All Statuses</option>
                 <option value="unclaimed">Unclaimed Only</option>
                 <option value="claimed">Claimed Only</option>
+                <option value="closed">Closed Only</option>
               </select>
             </div>
           </div>
@@ -609,6 +692,14 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                           {issue.difficulty}
                         </span>
+                        {issue.closed && (
+                          <span
+                            data-testid={`closed-badge-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                        )}
                         {issue.github_issue_number && (
                           <a
                             href={`https://github.com/${issue.github_repo || "SpaceCorps/GrowthHack"}/issues/${issue.github_issue_number}`}
@@ -689,9 +780,38 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                       Mentor: <span className="text-slate-200 font-medium">{issue.mentor}</span>
                     </div>
 
-                    {issue.claimed ? (
+                    {issue.closed ? (
                       <div className="flex flex-col items-end gap-1">
                         <div className="flex items-center gap-2">
+                          <span
+                            data-testid={`closed-status-${issue.id}`}
+                            className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/80"
+                          >
+                            Closed on GitHub
+                          </span>
+                          <button
+                            type="button"
+                            disabled
+                            data-testid={`claim-btn-${issue.id}`}
+                            title="This issue is closed on GitHub"
+                            className="px-3 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                          >
+                            Claim Issue
+                          </button>
+                        </div>
+                        {issue.github_sync_status && (
+                          <span
+                            data-testid={`github-sync-status-${issue.id}`}
+                            title={issue.github_sync_message || issue.github_sync_status}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-purple-500/10 text-purple-300 border-purple-500/20"
+                          >
+                            GitHub: {issue.github_sync_status}
+                          </span>
+                        )}
+                      </div>
+                    ) : issue.claimed ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
                             <UserCheck className="w-3.5 h-3.5" />
                             Claimed {issue.claimed_by ? `by ${issue.claimed_by}` : ""}
@@ -717,22 +837,53 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
                               Verify & Generate PR
                             </button>
                           )}
-                        </div>
-                        {issue.github_sync_status && (
-                          <span
-                            data-testid={`github-sync-status-${issue.id}`}
-                            title={issue.github_sync_message || issue.github_sync_status}
-                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                              issue.github_sync_status.startsWith("Synced")
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                : issue.github_sync_status.startsWith("Skipped")
-                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                  : "bg-red-500/10 text-red-400 border-red-500/20"
-                            }`}
+                          <button
+                            type="button"
+                            onClick={() => handleUnclaimIssue(issue.id)}
+                            disabled={isUnclaimingIssue === issue.id}
+                            data-testid={`unclaim-btn-${issue.id}`}
+                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-600/80 hover:bg-rose-500 text-white transition-colors cursor-pointer disabled:opacity-50"
+                            title="Release claim and remove GitHub label"
                           >
-                            GitHub: {issue.github_sync_status}
-                          </span>
-                        )}
+                            {isUnclaimingIssue === issue.id ? "Unclaiming..." : "Unclaim"}
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const timeoutInfo = getClaimTimeoutInfo(issue.claimed_at, issue.pr_url);
+                            if (!timeoutInfo) return null;
+                            return (
+                              <span
+                                data-testid={`claim-timeout-badge-${issue.id}`}
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                  timeoutInfo.isDue
+                                    ? "bg-red-500/10 text-red-400 border-red-500/20"
+                                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                }`}
+                              >
+                                <Clock className="w-2.5 h-2.5" />
+                                {timeoutInfo.text}
+                              </span>
+                            );
+                          })()}
+                          {issue.github_sync_status && (
+                            <span
+                              data-testid={`github-sync-status-${issue.id}`}
+                              title={issue.github_sync_message || issue.github_sync_status}
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                issue.github_sync_status.startsWith("Synced")
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : issue.github_sync_status.startsWith("Skipped")
+                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                    : issue.github_sync_status.includes("Webhook")
+                                      ? "bg-purple-500/10 text-purple-300 border-purple-500/20"
+                                      : "bg-red-500/10 text-red-400 border-red-500/20"
+                              }`}
+                            >
+                              GitHub: {issue.github_sync_status}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <button

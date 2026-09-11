@@ -28,6 +28,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runner = AgentRunner::new(config.agy_path.clone());
     let task_manager = TaskManager::new(runner);
 
+    let (metrics_debouncer, metrics_worker) = growthhack_backend::api::MetricsSyncDebouncer::new(
+        tokio::time::Duration::from_secs(3),
+        tokio::time::Duration::from_secs(15),
+    );
+    let metrics_debouncer = Arc::new(metrics_debouncer);
+
     let ctx = Arc::new(AppContext {
         state,
         task_manager,
@@ -38,7 +44,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rate_limiter: Arc::new(
             growthhack_backend::api::middleware::rate_limit::IpRateLimiter::default(),
         ),
+        metrics_debouncer: Arc::clone(&metrics_debouncer),
     });
+
+    metrics_worker.spawn(Arc::downgrade(&ctx));
 
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
@@ -52,6 +61,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let timeout_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic contributor issue claim timeout sweep...");
+            match api::contributors::check_claim_timeouts_internal(&timeout_ctx, 7).await {
+                Ok(unclaimed) => {
+                    tracing::info!(
+                        "Claim timeout sweep completed: {} issues automatically unclaimed ({:?})",
+                        unclaimed.len(),
+                        unclaimed
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Claim timeout sweep warning: {}", e);
+                }
+            }
+        }
+    });
+
+    let pr_poll_ctx = Arc::clone(&ctx);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1800));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic PR merge status check for submitted listings...");
+            if let Err(e) = api::listings::sync_listing_pr_statuses_internal(&pr_poll_ctx).await {
+                tracing::warn!("Periodic listing PR status check warning: {}", e);
+            }
+        }
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -60,18 +102,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = api::router(ctx);
 
     // Serve built frontend if available
-    let possible_paths = [
-        std::path::PathBuf::from("frontend/dist"),
-        std::path::PathBuf::from("../frontend/dist"),
-    ];
-
-    for dist in &possible_paths {
-        if dist.exists() {
-            tracing::info!("Serving frontend assets from: {:?}", dist);
-            let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
-            app = app.fallback_service(serve_dir);
-            break;
-        }
+    if let Some(dist) = &config.frontend_dist_dir {
+        tracing::info!("Serving frontend assets from: {:?}", dist);
+        let serve_dir = ServeDir::new(dist).fallback(ServeFile::new(dist.join("index.html")));
+        app = app.fallback_service(serve_dir);
+    } else {
+        tracing::info!("Frontend distribution assets not found; static asset serving is disabled");
     }
 
     let app = app.layer(cors).layer(TraceLayer::new_for_http());

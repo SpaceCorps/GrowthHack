@@ -7,7 +7,9 @@ pub mod demo;
 pub mod demos;
 pub mod doctor;
 pub mod issues;
+pub mod launch;
 pub mod listings;
+pub mod metrics_debouncer;
 pub mod middleware;
 pub mod packages;
 pub mod playground;
@@ -22,6 +24,7 @@ use axum::{
 use std::sync::Arc;
 
 pub use issues::{AppContext, TestContextGuard};
+pub use metrics_debouncer::{MetricsSyncDebouncer, MetricsSyncWorker};
 
 pub fn router(ctx: Arc<AppContext>) -> Router {
     Router::new()
@@ -172,6 +175,15 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/listings/batch-submit-pr",
             post(listings::batch_submit_listing_prs),
         )
+        .route("/api/listings/sync-prs", post(listings::sync_all_listing_prs))
+        .route(
+            "/api/listings/{id}/sync-pr",
+            post(listings::check_single_listing_pr),
+        )
+        .route(
+            "/api/webhooks/github/pr",
+            post(listings::handle_github_pr_webhook),
+        )
         // Package Manager & One-Line Install Blitz
         .route("/api/packages", get(packages::list_packages))
         .route(
@@ -220,6 +232,14 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(contributors::claim_contributor_issue),
         )
         .route(
+            "/api/contributors/issues/{id}/unclaim",
+            post(contributors::unclaim_contributor_issue),
+        )
+        .route(
+            "/api/contributors/issues/check-timeouts",
+            post(contributors::check_claim_timeouts),
+        )
+        .route(
             "/api/contributors/issues/{id}/github",
             put(contributors::link_github_issue),
         )
@@ -243,6 +263,18 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/contributors/generate-pr",
             post(contributors::generate_all_contributors_pr),
         )
+        .route(
+            "/api/webhooks/github",
+            post(contributors::handle_github_webhook)
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::webhook_auth::verify_webhook_hmac,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&ctx),
+                    middleware::rate_limit::rate_limit_middleware,
+                )),
+        )
         // Agent Status & SSE Streaming
         .route("/api/agent/status", get(agent::get_agent_status))
         .route("/api/agent/run", post(agent::run_custom_agent_task))
@@ -254,7 +286,20 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         )
         .route("/api/doctor/fix", post(doctor::fix_diagnostics))
         // Zero-Config Demo Simulator
-        .route("/api/demo/scenarios", get(demo::list_scenarios))
+        .route(
+            "/api/demo/scenarios",
+            get(demo::list_scenarios).post(demo::create_scenario),
+        )
+        .route(
+            "/api/demo/scenarios/reset",
+            post(demo::reset_scenarios),
+        )
+        .route(
+            "/api/demo/scenarios/{id}",
+            get(demo::get_scenario)
+                .put(demo::update_scenario)
+                .delete(demo::delete_scenario),
+        )
         .route("/api/demo/status", get(demo::get_status))
         .route("/api/demo/start", post(demo::start_demo))
         .route("/api/demo/stream/{task_id}", get(demo::stream_demo_logs))
@@ -262,16 +307,33 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
         .route("/api/demo/diff", get(demo::get_diff))
         .route("/api/demo/metrics", get(demo::get_metrics))
         .route("/api/demo/star-click", post(demo::record_star_click))
+        // Coordinated 48-Hour Launch Campaign Orchestrator
+        .route("/api/launch/overview", get(launch::get_launch_overview))
+        .route("/api/launch/show-hn/analyze", post(launch::analyze_show_hn))
+        .route("/api/launch/show-hn", put(launch::update_show_hn))
+        .route("/api/launch/product-hunt", put(launch::update_product_hunt))
+        .route("/api/launch/product-hunt/checklist/{id}", put(launch::toggle_product_hunt_checklist))
+        .route("/api/launch/testers/{id}", put(launch::update_beta_tester))
+        .route("/api/launch/checklist/{id}", put(launch::toggle_syndication_checklist))
+        .route("/api/launch/timeline/{phase_id}/tasks/{task_id}", put(launch::toggle_timeline_task))
+        .route("/api/launch/reset", post(launch::reset_launch_campaign))
         // Interactive Browser Web Playground (tendril.run)
         .route("/api/playground/scenarios", get(playground::list_scenarios))
-        .route("/api/playground/import-issue", post(playground::import_issue))
+        .route(
+            "/api/playground/import-issue",
+            post(playground::import_issue),
+        )
         .route("/api/playground/tree", get(playground::get_tree))
+        .route("/api/playground/file-content", get(playground::get_file_content))
         .route("/api/playground/status", get(playground::get_status))
         .route("/api/playground/start", post(playground::start_simulation))
         .route("/api/playground/reset", post(playground::reset_simulation))
         .route("/api/playground/diff", get(playground::get_diff))
         .route("/api/playground/metrics", get(playground::get_metrics))
-        .route("/api/playground/star-click", post(playground::record_star_click))
+        .route(
+            "/api/playground/star-click",
+            post(playground::record_star_click),
+        )
         .route("/api/playground/banner", get(playground::get_banner_info))
         .with_state(ctx)
 }

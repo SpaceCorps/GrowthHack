@@ -175,9 +175,16 @@ async fn test_get_workflows_endpoint() {
     assert!(companion.contains("workflow_run:"));
     assert!(companion.contains("workflows: [\"Tendril Verification & PR Flywheel\"]"));
     assert!(companion.contains("pull-requests: write"));
+    assert!(companion.contains("workflow_dispatch:"));
+    assert!(companion.contains("dry_run"));
+    assert!(companion.contains("comment.md"));
+
+    assert!(res.workflow_yml.contains("Test Companion Workflow Run Trigger"));
+    assert!(res.workflow_yml.contains("python3 -c \"import yaml"));
 
     assert!(res.fork_guide_md.is_some());
     let guide = res.fork_guide_md.unwrap();
     assert!(guide.contains("GitHub Actions Fork Security"));
     assert!(guide.contains("workflow_run"));
+    assert!(guide.contains("Automated Workflow Testing in CI"));
 }

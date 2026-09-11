@@ -52,6 +52,24 @@ const mockIssues: ContributorIssue[] = [
     github_sync_status: "Synced",
     github_sync_message: "Assigned to @test-dev with claimed label",
   },
+  {
+    id: "cf-issue-4",
+    title: "Document webhook endpoints",
+    description: "Write developer docs for GitHub webhook endpoints.",
+    category: "Documentation",
+    difficulty: "Good First Issue",
+    estimated_minutes: 10,
+    affected_files: ["docs/webhooks.md"],
+    reproduction_steps: ["Open docs"],
+    mentor: "@alex-spacecorps",
+    claimed: false,
+    closed: true,
+    closed_at: "2026-09-11T00:00:00Z",
+    github_issue_number: 105,
+    github_repo: "SpaceCorps/GrowthHack",
+    github_sync_status: "Closed (Webhook)",
+    github_sync_message: "Issue #105 was closed externally on GitHub",
+  },
 ];
 
 const mockGuide: ContributingGuideResponse = {
@@ -203,6 +221,32 @@ describe("ContributorFlywheel View", () => {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(mockContributors),
+        });
+      }
+      if (url.includes("/unclaim")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...mockIssues[2],
+              claimed: false,
+              claimed_by: undefined,
+              claimed_at: undefined,
+              github_sync_status: "Unclaimed",
+              github_sync_message: "Claim released manually",
+            }),
+        });
+      }
+      if (url.includes("/check-timeouts")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              unclaimed_count: 1,
+              unclaimed_issue_ids: ["cf-issue-3"],
+              message: "Timeouts evaluated",
+            }),
         });
       }
       if (url.includes("/claim")) {
@@ -479,5 +523,96 @@ describe("ContributorFlywheel View", () => {
     // Close modal
     const finishBtn = screen.getByTestId("finish-verify-btn");
     fireEvent.click(finishBtn);
+  });
+
+  it("renders claim timeout countdown badge on claimed issue and handles timeout due", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-timeout-badge-cf-issue-3")).toBeDefined();
+    });
+
+    const badge = screen.getByTestId("claim-timeout-badge-cf-issue-3");
+    expect(badge.textContent).toMatch(/(days? left before timeout|Timeout due)/);
+  });
+
+  it("handles manual unclaim button click", async () => {
+    const onIssueClaimed = vi.fn();
+    render(<ContributorFlywheel onIssueClaimed={onIssueClaimed} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("unclaim-btn-cf-issue-3")).toBeDefined();
+    });
+
+    const unclaimBtn = screen.getByTestId("unclaim-btn-cf-issue-3");
+    fireEvent.click(unclaimBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/cf-issue-3/unclaim",
+        expect.objectContaining({ method: "POST" }),
+      );
+      expect(onIssueClaimed).toHaveBeenCalled();
+    });
+  });
+
+  it("handles Check Timeouts toolbar button click", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-timeouts-btn")).toBeDefined();
+    });
+
+    const checkBtn = screen.getByTestId("check-timeouts-btn");
+    fireEvent.click(checkBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/contributors/issues/check-timeouts",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
+
+  it("renders closed issue with Closed on GitHub badge and disabled claim button", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("closed-badge-cf-issue-4")).toBeDefined();
+    });
+
+    const badge = screen.getByTestId("closed-badge-cf-issue-4");
+    expect(badge.textContent).toContain("Closed on GitHub");
+
+    const claimBtn = screen.getByTestId("claim-btn-cf-issue-4") as HTMLButtonElement;
+    expect(claimBtn.disabled).toBe(true);
+    expect(claimBtn.title).toBe("This issue is closed on GitHub");
+  });
+
+  it("filters issues correctly by closed status", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Document webhook endpoints")).toBeDefined();
+    });
+
+    const statusSelect = screen.getByTestId("status-filter-select");
+    fireEvent.change(statusSelect, { target: { value: "closed" } });
+
+    expect(screen.getByText("Document webhook endpoints")).toBeDefined();
+    expect(screen.queryByText("Add CLI shell completion for zsh")).toBeNull();
+    expect(screen.queryByText("Improve empty state message on Plan Review view")).toBeNull();
+  });
+
+  it("displays claim button on unassigned issues", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    const claimBtn = screen.getByTestId("claim-btn-cf-issue-1") as HTMLButtonElement;
+    expect(claimBtn.disabled).toBe(false);
+    expect(claimBtn.textContent).toContain("Claim Issue");
   });
 });

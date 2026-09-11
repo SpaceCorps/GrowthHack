@@ -27,6 +27,8 @@ export interface ListingBlitzProps {
   onSubmitUpstream?: (id: string) => Promise<any>;
   onBatchSubmitUpstream?: (category?: string, listingIds?: string[]) => Promise<any>;
   githubStatus?: { configured: boolean; username?: string; message: string };
+  onSyncAllPrs?: () => Promise<any>;
+  onSyncSinglePr?: (id: string) => Promise<any>;
 }
 
 export const CATEGORIES = [
@@ -96,6 +98,8 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
   onSubmitUpstream,
   onBatchSubmitUpstream,
   githubStatus,
+  onSyncAllPrs,
+  onSyncSinglePr,
 }) => {
   const [filterCategory, setFilterCategory] = useState<string>("All");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -112,6 +116,14 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
   const [submittingMap, setSubmittingMap] = useState<Record<string, boolean>>({});
   const [isBatchSubmitting, setIsBatchSubmitting] = useState<boolean>(false);
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null);
+
+  // PR sync state
+  const [isSyncingAllPrs, setIsSyncingAllPrs] = useState<boolean>(false);
+  const [syncPrMessage, setSyncPrMessage] = useState<string | null>(null);
+  const [checkingPrMap, setCheckingPrMap] = useState<Record<string, boolean>>({});
+  const [checkPrResults, setCheckPrResults] = useState<
+    Record<string, { merged: boolean; message: string; status: string }>
+  >({});
 
   useEffect(() => {
     if (githubStatus !== undefined) {
@@ -278,6 +290,75 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
     } finally {
       setIsBatchSubmitting(false);
       setTimeout(() => setSubmissionMessage(null), 5000);
+    }
+  };
+
+  const handleSyncAllPrs = async () => {
+    setIsSyncingAllPrs(true);
+    setSyncPrMessage(null);
+    try {
+      let data: any;
+      if (onSyncAllPrs) {
+        data = await onSyncAllPrs();
+      } else {
+        const res = await fetch("/api/listings/sync-prs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        data = await res.json();
+      }
+      if (data?.transitioned_ids && Array.isArray(data.transitioned_ids)) {
+        for (const id of data.transitioned_ids) {
+          onUpdateStatus(id, "Live");
+        }
+      }
+      setSyncPrMessage(
+        data?.message ||
+          `Checked ${data?.checked_count ?? 0} PRs: ${data?.merged_count ?? 0} merged and transitioned to Live.`,
+      );
+    } catch {
+      setSyncPrMessage("Failed to sync pull request merge statuses");
+    } finally {
+      setIsSyncingAllPrs(false);
+      setTimeout(() => setSyncPrMessage(null), 5000);
+    }
+  };
+
+  const handleCheckSinglePr = async (id: string) => {
+    setCheckingPrMap((prev) => ({ ...prev, [id]: true }));
+    try {
+      let data: any;
+      if (onSyncSinglePr) {
+        data = await onSyncSinglePr(id);
+      } else {
+        const res = await fetch(`/api/listings/${id}/sync-pr`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        data = await res.json();
+      }
+      setCheckPrResults((prev) => ({
+        ...prev,
+        [id]: {
+          merged: data?.merged ?? false,
+          message: data?.message ?? (data?.merged ? "PR Merged!" : "PR open"),
+          status: data?.status ?? (data?.merged ? "Live" : "PR Submitted"),
+        },
+      }));
+      if (data?.merged) {
+        onUpdateStatus(id, "Live");
+      }
+    } catch {
+      setCheckPrResults((prev) => ({
+        ...prev,
+        [id]: {
+          merged: false,
+          message: "Failed to check PR status",
+          status: "Error",
+        },
+      }));
+    } finally {
+      setCheckingPrMap((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -481,6 +562,20 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
               {isBatchSubmitting ? "Submitting Upstream..." : "Batch Submit Upstream PRs"}
             </span>
           </button>
+
+          <button
+            onClick={handleSyncAllPrs}
+            disabled={isSyncingAllPrs}
+            data-testid="sync-all-prs-btn"
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold transition-all shadow-md shadow-emerald-950 disabled:opacity-50"
+          >
+            {isSyncingAllPrs ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            <span>{isSyncingAllPrs ? "Syncing PRs..." : "Sync PR Status"}</span>
+          </button>
         </div>
       </div>
 
@@ -498,6 +593,16 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
         >
           <CheckCircle2 className="w-4 h-4 text-indigo-400" />
           <span>{submissionMessage}</span>
+        </div>
+      )}
+
+      {syncPrMessage && (
+        <div
+          data-testid="sync-prs-message"
+          className="p-3 rounded-lg bg-emerald-950/80 border border-emerald-800 text-emerald-200 text-xs flex items-center space-x-2"
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{syncPrMessage}</span>
         </div>
       )}
 
@@ -690,6 +795,43 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                       <GitPullRequest className="w-3.5 h-3.5" />
                       <span>View PR</span>
                     </a>
+                  )}
+
+                  {/* Check PR Status Button */}
+                  {(listing.status === "PR Submitted" || listing.status === "Under Review") &&
+                    listing.pr_url && (
+                      <button
+                        onClick={() => handleCheckSinglePr(listing.id)}
+                        disabled={checkingPrMap[listing.id]}
+                        data-testid={`check-pr-${listing.id}`}
+                        className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-indigo-950/80 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-800 text-xs font-medium transition-colors disabled:opacity-50"
+                      >
+                        {checkingPrMap[listing.id] ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <GitPullRequest className="w-3.5 h-3.5 text-indigo-400" />
+                        )}
+                        <span>{checkingPrMap[listing.id] ? "Checking..." : "Check PR Status"}</span>
+                      </button>
+                    )}
+
+                  {/* Single PR Check Result Badge */}
+                  {checkPrResults[listing.id] && (
+                    <span
+                      data-testid={`check-pr-badge-${listing.id}`}
+                      className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                        checkPrResults[listing.id].merged
+                          ? "bg-emerald-950/90 text-emerald-300 border-emerald-800"
+                          : "bg-indigo-950/90 text-indigo-300 border-indigo-800"
+                      }`}
+                    >
+                      {checkPrResults[listing.id].merged ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-indigo-400" />
+                      )}
+                      <span>{checkPrResults[listing.id].message}</span>
+                    </span>
                   )}
                 </div>
               </div>

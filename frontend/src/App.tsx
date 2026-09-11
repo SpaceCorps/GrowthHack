@@ -12,6 +12,7 @@ import type {
   RunRecipeResponse,
   TrendTopic,
   VideoDemo,
+  LaunchCampaignState,
 } from "./types";
 import { Navigation } from "./components/Navigation";
 import { LiveTerminal } from "./components/LiveTerminal";
@@ -28,6 +29,7 @@ import { PrFlywheel } from "./views/PrFlywheel";
 import { RecipeHub } from "./views/RecipeHub";
 import { ContributorFlywheel } from "./views/ContributorFlywheel";
 import { DoctorDemo } from "./views/DoctorDemo";
+import { LaunchCampaign } from "./views/LaunchCampaign";
 import { Playground } from "./views/Playground";
 
 const VALID_TABS: ActiveTab[] = [
@@ -43,6 +45,7 @@ const VALID_TABS: ActiveTab[] = [
   "review",
   "flywheel",
   "doctor",
+  "launch",
   "playground",
 ];
 
@@ -129,6 +132,7 @@ export const App: React.FC = () => {
   >(undefined);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
+  const [launchCampaign, setLaunchCampaign] = useState<LaunchCampaignState | null>(null);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -155,6 +159,7 @@ export const App: React.FC = () => {
         resGithub,
         resRecipes,
         resContributors,
+        resLaunch,
       ] = await Promise.all([
         fetch("/api/issues").then((r) => r.json()),
         fetch("/api/articles").then((r) => r.json()),
@@ -168,6 +173,9 @@ export const App: React.FC = () => {
           .catch(() => undefined),
         fetch("/api/recipes").then((r) => r.json()),
         fetch("/api/contributors/issues").then((r) => r.json()),
+        fetch("/api/launch/overview")
+          .then((r) => r.json())
+          .catch(() => null),
       ]);
       setIssues(resIssues);
       setArticles(resArticles);
@@ -181,6 +189,9 @@ export const App: React.FC = () => {
       }
       setRecipes(resRecipes);
       setContributorIssues(resContributors);
+      if (resLaunch) {
+        setLaunchCampaign(resLaunch);
+      }
 
       if (initialArticleId && !selectedArticle) {
         const found = resArticles.find((a: Article) => a.id === initialArticleId);
@@ -533,6 +544,30 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleSyncAllPrs = async () => {
+    try {
+      const res = await fetch("/api/listings/sync-prs", { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync all PRs error:", err);
+      throw err;
+    }
+  };
+
+  const handleSyncSinglePr = async (id: string) => {
+    try {
+      const res = await fetch(`/api/listings/${id}/sync-pr`, { method: "POST" });
+      const data = await res.json();
+      fetchAll();
+      return data;
+    } catch (err) {
+      console.error("Sync single PR error:", err);
+      throw err;
+    }
+  };
+
   const handleUpdatePackageStatus = async (
     id: string,
     payload: { status?: string; pr_url?: string; notes?: string },
@@ -549,12 +584,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDispatchPackagePr = async (id: string, version?: string, skipAuthCheck?: boolean) => {
+  const handleDispatchPackagePr = async (
+    id: string,
+    version?: string,
+    tagOrSkipAuth?: string | boolean,
+    skipAuthCheck?: boolean,
+  ) => {
+    const tag = typeof tagOrSkipAuth === "string" ? tagOrSkipAuth : undefined;
+    const skipAuth = typeof tagOrSkipAuth === "boolean" ? tagOrSkipAuth : skipAuthCheck;
     try {
       const res = await fetch(`/api/packages/${id}/dispatch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, skip_auth_check: skipAuthCheck }),
+        body: JSON.stringify({ version, tag, skip_auth_check: skipAuth }),
       });
       const data = await res.json();
       if (data && data.task_id) {
@@ -888,7 +930,11 @@ export const App: React.FC = () => {
             (updated.summary !== undefined && updated.summary !== item.summary))) ||
         (item.type === "video_demo" &&
           ((updated.content !== undefined && updated.content !== item.content) ||
-            (updated.title !== undefined && updated.title !== item.title)));
+            (updated.title !== undefined && updated.title !== item.title))) ||
+        (item.type === "trend_synthesis" &&
+          ((updated.content !== undefined && updated.content !== item.content) ||
+            (updated.title !== undefined && updated.title !== item.title) ||
+            (updated.summary !== undefined && updated.summary !== item.summary)));
 
       if (isModified) {
         nextUpdated.status = "Pending";
@@ -938,7 +984,7 @@ export const App: React.FC = () => {
           body: JSON.stringify({
             topic: updated.title,
             summary: updated.summary,
-            status: updated.status,
+            status: nextUpdated.status ?? updated.status,
           }),
         });
         fetchAll();
@@ -999,6 +1045,9 @@ export const App: React.FC = () => {
   };
 
   const pendingReviewCount = reviewItems.filter((it) => it.status === "Pending").length;
+  const remainingLaunchChecklist = launchCampaign
+    ? launchCampaign.syndication_checklist.filter((i) => !i.completed).length
+    : undefined;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -1014,6 +1063,7 @@ export const App: React.FC = () => {
         reviewCount={pendingReviewCount}
         recipesCount={recipes.length}
         contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
+        launchCount={remainingLaunchChecklist}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -1076,6 +1126,8 @@ export const App: React.FC = () => {
             onSubmitUpstream={handleSubmitUpstream}
             onBatchSubmitUpstream={handleBatchSubmitUpstream}
             githubStatus={githubStatus}
+            onSyncAllPrs={handleSyncAllPrs}
+            onSyncSinglePr={handleSyncSinglePr}
           />
         )}
 
@@ -1090,6 +1142,13 @@ export const App: React.FC = () => {
         {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
 
         {activeTab === "flywheel" && <PrFlywheel />}
+
+        {activeTab === "launch" && (
+          <LaunchCampaign
+            initialCampaign={launchCampaign || undefined}
+            onCampaignUpdated={fetchAll}
+          />
+        )}
 
         {activeTab === "agent" && (
           <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />

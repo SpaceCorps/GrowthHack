@@ -65,6 +65,9 @@ describe("App URL Hash Routing", () => {
       if (url.includes("/api/playground/banner")) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
       }
+      if (url.includes("/api/launch/overview")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
   });
