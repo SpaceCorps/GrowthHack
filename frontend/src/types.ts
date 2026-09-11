@@ -341,6 +341,10 @@ export interface ContributorIssue {
   claimed_by?: string;
   claimed_at?: string;
   pr_url?: string;
+  github_issue_number?: number;
+  github_repo?: string;
+  github_sync_status?: string;
+  github_sync_message?: string;
 }
 
 export interface ContributorRecord {
