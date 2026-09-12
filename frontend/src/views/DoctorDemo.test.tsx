@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { DoctorDemo } from "./DoctorDemo";
 import type { DiagnosticReport, DemoScenario, DemoRunState, OnboardingMetrics } from "../types";
+import { setupMockFetch } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockReport: DiagnosticReport = {
   timestamp: "2026-09-10T18:00:00Z",
@@ -97,6 +99,7 @@ const mockMetrics: OnboardingMetrics = {
 
 describe("DoctorDemo View Component", () => {
   let clipboardWriteTextMock: any;
+  let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
     clipboardWriteTextMock = vi.fn().mockImplementation(() => Promise.resolve());
@@ -110,95 +113,53 @@ describe("DoctorDemo View Component", () => {
 
     vi.spyOn(window, "open").mockImplementation(() => null);
 
-    global.fetch = vi.fn().mockImplementation((url: string, options?: any) => {
-      if (url.includes("/api/doctor/diagnose")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockReport),
-        });
-      }
-      if (url.includes("/api/doctor/fix")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              ...mockReport,
-              checks: mockReport.checks.map((c) =>
-                c.id === "key_anthropic" ? { ...c, status: "Pass" } : c,
-              ),
-              summary: { ...mockReport.summary, passed: 4, warnings: 1 },
-            }),
-        });
-      }
-      if (url.includes("/api/demo/scenarios")) {
-        if (options?.method === "POST") {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve({
-                id: "scenario-custom-test",
-                title: "Custom Test Scenario",
-                description: "Description of custom test",
-                target_branch: "master",
-                estimated_duration_sec: 15,
-              }),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockScenarios),
-        });
-      }
-      if (url.includes("/api/demo/status")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockInitialDemoState),
-        });
-      }
-      if (url.includes("/api/demo/metrics")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockMetrics),
-        });
-      }
-      if (url.includes("/api/demo/start")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              ...mockInitialDemoState,
-              status: "Running",
-              current_step: 2,
-              step_progress_pct: 50,
-              logs: [
-                ...mockInitialDemoState.logs,
-                "[00:12] Step 2/4 (Worktree): Creating isolated git worktree...",
-              ],
-            }),
-        });
-      }
-      if (url.includes("/api/demo/reset")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockInitialDemoState),
-        });
-      }
-      if (url.includes("/api/demo/star-click")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ ...mockMetrics, github_starred: true }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/doctor/diagnose": mockReport,
+        "/api/doctor/fix": {
+          ...mockReport,
+          checks: mockReport.checks.map((c) =>
+            c.id === "key_anthropic" ? { ...c, status: "Pass" } : c,
+          ),
+          summary: { ...mockReport.summary, passed: 4, warnings: 1 },
+        },
+        "/api/demo/scenarios": (_url: string, options?: RequestInit) => {
+          if (options?.method === "POST") {
+            return {
+              id: "scenario-custom-test",
+              title: "Custom Test Scenario",
+              description: "Description of custom test",
+              target_branch: "master",
+              estimated_duration_sec: 15,
+            };
+          }
+          return mockScenarios;
+        },
+        "/api/demo/status": mockInitialDemoState,
+        "/api/demo/metrics": mockMetrics,
+        "/api/demo/start": {
+          ...mockInitialDemoState,
+          status: "Running",
+          current_step: 2,
+          step_progress_pct: 50,
+          logs: [
+            ...mockInitialDemoState.logs,
+            "[00:12] Step 2/4 (Worktree): Creating isolated git worktree...",
+          ],
+        },
+        "/api/demo/reset": mockInitialDemoState,
+        "/api/demo/star-click": { ...mockMetrics, github_starred: true },
+      },
     });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("renders diagnostic checklist and run diagnostic button", async () => {
@@ -282,72 +243,31 @@ describe("DoctorDemo View Component", () => {
 
   it("displays first-success celebration modal with GitHub star link", async () => {
     let demoStarted = false;
-    (global.fetch as any).mockImplementation((url: string) => {
-      if (url.includes("/api/demo/status")) {
-        if (!demoStarted) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockInitialDemoState),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              id: "completed-demo",
-              status: "Completed",
-              current_step: 4,
-              step_progress_pct: 100,
-              logs: ["[00:54] Verified pull request generated with clean mergeability."],
-              diff_preview: "diff --git a/backend/src/api/health.rs b/backend/src/api/health.rs",
-              pr_summary: "Verification Summary: All Pass",
-              elapsed_seconds: 54.2,
-            }),
-        });
+    mockController?.addHandler("/api/demo/start", () => {
+      demoStarted = true;
+      return {
+        id: "completed-demo",
+        status: "Running",
+        current_step: 1,
+        step_progress_pct: 25,
+        logs: ["Starting..."],
+        elapsed_seconds: 5.0,
+      };
+    });
+    mockController?.addHandler("/api/demo/status", () => {
+      if (!demoStarted) {
+        return mockInitialDemoState;
       }
-      if (url.includes("/api/demo/start")) {
-        demoStarted = true;
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              id: "completed-demo",
-              status: "Running",
-              current_step: 1,
-              step_progress_pct: 25,
-              logs: ["Starting..."],
-              elapsed_seconds: 5.0,
-            }),
-        });
-      }
-      if (url.includes("/api/demo/star-click")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ ...mockMetrics, github_starred: true }),
-        });
-      }
-      if (url.includes("/api/demo/metrics")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockMetrics),
-        });
-      }
-      if (url.includes("/api/doctor/diagnose")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockReport),
-        });
-      }
-      if (url.includes("/api/demo/scenarios")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockScenarios),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
+      return {
+        id: "completed-demo",
+        status: "Completed",
+        current_step: 4,
+        step_progress_pct: 100,
+        logs: ["[00:54] Verified pull request generated with clean mergeability."],
+        diff_preview: "diff --git a/backend/src/api/health.rs b/backend/src/api/health.rs",
+        pr_summary: "Verification Summary: All Pass",
+        elapsed_seconds: 54.2,
+      };
     });
 
     vi.useFakeTimers();
@@ -564,36 +484,7 @@ describe("DoctorDemo View Component", () => {
     };
 
     beforeEach(() => {
-      (global.fetch as any).mockImplementation((url: string) => {
-        if (url.includes("/api/demo/status")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(multiStepLogsState),
-          });
-        }
-        if (url.includes("/api/doctor/diagnose")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockReport),
-          });
-        }
-        if (url.includes("/api/demo/scenarios")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockScenarios),
-          });
-        }
-        if (url.includes("/api/demo/metrics")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(mockMetrics),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({}),
-        });
-      });
+      mockController?.addHandler("/api/demo/status", multiStepLogsState);
     });
 
     it("renders step filter buttons and search input in terminal drawer", async () => {

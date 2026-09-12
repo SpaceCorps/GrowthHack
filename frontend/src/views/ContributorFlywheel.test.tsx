@@ -6,6 +6,8 @@ import type {
   ContributingGuideResponse,
   AllContributorsResponse,
 } from "../types";
+import { setupMockFetch } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockIssues: ContributorIssue[] = [
   {
@@ -182,6 +184,8 @@ const mockGitHubUsers = [
 ];
 
 describe("ContributorFlywheel View", () => {
+  let mockController: MockFetchController | null = null;
+
   beforeEach(() => {
     // Mock clipboard
     Object.defineProperty(navigator, "clipboard", {
@@ -204,103 +208,66 @@ describe("ContributorFlywheel View", () => {
       writable: true,
     });
 
-    // Mock fetch
-    global.fetch = vi.fn().mockImplementation((url: string, _options?: RequestInit) => {
-      if (url.includes("/api/contributors/github-users")) {
-        if (url.includes("error")) {
-          return Promise.resolve({
-            ok: false,
-            status: 500,
-            json: () => Promise.resolve({ error: "Rate limit or GitHub API error" }),
-          });
-        }
-        if (url.includes("empty")) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve([]),
-          });
-        }
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockGitHubUsers),
-        });
-      }
-      if (url.includes("/api/contributors/verify")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockVerifyResponse),
-        });
-      }
-      if (url.includes("/api/contributors/all-contributorsrc")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockAllContributorsRc),
-        });
-      }
-      if (url.includes("/api/contributors/issues") && !url.includes("/claim")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockIssues),
-        });
-      }
-      if (url.includes("/api/contributors/contributing-md")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockGuide),
-        });
-      }
-      if (url.includes("/api/contributors/all-contributors")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(mockContributors),
-        });
-      }
-      if (url.includes("/unclaim")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
+    // Mock fetch via setupMockFetch
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/contributors/github-users": (url: string) => {
+          if (url.includes("error")) {
+            return new Response(JSON.stringify({ error: "Rate limit or GitHub API error" }), {
+              status: 500,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          if (url.includes("empty")) {
+            return [];
+          }
+          return mockGitHubUsers;
+        },
+        "/api/contributors/verify": mockVerifyResponse,
+        "/api/contributors/all-contributorsrc": mockAllContributorsRc,
+        "/api/contributors/issues": (url: string) => {
+          if (url.includes("/unclaim")) {
+            return {
               ...mockIssues[2],
               claimed: false,
               claimed_by: undefined,
               claimed_at: undefined,
               github_sync_status: "Unclaimed",
               github_sync_message: "Claim released manually",
-            }),
-        });
-      }
-      if (url.includes("/check-timeouts")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
+            };
+          }
+          if (url.includes("/check-timeouts")) {
+            return {
               success: true,
               unclaimed_count: 1,
               unclaimed_issue_ids: ["cf-issue-3"],
               message: "Timeouts evaluated",
-            }),
-        });
-      }
-      if (url.includes("/claim")) {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
+            };
+          }
+          if (url.includes("/claim")) {
+            return {
               ...mockIssues[0],
               claimed: true,
               claimed_by: "@janedev",
               github_sync_status: "Synced",
               github_sync_message: "Issue #42 assigned to @janedev with 'claimed' label",
-            }),
-        });
-      }
-      return Promise.reject(new Error(`Unhandled URL: ${url}`));
+            };
+          }
+          return mockIssues;
+        },
+        "/api/contributors/contributing-md": mockGuide,
+        "/api/contributors/all-contributors": mockContributors,
+      },
     });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("renders metrics, onboarding checklist, issues board, and contributors grid", async () => {
