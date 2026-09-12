@@ -26,6 +26,47 @@ describe("ActionButton Component", () => {
     expect(button.className).toContain("text-slate-950");
   });
 
+  it("renders secondary variant with expected styling classes", () => {
+    render(<ActionButton variant="secondary">Cancel Action</ActionButton>);
+    const button = screen.getByRole("button", { name: "Cancel Action" });
+    expect(button).toBeDefined();
+    expect(button.className).toContain("bg-slate-800");
+    expect(button.className).toContain("border-slate-700");
+    expect(button.className).toContain("text-slate-200");
+  });
+
+  it("renders ghost variant with expected styling classes", () => {
+    render(<ActionButton variant="ghost">Dismiss</ActionButton>);
+    const button = screen.getByRole("button", { name: "Dismiss" });
+    expect(button).toBeDefined();
+    expect(button.className).toContain("text-slate-400");
+    expect(button.className).toContain("hover:bg-slate-800");
+    expect(button.className).toContain("border-transparent");
+  });
+
+  it("handles loading and disabled states across secondary and ghost variants", () => {
+    const { rerender } = render(
+      <ActionButton variant="secondary" loading loadingText="Saving...">
+        Save
+      </ActionButton>,
+    );
+    let button = screen.getByRole("button") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Saving...")).toBeDefined();
+    expect(button.className).toContain("bg-slate-800");
+
+    rerender(
+      <ActionButton variant="ghost" disabled>
+        Ghost Disabled
+      </ActionButton>,
+    );
+    button = screen.getByRole("button", { name: "Ghost Disabled" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.className).toContain("disabled:opacity-50");
+    expect(button.className).toContain("text-slate-400");
+  });
+
   it("renders size classes for xs, sm, md, and lg", () => {
     const { rerender } = render(<ActionButton size="xs">XS</ActionButton>);
     expect(screen.getByRole("button").className).toContain("px-2.5 py-1 text-xs rounded-lg");
