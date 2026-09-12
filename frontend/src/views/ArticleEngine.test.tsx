@@ -308,6 +308,178 @@ describe("ArticleEngine Component", () => {
     );
   });
 
+  it("enforces min=10 and max=3600 on feature and spotlight timeout inputs", async () => {
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const featureTimeoutInput = Array.from(container!.querySelectorAll("input")).find((input) =>
+      input.placeholder?.includes("Default (300s)"),
+    );
+    expect(featureTimeoutInput).toBeDefined();
+    expect(featureTimeoutInput?.getAttribute("min")).toBe("10");
+    expect(featureTimeoutInput?.getAttribute("max")).toBe("3600");
+
+    const spotlightTab = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Cool Project Spotlight"),
+    );
+    await act(async () => {
+      spotlightTab!.click();
+    });
+
+    const spotlightTimeoutInput = Array.from(container!.querySelectorAll("input")).find((input) =>
+      input.placeholder?.includes("Default (300s)"),
+    );
+    expect(spotlightTimeoutInput).toBeDefined();
+    expect(spotlightTimeoutInput?.getAttribute("min")).toBe("10");
+    expect(spotlightTimeoutInput?.getAttribute("max")).toBe("3600");
+  });
+
+  it("submitting feature article form with out-of-bounds timeout ignores timeout override", async () => {
+    const onGenerate = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={onGenerate}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const inputs = container!.querySelectorAll("input");
+    const form = container!.querySelector("form") as HTMLFormElement;
+
+    // Timeout below 10 (e.g. 5)
+    await act(async () => {
+      setInputValue(inputs[0] as HTMLInputElement, "Extra context notes");
+      setInputValue(inputs[1] as HTMLInputElement, "5");
+    });
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      "Worktrees",
+      "Architecture",
+      "Website",
+      "Extra context notes",
+    );
+    expect(onGenerate).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      5,
+    );
+
+    onGenerate.mockClear();
+
+    // Timeout above 3600 (e.g. 5000)
+    await act(async () => {
+      setInputValue(inputs[0] as HTMLInputElement, "Extra context notes 2");
+      setInputValue(inputs[1] as HTMLInputElement, "5000");
+    });
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      "Worktrees",
+      "Architecture",
+      "Website",
+      "Extra context notes 2",
+    );
+    expect(onGenerate).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      5000,
+    );
+  });
+
+  it("submitting spotlight form with out-of-bounds timeout ignores timeout override", async () => {
+    const onGenerateSpotlight = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onGenerateSpotlight={onGenerateSpotlight}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const spotlightTab = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Cool Project Spotlight"),
+    );
+    await act(async () => {
+      spotlightTab!.click();
+    });
+
+    const inputs = container!.querySelectorAll("input");
+    const form = container!.querySelector("form") as HTMLFormElement;
+
+    // Set timeout to 9 (below min 10)
+    await act(async () => {
+      setInputValue(inputs[0], "OpenBot");
+      setInputValue(inputs[1], "https://github.com/openbot-ai/openbot");
+      setInputValue(inputs[2], "Autonomous robotics in 50 lines of Rust");
+      setInputValue(inputs[3], "Zero config, local inference");
+      setInputValue(inputs[4], "Optional benchmark notes");
+      setInputValue(inputs[5], "9");
+    });
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerateSpotlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_name: "OpenBot",
+        repo_url: "https://github.com/openbot-ai/openbot",
+      }),
+    );
+    expect(onGenerateSpotlight.mock.calls[0][0].timeout_secs).toBeUndefined();
+
+    onGenerateSpotlight.mockClear();
+
+    // Set timeout to 4000 (above max 3600)
+    await act(async () => {
+      setInputValue(inputs[0], "OpenBot");
+      setInputValue(inputs[1], "https://github.com/openbot-ai/openbot");
+      setInputValue(inputs[2], "Autonomous robotics in 50 lines of Rust");
+      setInputValue(inputs[3], "Zero config, local inference");
+      setInputValue(inputs[4], "Optional benchmark notes");
+      setInputValue(inputs[5], "4000");
+    });
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerateSpotlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_name: "OpenBot",
+        repo_url: "https://github.com/openbot-ai/openbot",
+      }),
+    );
+    expect(onGenerateSpotlight.mock.calls[0][0].timeout_secs).toBeUndefined();
+  });
+
   it("articles list displays all 10 archetypes and spotlight badges properly", async () => {
     const archetypes = [
       "Architecture",
