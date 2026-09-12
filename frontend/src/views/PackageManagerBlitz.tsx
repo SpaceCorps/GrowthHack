@@ -1404,13 +1404,14 @@ Installers:
                 <ActionButton variant="secondary" onClick={() => setEditingTarget(null)}>
                   Cancel
                 </ActionButton>
-                <button
+                <ActionButton
                   type="submit"
+                  variant="indigo"
+                  size="md"
                   data-testid="save-status-btn"
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-md shadow-indigo-950"
                 >
                   Save Status
-                </button>
+                </ActionButton>
               </div>
             </form>
           </div>

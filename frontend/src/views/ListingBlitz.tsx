@@ -1060,12 +1060,9 @@ export const ListingBlitz: React.FC<ListingBlitzProps> = ({
                 <ActionButton variant="secondary" onClick={() => setShowAddModal(false)}>
                   Cancel
                 </ActionButton>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold"
-                >
+                <ActionButton type="submit" variant="cyan" size="md">
                   Save Target
-                </button>
+                </ActionButton>
               </div>
             </form>
           </div>

@@ -1462,13 +1462,16 @@ export const Playground: React.FC = () => {
                 <ActionButton variant="secondary" onClick={() => setShowImportModal(false)}>
                   Cancel
                 </ActionButton>
-                <button
+                <ActionButton
                   type="submit"
-                  disabled={importingIssue || (!importUrl.trim() && !importTitle.trim())}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                  variant="cyan"
+                  size="md"
+                  disabled={!importUrl.trim() && !importTitle.trim()}
+                  loading={importingIssue}
+                  loadingText="Synthesizing..."
                 >
-                  {importingIssue ? "Synthesizing..." : "Synthesize Scenario"}
-                </button>
+                  Synthesize Scenario
+                </ActionButton>
               </div>
             </form>
           </div>

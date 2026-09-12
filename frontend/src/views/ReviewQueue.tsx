@@ -1139,12 +1139,9 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
               <ActionButton variant="secondary" onClick={() => setIsRefining(false)}>
                 Cancel
               </ActionButton>
-              <button
-                onClick={handleSaveRefinement}
-                className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-950/40"
-              >
+              <ActionButton variant="cyan" size="md" onClick={handleSaveRefinement}>
                 Save & Update Card
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
