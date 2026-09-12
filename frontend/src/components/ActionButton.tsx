@@ -1,7 +1,13 @@
 import React from "react";
 import { Loader2 } from "lucide-react";
 
-export type ActionButtonVariant = "emerald" | "gradient" | "secondary" | "ghost";
+export type ActionButtonVariant =
+  | "emerald"
+  | "gradient"
+  | "secondary"
+  | "ghost"
+  | "cyan"
+  | "indigo";
 export type ActionButtonSize = "xs" | "sm" | "md" | "lg";
 
 export interface ActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -21,6 +27,9 @@ const variantClasses: Record<ActionButtonVariant, string> = {
     "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold transition-colors",
   ghost:
     "text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent font-medium transition-colors",
+  cyan: "bg-cyan-600 hover:bg-cyan-500 text-white font-bold shadow-md shadow-cyan-950/30 transition-all",
+  indigo:
+    "bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-md shadow-indigo-950/30 transition-all",
 };
 
 const sizeClasses: Record<ActionButtonSize, string> = {

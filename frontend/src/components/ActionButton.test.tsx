@@ -44,6 +44,49 @@ describe("ActionButton Component", () => {
     expect(button.className).toContain("border-transparent");
   });
 
+  it("renders cyan variant with expected styling classes", () => {
+    render(<ActionButton variant="cyan">Save & Update</ActionButton>);
+    const button = screen.getByRole("button", { name: "Save & Update" });
+    expect(button).toBeDefined();
+    expect(button.className).toContain("bg-cyan-600");
+    expect(button.className).toContain("hover:bg-cyan-500");
+    expect(button.className).toContain("text-white");
+    expect(button.className).toContain("font-bold");
+  });
+
+  it("renders indigo variant with expected styling classes", () => {
+    render(<ActionButton variant="indigo">Save Status</ActionButton>);
+    const button = screen.getByRole("button", { name: "Save Status" });
+    expect(button).toBeDefined();
+    expect(button.className).toContain("bg-indigo-600");
+    expect(button.className).toContain("hover:bg-indigo-500");
+    expect(button.className).toContain("text-white");
+    expect(button.className).toContain("font-bold");
+  });
+
+  it("handles loading and disabled states across cyan and indigo variants", () => {
+    const { rerender } = render(
+      <ActionButton variant="cyan" loading loadingText="Creating...">
+        Create Scenario
+      </ActionButton>,
+    );
+    let button = screen.getByRole("button") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Creating...")).toBeDefined();
+    expect(button.className).toContain("bg-cyan-600");
+
+    rerender(
+      <ActionButton variant="indigo" disabled>
+        Save Status Disabled
+      </ActionButton>,
+    );
+    button = screen.getByRole("button", { name: "Save Status Disabled" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.className).toContain("disabled:opacity-50");
+    expect(button.className).toContain("bg-indigo-600");
+  });
+
   it("handles loading and disabled states across secondary and ghost variants", () => {
     const { rerender } = render(
       <ActionButton variant="secondary" loading loadingText="Saving...">
