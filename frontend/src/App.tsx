@@ -317,6 +317,7 @@ export const App: React.FC = () => {
     angle: string,
     channel: string,
     extra: string,
+    timeoutSecs?: number,
   ) => {
     try {
       const res = await fetch("/api/articles/generate", {
@@ -327,6 +328,7 @@ export const App: React.FC = () => {
           angle,
           channel,
           extra_context: extra || undefined,
+          timeout_secs: timeoutSecs || undefined,
         }),
       });
       const data = await res.json();
@@ -346,6 +348,7 @@ export const App: React.FC = () => {
     key_features: string[];
     target_channel: string;
     extra_notes?: string;
+    timeout_secs?: number;
   }) => {
     try {
       const res = await fetch("/api/articles/generate-spotlight", {

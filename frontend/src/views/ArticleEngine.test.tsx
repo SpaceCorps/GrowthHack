@@ -226,6 +226,88 @@ describe("ArticleEngine Component", () => {
     );
   });
 
+  it("submitting feature article form with custom timeout calls onGenerateArticle with timeoutSecs", async () => {
+    const onGenerate = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={onGenerate}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const inputs = container!.querySelectorAll("input");
+    await act(async () => {
+      setInputValue(inputs[0] as HTMLInputElement, "Extra context notes");
+      setInputValue(inputs[1] as HTMLInputElement, "180");
+    });
+
+    const form = container!.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      "Worktrees",
+      "Architecture",
+      "Website",
+      "Extra context notes",
+      180,
+    );
+  });
+
+  it("submitting spotlight form with custom timeout calls onGenerateSpotlight with timeout_secs", async () => {
+    const onGenerateSpotlight = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onGenerateSpotlight={onGenerateSpotlight}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const spotlightTab = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Cool Project Spotlight"),
+    );
+    await act(async () => {
+      spotlightTab!.click();
+    });
+
+    const inputs = container!.querySelectorAll("input");
+    await act(async () => {
+      setInputValue(inputs[0], "OpenBot");
+      setInputValue(inputs[1], "https://github.com/openbot-ai/openbot");
+      setInputValue(inputs[2], "Autonomous robotics in 50 lines of Rust");
+      setInputValue(inputs[3], "Zero config, local inference");
+      setInputValue(inputs[4], "Optional benchmark notes");
+      setInputValue(inputs[5], "240");
+    });
+
+    const form = container!.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onGenerateSpotlight).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_name: "OpenBot",
+        repo_url: "https://github.com/openbot-ai/openbot",
+        tagline: "Autonomous robotics in 50 lines of Rust",
+        key_features: ["Zero config", "local inference"],
+        target_channel: "LinkedIn",
+        extra_notes: "Optional benchmark notes",
+        timeout_secs: 240,
+      }),
+    );
+  });
+
   it("articles list displays all 10 archetypes and spotlight badges properly", async () => {
     const archetypes = [
       "Architecture",

@@ -27,7 +27,13 @@ import { ActionButton } from "../components/ActionButton";
 
 export interface ArticleEngineProps {
   articles: Article[];
-  onGenerateArticle: (feature: string, angle: string, channel: string, extra: string) => void;
+  onGenerateArticle: (
+    feature: string,
+    angle: string,
+    channel: string,
+    extra: string,
+    timeoutSecs?: number,
+  ) => void;
   onGenerateSpotlight?: (payload: {
     project_name: string;
     repo_url: string;
@@ -35,6 +41,7 @@ export interface ArticleEngineProps {
     key_features: string[];
     target_channel: string;
     extra_notes?: string;
+    timeout_secs?: number;
   }) => void;
   onSelectArticle: (
     article: Article,
@@ -221,6 +228,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   const [selectedAngle, setSelectedAngle] = useState("Architecture");
   const [selectedChannel, setSelectedChannel] = useState("Website");
   const [extraContext, setExtraContext] = useState("");
+  const [timeoutSecs, setTimeoutSecs] = useState("");
 
   // Project Spotlight Form State
   const [projectName, setProjectName] = useState("");
@@ -229,6 +237,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   const [keyFeatures, setKeyFeatures] = useState("");
   const [spotlightChannel, setSpotlightChannel] = useState("LinkedIn");
   const [extraNotes, setExtraNotes] = useState("");
+  const [spotlightTimeoutSecs, setSpotlightTimeoutSecs] = useState("");
 
   // Filters State
   const [filterFeed, setFilterFeed] = useState<"all" | "features" | "spotlights">("all");
@@ -275,8 +284,24 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
 
   const handleGenerateFeature = (e: React.FormEvent) => {
     e.preventDefault();
-    onGenerateArticle(selectedFeature, selectedAngle, selectedChannel, extraContext);
+    const parsedTimeout = timeoutSecs.trim() ? parseInt(timeoutSecs.trim(), 10) : undefined;
+    const validTimeout =
+      parsedTimeout && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+        ? parsedTimeout
+        : undefined;
+    if (validTimeout !== undefined) {
+      onGenerateArticle(
+        selectedFeature,
+        selectedAngle,
+        selectedChannel,
+        extraContext,
+        validTimeout,
+      );
+    } else {
+      onGenerateArticle(selectedFeature, selectedAngle, selectedChannel, extraContext);
+    }
     setExtraContext("");
+    setTimeoutSecs("");
   };
 
   const handleGenerateSpotlight = (e: React.FormEvent) => {
@@ -286,6 +311,14 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
+    const parsedTimeout = spotlightTimeoutSecs.trim()
+      ? parseInt(spotlightTimeoutSecs.trim(), 10)
+      : undefined;
+    const validTimeout =
+      parsedTimeout && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+        ? parsedTimeout
+        : undefined;
+
     const payload = {
       project_name: projectName,
       repo_url: repoUrl,
@@ -294,6 +327,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
         splitFeatures.length > 0 ? splitFeatures : ["Zero configuration", "Open source"],
       target_channel: spotlightChannel,
       extra_notes: extraNotes || undefined,
+      ...(validTimeout !== undefined ? { timeout_secs: validTimeout } : {}),
     };
 
     if (onGenerateSpotlight) {
@@ -311,6 +345,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
     setTagline("");
     setKeyFeatures("");
     setExtraNotes("");
+    setSpotlightTimeoutSecs("");
   };
 
   const handleCopyMarkdown = (e: React.MouseEvent, art: Article) => {
@@ -438,6 +473,21 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                   />
                 </div>
 
+                {/* Custom Timeout */}
+                <div>
+                  <label className="block text-xs text-slate-300 font-semibold mb-1">
+                    Runner Timeout in Seconds (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={timeoutSecs}
+                    onChange={(e) => setTimeoutSecs(e.target.value)}
+                    placeholder="Default (300s)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
                 <div className="flex items-center justify-between pt-2">
                   <div className="flex items-center space-x-2 text-[11px] text-slate-400">
                     <Globe className="w-3.5 h-3.5 text-emerald-400" />
@@ -554,6 +604,20 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                     value={extraNotes}
                     onChange={(e) => setExtraNotes(e.target.value)}
                     placeholder="e.g. Include benchmark against traditional Docker sandbox"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-300 font-semibold mb-1">
+                    Runner Timeout in Seconds (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={spotlightTimeoutSecs}
+                    onChange={(e) => setSpotlightTimeoutSecs(e.target.value)}
+                    placeholder="Default (300s)"
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
