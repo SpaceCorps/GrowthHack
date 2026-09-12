@@ -1,3 +1,4 @@
+use growthhack_backend::api::{AppContext, MetricsSyncDebouncer};
 use growthhack_backend::config::create_periodic_interval;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -119,4 +120,199 @@ async fn test_shutdown_timeout_behavior_clean_and_overdue() {
     let short_timeout = Duration::from_millis(50);
     let overdue_result = tokio::time::timeout(short_timeout, slow_handle).await;
     assert!(overdue_result.is_err(), "Long running task should time out");
+}
+
+#[tokio::test]
+async fn test_full_server_shutdown_joins_all_background_tasks() {
+    let guard = AppContext::new_test_context();
+    let cancel_token = CancellationToken::new();
+
+    let (debouncer, worker) =
+        MetricsSyncDebouncer::new(Duration::from_millis(20), Duration::from_millis(40));
+    let metrics_handle = worker.spawn(Arc::downgrade(&guard.ctx), cancel_token.child_token());
+
+    let exit_count = Arc::new(AtomicUsize::new(0));
+
+    let sync_token = cancel_token.child_token();
+    let sync_exit_count = Arc::clone(&exit_count);
+    let sync_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = sync_token.cancelled() => {
+                    sync_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let timeout_token = cancel_token.child_token();
+    let timeout_exit_count = Arc::clone(&exit_count);
+    let timeout_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = timeout_token.cancelled() => {
+                    timeout_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let pr_poll_token = cancel_token.child_token();
+    let pr_poll_exit_count = Arc::clone(&exit_count);
+    let pr_poll_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = pr_poll_token.cancelled() => {
+                    pr_poll_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let prune_token = cancel_token.child_token();
+    let prune_exit_count = Arc::clone(&exit_count);
+    let prune_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = prune_token.cancelled() => {
+                    prune_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    // Wait for all tasks to reach their await point before cancelling.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(exit_count.load(Ordering::SeqCst), 0);
+
+    cancel_token.cancel();
+
+    let tasks_shutdown = async {
+        let _ = tokio::join!(
+            sync_handle,
+            timeout_handle,
+            pr_poll_handle,
+            prune_handle,
+            metrics_handle,
+        );
+    };
+    let result = tokio::time::timeout(Duration::from_millis(500), tasks_shutdown).await;
+    assert!(
+        result.is_ok(),
+        "Full background task group did not join within shutdown timeout"
+    );
+
+    assert_eq!(exit_count.load(Ordering::SeqCst), 4);
+    assert_eq!(debouncer.sync_count(), 0);
+    assert!(!debouncer.is_syncing());
+}
+
+#[tokio::test]
+async fn test_full_server_shutdown_with_metrics_sync_pending() {
+    let guard = AppContext::new_test_context();
+    let cancel_token = CancellationToken::new();
+
+    let (debouncer, worker) =
+        MetricsSyncDebouncer::new(Duration::from_millis(20), Duration::from_millis(40));
+    let metrics_handle = worker.spawn(Arc::downgrade(&guard.ctx), cancel_token.child_token());
+
+    let exit_count = Arc::new(AtomicUsize::new(0));
+
+    let sync_token = cancel_token.child_token();
+    let sync_exit_count = Arc::clone(&exit_count);
+    let sync_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = sync_token.cancelled() => {
+                    sync_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let timeout_token = cancel_token.child_token();
+    let timeout_exit_count = Arc::clone(&exit_count);
+    let timeout_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = timeout_token.cancelled() => {
+                    timeout_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let pr_poll_token = cancel_token.child_token();
+    let pr_poll_exit_count = Arc::clone(&exit_count);
+    let pr_poll_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = pr_poll_token.cancelled() => {
+                    pr_poll_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    let prune_token = cancel_token.child_token();
+    let prune_exit_count = Arc::clone(&exit_count);
+    let prune_handle = tokio::spawn(async move {
+        let mut interval = create_periodic_interval(Duration::from_secs(3600), Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                _ = prune_token.cancelled() => {
+                    prune_exit_count.fetch_add(1, Ordering::SeqCst);
+                    break;
+                }
+                _ = interval.tick() => {}
+            }
+        }
+    });
+
+    // Wait for all tasks to reach their await point before cancelling.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(exit_count.load(Ordering::SeqCst), 0);
+
+    // Queue a sync trigger right before cancellation, mirroring a request landing as SIGTERM arrives.
+    debouncer.trigger();
+    cancel_token.cancel();
+
+    let tasks_shutdown = async {
+        let _ = tokio::join!(
+            sync_handle,
+            timeout_handle,
+            pr_poll_handle,
+            prune_handle,
+            metrics_handle,
+        );
+    };
+    let result = tokio::time::timeout(Duration::from_millis(500), tasks_shutdown).await;
+    assert!(
+        result.is_ok(),
+        "Full background task group did not join within shutdown timeout"
+    );
+
+    assert_eq!(exit_count.load(Ordering::SeqCst), 4);
+    assert_eq!(debouncer.sync_count(), 0);
 }
