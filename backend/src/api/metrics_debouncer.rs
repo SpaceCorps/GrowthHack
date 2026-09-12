@@ -3,6 +3,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio_util::sync::CancellationToken;
 
 use crate::api::AppContext;
 
@@ -90,16 +91,42 @@ impl Default for MetricsSyncDebouncer {
 }
 
 impl MetricsSyncWorker {
-    pub fn spawn(self, ctx: Weak<AppContext>) -> tokio::task::JoinHandle<()> {
+    pub fn spawn(
+        self,
+        ctx: Weak<AppContext>,
+        cancel_token: CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            self.run(ctx).await;
+            self.run(ctx, cancel_token).await;
         })
     }
 
-    pub async fn run(mut self, ctx: Weak<AppContext>) {
-        while let Some(()) = self.receiver.recv().await {
-            // 1. Sleep for debounce_duration to gather any closely-spaced sibling triggers
-            tokio::time::sleep(self.debounce_duration).await;
+    pub async fn run(mut self, ctx: Weak<AppContext>, cancel_token: CancellationToken) {
+        loop {
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Shutdown signal received: exiting MetricsSyncWorker loop");
+                    break;
+                }
+                item = self.receiver.recv() => {
+                    match item {
+                        Some(()) => {},
+                        None => {
+                            tracing::info!("Receiver channel closed, terminating MetricsSyncWorker loop");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 1. Sleep for debounce_duration to gather any closely-spaced sibling triggers vs cancellation
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Shutdown signal received: cancelling debounce gathering in MetricsSyncWorker");
+                    break;
+                }
+                _ = tokio::time::sleep(self.debounce_duration) => {}
+            }
 
             // 2. Drain any additional tokens that arrived in the channel during debounce window
             while self.receiver.try_recv().is_ok() {}
@@ -113,19 +140,32 @@ impl MetricsSyncWorker {
                 }
             };
 
-            // 4. Set is_syncing = true, log the sync run, and invoke sync_all_metrics_internal
+            // 4. Set is_syncing = true, log the sync run, and invoke sync_all_metrics_internal vs cancellation
             self.is_syncing.store(true, Ordering::SeqCst);
             tracing::info!("Executing debounced syndication metrics sync pass...");
-            if let Err(e) = crate::api::articles::sync_all_metrics_internal(&ctx_arc).await {
-                tracing::warn!("Debounced metrics sync error: {}", e);
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Shutdown signal received: cancelling debounced syndication metrics sync");
+                    self.is_syncing.store(false, Ordering::SeqCst);
+                    break;
+                }
+                res = crate::api::articles::sync_all_metrics_internal(&ctx_arc) => {
+                    if let Err(e) = res {
+                        tracing::warn!("Debounced metrics sync error: {}", e);
+                    }
+                    self.is_syncing.store(false, Ordering::SeqCst);
+                    self.sync_count.fetch_add(1, Ordering::SeqCst);
+                }
             }
 
-            // 5. Reset is_syncing = false and increment sync_count
-            self.is_syncing.store(false, Ordering::SeqCst);
-            self.sync_count.fetch_add(1, Ordering::SeqCst);
-
-            // 6. Sleep for cooldown_duration before listening for subsequent triggers
-            tokio::time::sleep(self.cooldown_duration).await;
+            // 5. Sleep for cooldown_duration before listening for subsequent triggers vs cancellation
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Shutdown signal received: cancelling cooldown in MetricsSyncWorker");
+                    break;
+                }
+                _ = tokio::time::sleep(self.cooldown_duration) => {}
+            }
         }
     }
 }
@@ -139,7 +179,7 @@ mod tests {
         let guard = AppContext::new_test_context();
         let (debouncer, worker) =
             MetricsSyncDebouncer::new(Duration::from_millis(30), Duration::from_millis(60));
-        let _worker_handle = worker.spawn(Arc::downgrade(&guard.ctx));
+        let _worker_handle = worker.spawn(Arc::downgrade(&guard.ctx), CancellationToken::new());
 
         for _ in 0..10 {
             debouncer.trigger();
@@ -167,7 +207,7 @@ mod tests {
         let guard = AppContext::new_test_context();
         let (debouncer, worker) =
             MetricsSyncDebouncer::new(Duration::from_millis(20), Duration::from_millis(100));
-        let _worker_handle = worker.spawn(Arc::downgrade(&guard.ctx));
+        let _worker_handle = worker.spawn(Arc::downgrade(&guard.ctx), CancellationToken::new());
 
         // Initial trigger
         debouncer.trigger();
@@ -201,7 +241,7 @@ mod tests {
         let ctx = Arc::new(AppContext::default());
         let (debouncer, worker) =
             MetricsSyncDebouncer::new(Duration::from_millis(10), Duration::from_millis(20));
-        let worker_handle = worker.spawn(Arc::downgrade(&ctx));
+        let worker_handle = worker.spawn(Arc::downgrade(&ctx), CancellationToken::new());
 
         // Trigger once to start debounce
         debouncer.trigger();
@@ -214,6 +254,55 @@ mod tests {
         assert!(
             result.is_ok(),
             "Worker task should terminate promptly when AppContext drops"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_debouncer_terminates_on_cancellation_token() {
+        let guard = AppContext::new_test_context();
+        let (debouncer, worker) =
+            MetricsSyncDebouncer::new(Duration::from_millis(50), Duration::from_millis(100));
+        let cancel_token = CancellationToken::new();
+        let child_token = cancel_token.child_token();
+        let worker_handle = worker.spawn(Arc::downgrade(&guard.ctx), child_token);
+
+        debouncer.trigger();
+        cancel_token.cancel();
+
+        let result = tokio::time::timeout(Duration::from_millis(100), worker_handle).await;
+        assert!(
+            result.is_ok(),
+            "Worker task should terminate within 100ms upon cancellation"
+        );
+        assert_eq!(
+            debouncer.sync_count(),
+            0,
+            "Sync count must not be incremented when cancelled during debounce"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_debouncer_aborts_cooldown_on_cancellation_token() {
+        let guard = AppContext::new_test_context();
+        let (debouncer, worker) =
+            MetricsSyncDebouncer::new(Duration::from_millis(10), Duration::from_secs(5));
+        let cancel_token = CancellationToken::new();
+        let child_token = cancel_token.child_token();
+        let worker_handle = worker.spawn(Arc::downgrade(&guard.ctx), child_token);
+
+        debouncer.trigger();
+
+        // Wait for the sync pass to complete (debounce 10ms + small buffer)
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert_eq!(debouncer.sync_count(), 1, "Initial sync should complete");
+
+        // Cancel while worker is in 5-second cooldown
+        cancel_token.cancel();
+
+        let result = tokio::time::timeout(Duration::from_millis(200), worker_handle).await;
+        assert!(
+            result.is_ok(),
+            "Worker task should abort 5-second cooldown and exit promptly upon cancellation"
         );
     }
 }
