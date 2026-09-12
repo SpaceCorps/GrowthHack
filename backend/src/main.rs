@@ -1,6 +1,6 @@
 use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::{self, AppContext};
-use growthhack_backend::config::Config;
+use growthhack_backend::config::{create_periodic_interval, Config};
 use growthhack_backend::db::GrowthState;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -49,9 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     metrics_worker.spawn(Arc::downgrade(&ctx));
 
+    let base_delay = ctx.config.background_tasks_initial_delay;
+
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(sync_ctx.config.engagement_sync_interval);
+        let mut interval =
+            create_periodic_interval(sync_ctx.config.engagement_sync_interval, base_delay);
         loop {
             interval.tick().await;
             tracing::info!("Running periodic syndication engagement metrics sync...");
@@ -63,7 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let timeout_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(timeout_ctx.config.claim_timeout_interval);
+        let mut interval = create_periodic_interval(
+            timeout_ctx.config.claim_timeout_interval,
+            base_delay + std::time::Duration::from_secs(5),
+        );
         loop {
             interval.tick().await;
             tracing::info!("Running periodic contributor issue claim timeout sweep...");
@@ -84,7 +90,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pr_poll_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(pr_poll_ctx.config.listing_pr_poll_interval);
+        let mut interval = create_periodic_interval(
+            pr_poll_ctx.config.listing_pr_poll_interval,
+            base_delay + std::time::Duration::from_secs(10),
+        );
         loop {
             interval.tick().await;
             tracing::info!("Running periodic PR merge status check for submitted listings...");
@@ -97,7 +106,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prune_tm = ctx.task_manager.clone();
     let task_eviction_interval = ctx.config.task_eviction_interval;
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(task_eviction_interval);
+        let mut interval = create_periodic_interval(
+            task_eviction_interval,
+            base_delay + std::time::Duration::from_secs(15),
+        );
         loop {
             interval.tick().await;
             tracing::info!("Running periodic completed task eviction sweep...");

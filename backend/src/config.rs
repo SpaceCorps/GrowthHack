@@ -19,6 +19,7 @@ pub struct Config {
     pub claim_timeout_interval: std::time::Duration,
     pub listing_pr_poll_interval: std::time::Duration,
     pub task_eviction_interval: std::time::Duration,
+    pub background_tasks_initial_delay: std::time::Duration,
 }
 
 pub fn get_user_home() -> Option<PathBuf> {
@@ -254,6 +255,12 @@ impl Config {
             .map(std::time::Duration::from_secs)
             .unwrap_or_else(|| std::time::Duration::from_secs(15 * 60));
 
+        let background_tasks_initial_delay = std::env::var("BACKGROUND_TASKS_INITIAL_DELAY_SECS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(5));
+
         Self {
             host,
             port,
@@ -271,8 +278,19 @@ impl Config {
             claim_timeout_interval,
             listing_pr_poll_interval,
             task_eviction_interval,
+            background_tasks_initial_delay,
         }
     }
+}
+
+pub fn create_periodic_interval(
+    period: std::time::Duration,
+    initial_delay: std::time::Duration,
+) -> tokio::time::Interval {
+    let start = tokio::time::Instant::now() + initial_delay;
+    let mut interval = tokio::time::interval_at(start, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval
 }
 
 impl Default for Config {
@@ -507,6 +525,7 @@ mod tests {
         std::env::remove_var("CLAIM_TIMEOUT_SWEEP_INTERVAL_SECS");
         std::env::remove_var("LISTING_PR_POLL_INTERVAL_SECS");
         std::env::remove_var("TASK_EVICTION_INTERVAL_SECS");
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
 
         let config = Config::load();
         assert_eq!(
@@ -597,5 +616,80 @@ mod tests {
             config.task_eviction_interval,
             std::time::Duration::from_secs(15 * 60)
         );
+    }
+
+    #[test]
+    fn test_background_initial_delay_default_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
+
+        let config = Config::load();
+        assert_eq!(
+            config.background_tasks_initial_delay,
+            std::time::Duration::from_secs(5)
+        );
+    }
+
+    #[test]
+    fn test_background_initial_delay_custom_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS", "12");
+
+        let config = Config::load();
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
+
+        assert_eq!(
+            config.background_tasks_initial_delay,
+            std::time::Duration::from_secs(12)
+        );
+    }
+
+    #[test]
+    fn test_background_initial_delay_invalid_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS", "invalid_value");
+
+        let config = Config::load();
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
+
+        assert_eq!(
+            config.background_tasks_initial_delay,
+            std::time::Duration::from_secs(5)
+        );
+
+        std::env::set_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS", "-1");
+        let config2 = Config::load();
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
+
+        assert_eq!(
+            config2.background_tasks_initial_delay,
+            std::time::Duration::from_secs(5)
+        );
+
+        std::env::set_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS", "  ");
+        let config3 = Config::load();
+        std::env::remove_var("BACKGROUND_TASKS_INITIAL_DELAY_SECS");
+
+        assert_eq!(
+            config3.background_tasks_initial_delay,
+            std::time::Duration::from_secs(5)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_periodic_interval_missed_tick_behavior() {
+        let period = std::time::Duration::from_millis(100);
+        let initial_delay = std::time::Duration::from_millis(50);
+        let mut interval = create_periodic_interval(period, initial_delay);
+        assert_eq!(interval.period(), period);
+        assert_eq!(
+            interval.missed_tick_behavior(),
+            tokio::time::MissedTickBehavior::Delay
+        );
+
+        let start = tokio::time::Instant::now();
+        let fired_at = interval.tick().await;
+        assert!(fired_at >= start);
+        assert!(start.elapsed() >= std::time::Duration::from_millis(40));
     }
 }
