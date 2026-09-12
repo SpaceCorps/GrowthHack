@@ -15,6 +15,10 @@ pub struct Config {
     pub hashnode_publication_id: Option<String>,
     pub github_token: Option<String>,
     pub syndication_webhook_secret: Option<String>,
+    pub engagement_sync_interval: std::time::Duration,
+    pub claim_timeout_interval: std::time::Duration,
+    pub listing_pr_poll_interval: std::time::Duration,
+    pub task_eviction_interval: std::time::Duration,
 }
 
 pub fn get_user_home() -> Option<PathBuf> {
@@ -225,6 +229,31 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let engagement_sync_interval = std::env::var("ENGAGEMENT_SYNC_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(3600));
+
+        let claim_timeout_interval = std::env::var("CLAIM_TIMEOUT_INTERVAL_SECS")
+            .or_else(|_| std::env::var("CLAIM_TIMEOUT_SWEEP_INTERVAL_SECS"))
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(6 * 3600));
+
+        let listing_pr_poll_interval = std::env::var("LISTING_PR_POLL_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(1800));
+
+        let task_eviction_interval = std::env::var("TASK_EVICTION_INTERVAL_SECS")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(15 * 60));
+
         Self {
             host,
             port,
@@ -238,6 +267,10 @@ impl Config {
             hashnode_publication_id,
             github_token,
             syndication_webhook_secret,
+            engagement_sync_interval,
+            claim_timeout_interval,
+            listing_pr_poll_interval,
+            task_eviction_interval,
         }
     }
 }
@@ -412,8 +445,10 @@ mod tests {
 
     #[test]
     fn test_resolve_frontend_dist_dir_custom_env() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("test_frontend_dist_custom_{}", uuid::Uuid::new_v4()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_frontend_dist_custom_{}",
+            uuid::Uuid::new_v4()
+        ));
         let _ = std::fs::create_dir_all(&temp_dir);
 
         let custom = Some(temp_dir.to_string_lossy().to_string());
@@ -448,13 +483,119 @@ mod tests {
         let exe_path = exe_dir.join("dummy_exe");
         let _ = std::fs::create_dir_all(&exe_dir);
 
-        let custom_nonexistent = Some(temp_dir.join("nonexistent_dist").to_string_lossy().to_string());
-        let resolved = resolve_frontend_dist_dir_from(custom_nonexistent, Some(&temp_dir), Some(&exe_path));
+        let custom_nonexistent = Some(
+            temp_dir
+                .join("nonexistent_dist")
+                .to_string_lossy()
+                .to_string(),
+        );
+        let resolved =
+            resolve_frontend_dist_dir_from(custom_nonexistent, Some(&temp_dir), Some(&exe_path));
         assert!(resolved.is_none());
 
         let resolved_none = resolve_frontend_dist_dir_from(None, Some(&temp_dir), Some(&exe_path));
         assert!(resolved_none.is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_background_intervals_default_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("ENGAGEMENT_SYNC_INTERVAL_SECS");
+        std::env::remove_var("CLAIM_TIMEOUT_INTERVAL_SECS");
+        std::env::remove_var("CLAIM_TIMEOUT_SWEEP_INTERVAL_SECS");
+        std::env::remove_var("LISTING_PR_POLL_INTERVAL_SECS");
+        std::env::remove_var("TASK_EVICTION_INTERVAL_SECS");
+
+        let config = Config::load();
+        assert_eq!(
+            config.engagement_sync_interval,
+            std::time::Duration::from_secs(3600)
+        );
+        assert_eq!(
+            config.claim_timeout_interval,
+            std::time::Duration::from_secs(6 * 3600)
+        );
+        assert_eq!(
+            config.listing_pr_poll_interval,
+            std::time::Duration::from_secs(1800)
+        );
+        assert_eq!(
+            config.task_eviction_interval,
+            std::time::Duration::from_secs(15 * 60)
+        );
+    }
+
+    #[test]
+    fn test_background_intervals_custom_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("ENGAGEMENT_SYNC_INTERVAL_SECS", "120");
+        std::env::set_var("CLAIM_TIMEOUT_INTERVAL_SECS", "300");
+        std::env::set_var("LISTING_PR_POLL_INTERVAL_SECS", "60");
+        std::env::set_var("TASK_EVICTION_INTERVAL_SECS", "45");
+
+        let config = Config::load();
+        std::env::remove_var("ENGAGEMENT_SYNC_INTERVAL_SECS");
+        std::env::remove_var("CLAIM_TIMEOUT_INTERVAL_SECS");
+        std::env::remove_var("LISTING_PR_POLL_INTERVAL_SECS");
+        std::env::remove_var("TASK_EVICTION_INTERVAL_SECS");
+
+        assert_eq!(
+            config.engagement_sync_interval,
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(
+            config.claim_timeout_interval,
+            std::time::Duration::from_secs(300)
+        );
+        assert_eq!(
+            config.listing_pr_poll_interval,
+            std::time::Duration::from_secs(60)
+        );
+        assert_eq!(
+            config.task_eviction_interval,
+            std::time::Duration::from_secs(45)
+        );
+
+        std::env::set_var("CLAIM_TIMEOUT_SWEEP_INTERVAL_SECS", "500");
+        let config2 = Config::load();
+        std::env::remove_var("CLAIM_TIMEOUT_SWEEP_INTERVAL_SECS");
+        assert_eq!(
+            config2.claim_timeout_interval,
+            std::time::Duration::from_secs(500)
+        );
+    }
+
+    #[test]
+    fn test_background_intervals_invalid_fallback() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("ENGAGEMENT_SYNC_INTERVAL_SECS", "not_a_number");
+        std::env::set_var("CLAIM_TIMEOUT_INTERVAL_SECS", "-5");
+        std::env::set_var("LISTING_PR_POLL_INTERVAL_SECS", "xyz");
+        std::env::set_var("TASK_EVICTION_INTERVAL_SECS", "  ");
+
+        let config = Config::load();
+        std::env::remove_var("ENGAGEMENT_SYNC_INTERVAL_SECS");
+        std::env::remove_var("CLAIM_TIMEOUT_INTERVAL_SECS");
+        std::env::remove_var("LISTING_PR_POLL_INTERVAL_SECS");
+        std::env::remove_var("TASK_EVICTION_INTERVAL_SECS");
+
+        assert_eq!(
+            config.engagement_sync_interval,
+            std::time::Duration::from_secs(3600)
+        );
+        assert_eq!(
+            config.claim_timeout_interval,
+            std::time::Duration::from_secs(6 * 3600)
+        );
+        assert_eq!(
+            config.listing_pr_poll_interval,
+            std::time::Duration::from_secs(1800)
+        );
+        assert_eq!(
+            config.task_eviction_interval,
+            std::time::Duration::from_secs(15 * 60)
+        );
     }
 }
