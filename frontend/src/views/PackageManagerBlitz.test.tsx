@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { PackageManagerBlitz } from "./PackageManagerBlitz";
 import type { PackageManagerTarget } from "../types";
+import { setupMockFetch, createMockGhAuthStatus } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockPackages: PackageManagerTarget[] = [
   {
@@ -62,6 +64,8 @@ const mockPackages: PackageManagerTarget[] = [
 ];
 
 describe("PackageManagerBlitz View", () => {
+  let mockController: MockFetchController | null = null;
+
   beforeEach(() => {
     Object.defineProperty(navigator, "clipboard", {
       value: {
@@ -70,36 +74,32 @@ describe("PackageManagerBlitz View", () => {
       writable: true,
       configurable: true,
     });
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            account: "testuser",
-            message: "GitHub CLI is authenticated as @testuser.",
-          }),
-        });
-      }
-      const target = url.split("/")[3] || "homebrew";
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          target_key: target,
-          filename: `${target}.manifest`,
-          language: "json",
-          content: `Mock content for ${target}`,
-          install_command: `install ${target}`,
-          instructions: `Instructions for ${target}`,
-          release_tag: "v0.8.4",
-          fetched_at: "2026-09-10T12:00:00Z",
-        }),
-      });
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/packages/gh-auth-status": createMockGhAuthStatus(),
+        "/api/packages": (url: string) => {
+          const target = url.split("/")[3] || "homebrew";
+          return {
+            target_key: target,
+            filename: `${target}.manifest`,
+            language: "json",
+            content: `Mock content for ${target}`,
+            install_command: `install ${target}`,
+            instructions: `Instructions for ${target}`,
+            release_tag: "v0.8.4",
+            fetched_at: "2026-09-10T12:00:00Z",
+          };
+        },
+      },
     });
   });
 
   afterEach(() => {
     cleanup();
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("renders install command cards for Homebrew, Winget, Scoop, and npx", () => {
@@ -222,10 +222,7 @@ describe("PackageManagerBlitz View", () => {
       fetched_at: "2026-09-10T12:00:00Z",
     };
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockManifestResponse,
-    });
+    mockController?.addHandler("/api/packages/homebrew/manifest", mockManifestResponse);
 
     render(<PackageManagerBlitz packages={mockPackages} />);
 
@@ -245,21 +242,18 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("triggers manifest reload with updated release tag on refresh button click", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    mockController?.addHandler("/api/packages/homebrew/manifest", (url: string) => {
       const tag = url.includes("refresh=true") ? "v1.3.0" : "v1.2.0";
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          target_key: "homebrew",
-          filename: "tendril.rb",
-          language: "ruby",
-          content: `# Formula content ${tag}`,
-          install_command: "brew install ivy-interactive/tap/tendril",
-          instructions: "Dynamic tap instructions",
-          release_tag: tag,
-          fetched_at: "2026-09-10T12:00:00Z",
-        }),
-      });
+      return {
+        target_key: "homebrew",
+        filename: "tendril.rb",
+        language: "ruby",
+        content: `# Formula content ${tag}`,
+        install_command: "brew install ivy-interactive/tap/tendril",
+        instructions: "Dynamic tap instructions",
+        release_tag: tag,
+        fetched_at: "2026-09-10T12:00:00Z",
+      };
     });
 
     render(<PackageManagerBlitz packages={mockPackages} />);
@@ -318,22 +312,13 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("displays authenticated badge in dispatch modal when gh-auth-status returns authenticated: true", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            account: "spacecorps-dev",
-            message: "GitHub CLI is authenticated as @spacecorps-dev.",
-          }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      });
-    });
+    mockController?.addHandler(
+      "/api/packages/gh-auth-status",
+      createMockGhAuthStatus({
+        account: "spacecorps-dev",
+        message: "GitHub CLI is authenticated as @spacecorps-dev.",
+      }),
+    );
 
     render(<PackageManagerBlitz packages={mockPackages} />);
 
@@ -350,23 +335,15 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("displays warning banner and gh auth login recommendation when gh-auth-status returns authenticated: false", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: false,
-            account: null,
-            message:
-              "You are not logged into any GitHub hosts. Run 'gh auth login' to authenticate GitHub CLI.",
-          }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      });
-    });
+    mockController?.addHandler(
+      "/api/packages/gh-auth-status",
+      createMockGhAuthStatus({
+        authenticated: false,
+        account: undefined,
+        message:
+          "You are not logged into any GitHub hosts. Run 'gh auth login' to authenticate GitHub CLI.",
+      }),
+    );
 
     const onDispatch = vi.fn().mockImplementation(() => Promise.resolve());
     render(<PackageManagerBlitz packages={mockPackages} onDispatchPackagePr={onDispatch} />);
@@ -401,21 +378,18 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("triggers manifest fetch with ?tag= query parameter when release tag input changes", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    mockController?.addHandler("/api/packages/homebrew/manifest", (url: string) => {
       const isTag = url.includes("tag=v1.3.0");
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          target_key: "homebrew",
-          filename: "tendril.rb",
-          language: "ruby",
-          content: isTag ? "# Tagged formula content v1.3.0" : "# Default formula content",
-          install_command: "brew install ivy-interactive/tap/tendril",
-          instructions: "Dynamic tap instructions",
-          release_tag: isTag ? "v1.3.0" : "v1.2.0",
-          fetched_at: "2026-09-10T12:00:00Z",
-        }),
-      });
+      return {
+        target_key: "homebrew",
+        filename: "tendril.rb",
+        language: "ruby",
+        content: isTag ? "# Tagged formula content v1.3.0" : "# Default formula content",
+        install_command: "brew install ivy-interactive/tap/tendril",
+        instructions: "Dynamic tap instructions",
+        release_tag: isTag ? "v1.3.0" : "v1.2.0",
+        fetched_at: "2026-09-10T12:00:00Z",
+      };
     });
 
     render(<PackageManagerBlitz packages={mockPackages} />);
@@ -454,34 +428,16 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("displays fork synchronized badge when fork-status returns is_synchronized: true", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            account: "testuser",
-            message: "GitHub CLI is authenticated as @testuser.",
-          }),
-        });
-      }
-      if (url.includes("/fork-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            target_key: "scoop",
-            upstream_repo: "ScoopInstaller/Extras",
-            fork_repo: "testuser/Extras",
-            fork_exists: true,
-            is_synchronized: true,
-            behind_by: 0,
-            ahead_by: 0,
-            status: "synchronized",
-            message: "Fork is synchronized with upstream.",
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
+    mockController?.addHandler("/fork-status", {
+      target_key: "scoop",
+      upstream_repo: "ScoopInstaller/Extras",
+      fork_repo: "testuser/Extras",
+      fork_exists: true,
+      is_synchronized: true,
+      behind_by: 0,
+      ahead_by: 0,
+      status: "synchronized",
+      message: "Fork is synchronized with upstream.",
     });
 
     render(<PackageManagerBlitz packages={mockPackages} />);
@@ -499,34 +455,16 @@ describe("PackageManagerBlitz View", () => {
   });
 
   it("displays out-of-sync warning with commit count and sync button when fork is behind", async () => {
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            account: "testuser",
-            message: "GitHub CLI is authenticated as @testuser.",
-          }),
-        });
-      }
-      if (url.includes("/fork-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            target_key: "homebrew",
-            upstream_repo: "ivy-interactive/homebrew-tap",
-            fork_repo: "testuser/homebrew-tap",
-            fork_exists: true,
-            is_synchronized: false,
-            behind_by: 23,
-            ahead_by: 0,
-            status: "behind",
-            message: "Fork is 23 commits behind upstream. Synchronize fork before dispatching.",
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
+    mockController?.addHandler("/fork-status", {
+      target_key: "homebrew",
+      upstream_repo: "ivy-interactive/homebrew-tap",
+      fork_repo: "testuser/homebrew-tap",
+      fork_exists: true,
+      is_synchronized: false,
+      behind_by: 23,
+      ahead_by: 0,
+      status: "behind",
+      message: "Fork is 23 commits behind upstream. Synchronize fork before dispatching.",
     });
 
     render(<PackageManagerBlitz packages={mockPackages} />);
@@ -552,42 +490,21 @@ describe("PackageManagerBlitz View", () => {
 
   it("clicking Sync Fork Now triggers the sync API call and refreshes fork status", async () => {
     let forkStatusCallCount = 0;
-    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/packages/gh-auth-status")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            authenticated: true,
-            account: "testuser",
-            message: "GitHub CLI is authenticated as @testuser.",
-          }),
-        });
-      }
-      if (url.includes("/sync-fork")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ success: true, message: "Fork synchronized." }),
-        });
-      }
-      if (url.includes("/fork-status")) {
-        forkStatusCallCount += 1;
-        const synced = forkStatusCallCount > 1;
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            target_key: "homebrew",
-            upstream_repo: "ivy-interactive/homebrew-tap",
-            fork_repo: "testuser/homebrew-tap",
-            fork_exists: true,
-            is_synchronized: synced,
-            behind_by: synced ? 0 : 5,
-            ahead_by: 0,
-            status: synced ? "synchronized" : "behind",
-            message: synced ? "Fork is synchronized with upstream." : "Fork is 5 commits behind.",
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
+    mockController?.addHandler("/sync-fork", { success: true, message: "Fork synchronized." });
+    mockController?.addHandler("/fork-status", () => {
+      forkStatusCallCount += 1;
+      const synced = forkStatusCallCount > 1;
+      return {
+        target_key: "homebrew",
+        upstream_repo: "ivy-interactive/homebrew-tap",
+        fork_repo: "testuser/homebrew-tap",
+        fork_exists: true,
+        is_synchronized: synced,
+        behind_by: synced ? 0 : 5,
+        ahead_by: 0,
+        status: synced ? "synchronized" : "behind",
+        message: synced ? "Fork is synchronized with upstream." : "Fork is 5 commits behind.",
+      };
     });
 
     render(<PackageManagerBlitz packages={mockPackages} />);

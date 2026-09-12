@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { VideoDemos } from "./VideoDemos";
 import type { VideoDemo } from "../types";
+import { setupMockFetch } from "../test";
+import type { MockFetchController } from "../test";
 
 const mockDemos: VideoDemo[] = [
   {
@@ -81,6 +83,7 @@ const mockDemos: VideoDemo[] = [
 
 describe("VideoDemos View", () => {
   let writeTextMock: ReturnType<typeof vi.fn>;
+  let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
     writeTextMock = vi.fn().mockResolvedValue(undefined);
@@ -92,23 +95,21 @@ describe("VideoDemos View", () => {
       configurable: true,
     });
 
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("/api/demos/generate")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ task_id: "task-test-99", message: "Started" }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(mockDemos),
-      });
+    mockController = setupMockFetch({
+      handlers: {
+        "/api/demos/generate": { task_id: "task-test-99", message: "Started" },
+        "/api/demos": mockDemos,
+      },
     });
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockController) {
+      mockController.restore();
+      mockController = null;
+    }
   });
 
   it("renders demo cards with live data", () => {
