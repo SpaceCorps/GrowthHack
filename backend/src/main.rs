@@ -1,4 +1,4 @@
-use growthhack_backend::agent::{AgentRunner, TaskManager};
+use growthhack_backend::agent::{AgentRunner, TaskManager, TaskManagerConfig};
 use growthhack_backend::api::{self, AppContext};
 use growthhack_backend::config::Config;
 use growthhack_backend::db::GrowthState;
@@ -26,7 +26,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = Arc::new(RwLock::new(GrowthState::load_or_init(&config.data_file)));
     let runner = AgentRunner::new(config.agy_path.clone());
-    let task_manager = TaskManager::new(runner);
+    let task_manager = TaskManager::with_persistence(
+        runner,
+        TaskManagerConfig::default(),
+        Arc::clone(&state),
+        config.data_file.clone(),
+    )
+    .await;
 
     let (metrics_debouncer, metrics_worker) = growthhack_backend::api::MetricsSyncDebouncer::new(
         tokio::time::Duration::from_secs(3),
