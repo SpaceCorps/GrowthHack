@@ -154,7 +154,6 @@ impl Article {
     }
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TrendTopic {
     pub id: String,
@@ -516,6 +515,8 @@ pub struct GrowthState {
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
     #[serde(default)]
     pub engagement_alerts: Vec<EngagementMilestoneAlert>,
+    #[serde(default)]
+    pub task_tombstones: Vec<String>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -567,7 +568,10 @@ impl GrowthState {
                         for c in &mut state.contributors {
                             if c.login.is_none() {
                                 let login = if let Some(pos) = c.profile_url.rfind('/') {
-                                    c.profile_url[pos + 1..].trim().trim_start_matches('@').to_string()
+                                    c.profile_url[pos + 1..]
+                                        .trim()
+                                        .trim_start_matches('@')
+                                        .to_string()
                                 } else {
                                     c.name.to_lowercase().replace(' ', "-")
                                 };
@@ -619,9 +623,10 @@ impl GrowthState {
 
     pub fn find_cached_release(&self, tag: Option<&str>) -> Option<&ReleaseInfo> {
         match tag {
-            None | Some("latest") => {
-                self.latest_release.as_ref().filter(|r| !r.is_expired(15 * 60))
-            }
+            None | Some("latest") => self
+                .latest_release
+                .as_ref()
+                .filter(|r| !r.is_expired(15 * 60)),
             Some(t) => {
                 let clean = t.trim_start_matches('v');
                 self.release_cache
@@ -639,7 +644,11 @@ impl GrowthState {
     }
 
     pub fn update_release_cache(&mut self, release: ReleaseInfo) {
-        if let Some(pos) = self.release_cache.iter().position(|r| r.tag_name == release.tag_name || r.version == release.version) {
+        if let Some(pos) = self
+            .release_cache
+            .iter()
+            .position(|r| r.tag_name == release.tag_name || r.version == release.version)
+        {
             self.release_cache[pos] = release;
         } else {
             self.release_cache.push(release);
@@ -1034,6 +1043,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             launch_campaign: Some(Self::seed_launch_campaign(now)),
             global_engagement_snapshots: Vec::new(),
             engagement_alerts: Vec::new(),
+            task_tombstones: Vec::new(),
         }
     }
 
@@ -3206,7 +3216,8 @@ steps:
     }
 
     pub fn generate_all_contributorsrc(&self) -> AllContributorsConfig {
-        let verified_list: Vec<&ContributorRecord> = self.contributors.iter().filter(|c| c.verified).collect();
+        let verified_list: Vec<&ContributorRecord> =
+            self.contributors.iter().filter(|c| c.verified).collect();
         let target_list: Vec<&ContributorRecord> = if verified_list.is_empty() {
             self.contributors.iter().collect()
         } else {
@@ -3218,7 +3229,10 @@ steps:
             let login = if let Some(l) = &c.login {
                 l.trim().trim_start_matches('@').to_string()
             } else if let Some(pos) = c.profile_url.rfind('/') {
-                c.profile_url[pos + 1..].trim().trim_start_matches('@').to_string()
+                c.profile_url[pos + 1..]
+                    .trim()
+                    .trim_start_matches('@')
+                    .to_string()
             } else {
                 c.name.to_lowercase().replace(' ', "-")
             };
@@ -3305,5 +3319,43 @@ mod tests {
         assert!(article.exports.is_empty());
         assert!(article.engagement.is_none());
     }
-}
 
+    #[test]
+    fn test_growth_state_tombstones_roundtrip() {
+        let mut state = GrowthState::seed_default();
+        state.task_tombstones = vec![
+            "task-evicted-1".to_string(),
+            "task-evicted-2".to_string(),
+            "task-evicted-3".to_string(),
+        ];
+
+        let json = serde_json::to_string_pretty(&state).expect("Serialization should succeed");
+        let deserialized: GrowthState =
+            serde_json::from_str(&json).expect("Deserialization should succeed");
+
+        assert_eq!(deserialized.task_tombstones.len(), 3);
+        assert_eq!(deserialized.task_tombstones[0], "task-evicted-1");
+        assert_eq!(deserialized.task_tombstones[1], "task-evicted-2");
+        assert_eq!(deserialized.task_tombstones[2], "task-evicted-3");
+    }
+
+    #[test]
+    fn test_growth_state_deserialization_without_tombstones_defaults_empty() {
+        let state = GrowthState::seed_default();
+        let mut value = serde_json::to_value(&state).expect("To JSON value should succeed");
+
+        // Remove task_tombstones field to simulate legacy JSON data
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("task_tombstones");
+        }
+
+        let json = serde_json::to_string(&value).expect("Serialization should succeed");
+        let deserialized: GrowthState = serde_json::from_str(&json)
+            .expect("Deserialization without task_tombstones should succeed");
+
+        assert!(
+            deserialized.task_tombstones.is_empty(),
+            "Missing task_tombstones field should default to an empty Vec"
+        );
+    }
+}
