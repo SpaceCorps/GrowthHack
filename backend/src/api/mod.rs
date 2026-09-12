@@ -99,6 +99,10 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             post(articles::seed_engagement_batch),
         )
         .route(
+            "/api/articles/reset-engagement",
+            post(articles::reset_engagement_batch),
+        )
+        .route(
             "/api/articles/{id}/seed-engagement",
             post(articles::seed_article_engagement),
         )

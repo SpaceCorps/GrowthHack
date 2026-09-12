@@ -3126,6 +3126,53 @@ pub async fn seed_engagement_batch(
     )
 }
 
+pub async fn reset_engagement_batch(
+    State(ctx): State<Arc<AppContext>>,
+) -> impl IntoResponse {
+    if !is_dev_endpoints_enabled() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "error": "Dev reset endpoints are only available in debug builds or when ENABLE_DEV_ENDPOINTS=1"
+            })),
+        );
+    }
+
+    let now = Utc::now();
+    let mut state = ctx.state.write().await;
+
+    state.engagement_alerts.clear();
+    state.global_engagement_snapshots.clear();
+
+    let reset_count = state.articles.len();
+    for article in &mut state.articles {
+        article.engagement_badges.clear();
+        article.milestone_alerts.clear();
+        article.engagement_snapshots.clear();
+        for export in &mut article.exports {
+            export.engagement = None;
+        }
+        article.engagement = Some(EngagementMetrics {
+            views: 0,
+            reactions: 0,
+            comments: 0,
+            last_synced_at: Some(now),
+        });
+    }
+
+    let _ = state.save(&ctx.data_file);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "success": true,
+            "reset_count": reset_count,
+            "message": "Reset all article engagement metrics, milestone alerts, and global snapshots to zero."
+        })),
+    )
+}
+
 pub async fn handle_syndication_webhook(
     State(ctx): State<Arc<AppContext>>,
     body: Option<Json<serde_json::Value>>,
@@ -5390,4 +5437,182 @@ mod tests {
         assert!(saved_art.engagement_snapshots.is_empty());
         assert!(saved_art.exports[0].engagement.is_none());
     }
+
+    #[tokio::test]
+    async fn test_reset_engagement_batch() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        let now = Utc::now();
+
+        let art1 = Article {
+            id: "art-batch-reset-1".to_string(),
+            title: "Article Batch Reset 1".to_string(),
+            created_at: now,
+            exports: vec![ExportRecord {
+                channel: "Dev.to".to_string(),
+                exported_at: now,
+                target_path: None,
+                status: "Success".to_string(),
+                external_id: None,
+                engagement: Some(EngagementMetrics {
+                    views: 400,
+                    reactions: 30,
+                    comments: 5,
+                    last_synced_at: Some(now),
+                }),
+            }],
+            engagement: Some(EngagementMetrics {
+                views: 1000,
+                reactions: 50,
+                comments: 10,
+                last_synced_at: Some(now),
+            }),
+            engagement_badges: vec!["100+ Views".to_string()],
+            milestone_alerts: vec![EngagementMilestoneAlert {
+                id: "alert-batch-1".to_string(),
+                article_id: "art-batch-reset-1".to_string(),
+                article_title: "Article Batch Reset 1".to_string(),
+                milestone_type: "views".to_string(),
+                threshold: 100,
+                message: "Reached 100 views".to_string(),
+                badge_awarded: "100+ Views".to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            }],
+            engagement_snapshots: vec![EngagementSnapshot {
+                timestamp: now,
+                views: 1000,
+                reactions: 50,
+                comments: 10,
+                channels: std::collections::HashMap::new(),
+            }],
+            ..Article::default_for_test()
+        };
+
+        let art2 = Article {
+            id: "art-batch-reset-2".to_string(),
+            title: "Article Batch Reset 2".to_string(),
+            created_at: now,
+            exports: vec![ExportRecord {
+                channel: "Hashnode".to_string(),
+                exported_at: now,
+                target_path: None,
+                status: "Success".to_string(),
+                external_id: None,
+                engagement: Some(EngagementMetrics {
+                    views: 200,
+                    reactions: 15,
+                    comments: 2,
+                    last_synced_at: Some(now),
+                }),
+            }],
+            engagement: Some(EngagementMetrics {
+                views: 500,
+                reactions: 25,
+                comments: 5,
+                last_synced_at: Some(now),
+            }),
+            engagement_badges: vec!["25+ Reactions".to_string()],
+            milestone_alerts: vec![EngagementMilestoneAlert {
+                id: "alert-batch-2".to_string(),
+                article_id: "art-batch-reset-2".to_string(),
+                article_title: "Article Batch Reset 2".to_string(),
+                milestone_type: "reactions".to_string(),
+                threshold: 25,
+                message: "Reached 25 reactions".to_string(),
+                badge_awarded: "25+ Reactions".to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            }],
+            engagement_snapshots: vec![EngagementSnapshot {
+                timestamp: now,
+                views: 500,
+                reactions: 25,
+                comments: 5,
+                channels: std::collections::HashMap::new(),
+            }],
+            ..Article::default_for_test()
+        };
+
+        {
+            let mut state = ctx.state.write().await;
+            state.articles.clear();
+            state.articles.push(art1);
+            state.articles.push(art2);
+            state.engagement_alerts = vec![
+                EngagementMilestoneAlert {
+                    id: "global-alert-1".to_string(),
+                    article_id: "art-batch-reset-1".to_string(),
+                    article_title: "Article Batch Reset 1".to_string(),
+                    milestone_type: "views".to_string(),
+                    threshold: 100,
+                    message: "Global alert 1".to_string(),
+                    badge_awarded: "100+ Views".to_string(),
+                    triggered_at: now,
+                    acknowledged: false,
+                },
+            ];
+            state.global_engagement_snapshots = vec![
+                EngagementSnapshot {
+                    timestamp: now,
+                    views: 1500,
+                    reactions: 75,
+                    comments: 15,
+                    channels: std::collections::HashMap::new(),
+                },
+            ];
+        }
+
+        let resp = reset_engagement_batch(State(ctx.clone()))
+            .await
+            .into_response();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["reset_count"], 2);
+        assert_eq!(
+            json["message"],
+            "Reset all article engagement metrics, milestone alerts, and global snapshots to zero."
+        );
+
+        let state = ctx.state.read().await;
+        assert!(state.engagement_alerts.is_empty());
+        assert!(state.global_engagement_snapshots.is_empty());
+
+        for art in &state.articles {
+            assert!(art.engagement_badges.is_empty());
+            assert!(art.milestone_alerts.is_empty());
+            assert!(art.engagement_snapshots.is_empty());
+            for export in &art.exports {
+                assert!(export.engagement.is_none());
+            }
+            let eng = art.engagement.as_ref().unwrap();
+            assert_eq!(eng.views, 0);
+            assert_eq!(eng.reactions, 0);
+            assert_eq!(eng.comments, 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reset_engagement_batch_forbidden() {
+        let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let ctx = Arc::new(AppContext::default());
+        std::env::set_var("ENABLE_DEV_ENDPOINTS", "0");
+
+        let resp = reset_engagement_batch(State(ctx)).await.into_response();
+
+        std::env::remove_var("ENABLE_DEV_ENDPOINTS");
+
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["success"], false);
+        assert_eq!(
+            json["error"],
+            "Dev reset endpoints are only available in debug builds or when ENABLE_DEV_ENDPOINTS=1"
+        );
+    }
 }
+
