@@ -1111,12 +1111,9 @@ Installers:
 
             {/* Footer */}
             <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-end space-x-3">
-              <button
-                onClick={() => setDispatchTarget(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-              >
+              <ActionButton variant="ghost" onClick={() => setDispatchTarget(null)}>
                 Cancel
-              </button>
+              </ActionButton>
               <ActionButton
                 variant="gradient"
                 size="md"
@@ -1404,13 +1401,9 @@ Installers:
               </div>
 
               <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingTarget(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium"
-                >
+                <ActionButton variant="secondary" onClick={() => setEditingTarget(null)}>
                   Cancel
-                </button>
+                </ActionButton>
                 <button
                   type="submit"
                   data-testid="save-status-btn"

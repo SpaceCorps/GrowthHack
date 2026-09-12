@@ -1033,13 +1033,13 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
 
             <div className="flex items-center justify-center gap-3 pt-2">
               {history.length > 0 && (
-                <button
+                <ActionButton
+                  variant="secondary"
                   onClick={handleUndo}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                  icon={<Undo2 className="w-3.5 h-3.5" />}
                 >
-                  <Undo2 className="w-3.5 h-3.5" />
                   Undo Last Decision
-                </button>
+                </ActionButton>
               )}
 
               {exportableItems.length > 0 && (
@@ -1136,12 +1136,9 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-              <button
-                onClick={() => setIsRefining(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
-              >
+              <ActionButton variant="secondary" onClick={() => setIsRefining(false)}>
                 Cancel
-              </button>
+              </ActionButton>
               <button
                 onClick={handleSaveRefinement}
                 className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-950/40"
@@ -1201,29 +1198,26 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <button
+              <ActionButton
+                variant="secondary"
                 onClick={handleDownloadMarkdown}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
+                icon={<Download className="w-3.5 h-3.5 text-cyan-400" />}
               >
-                <Download className="w-3.5 h-3.5 text-cyan-400" />
                 Download .md
-              </button>
-              <button
+              </ActionButton>
+              <ActionButton
+                variant="secondary"
                 onClick={handleCopyAll}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors"
-              >
-                {copied ? (
-                  <>
+                icon={
+                  copied ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
+                  ) : (
                     <Copy className="w-3.5 h-3.5 text-amber-400" />
-                    Copy All
-                  </>
-                )}
-              </button>
+                  )
+                }
+              >
+                {copied ? "Copied!" : "Copy All"}
+              </ActionButton>
               <ActionButton
                 loading={isBatchPublishing}
                 loadingText="Publishing..."
@@ -1231,6 +1225,12 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
                 onClick={handleBatchPublish}
               >
                 Publish All
+              </ActionButton>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <ActionButton variant="secondary" onClick={() => setShowExportModal(false)}>
+                Close
               </ActionButton>
             </div>
           </div>

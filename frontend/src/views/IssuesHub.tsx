@@ -346,13 +346,9 @@ export const IssuesHub: React.FC<IssuesHubProps> = ({
               </div>
 
               <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium"
-                >
+                <ActionButton variant="secondary" onClick={() => setShowAddModal(false)}>
                   Cancel
-                </button>
+                </ActionButton>
                 <ActionButton type="submit">Create Issue</ActionButton>
               </div>
             </form>

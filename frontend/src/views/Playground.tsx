@@ -1459,13 +1459,9 @@ export const Playground: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowImportModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium cursor-pointer"
-                >
+                <ActionButton variant="secondary" onClick={() => setShowImportModal(false)}>
                   Cancel
-                </button>
+                </ActionButton>
                 <button
                   type="submit"
                   disabled={importingIssue || (!importUrl.trim() && !importTitle.trim())}
