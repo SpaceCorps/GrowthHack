@@ -1474,13 +1474,9 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                       )}
 
                       <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsConfigOpen(false)}
-                          className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 text-xs transition-colors"
-                        >
+                        <ActionButton variant="ghost" onClick={() => setIsConfigOpen(false)}>
                           Cancel
-                        </button>
+                        </ActionButton>
                         <button
                           type="submit"
                           disabled={isSavingSettings}

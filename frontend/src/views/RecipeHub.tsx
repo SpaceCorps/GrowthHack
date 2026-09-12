@@ -580,12 +580,9 @@ steps:
               </button>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setConfigRecipe(null)}
-                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
+                <ActionButton variant="secondary" onClick={() => setConfigRecipe(null)}>
                   Cancel
-                </button>
+                </ActionButton>
                 <button
                   onClick={handleExecuteRecipe}
                   disabled={isRunningRecipe}
@@ -822,13 +819,9 @@ steps:
               </div>
 
               <div className="flex items-center justify-end gap-2 p-4 bg-slate-950/60 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowSubmitModal(false)}
-                  className="px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
+                <ActionButton variant="secondary" onClick={() => setShowSubmitModal(false)}>
                   Cancel
-                </button>
+                </ActionButton>
                 <ActionButton
                   type="submit"
                   loading={isSubmitting}

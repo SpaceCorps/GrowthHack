@@ -1104,13 +1104,13 @@ export const DoctorDemo: React.FC = () => {
               </div>
 
               <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
-                <button
-                  type="button"
+                <ActionButton
+                  variant="secondary"
+                  size="md"
                   onClick={() => setShowAddScenarioModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg font-semibold"
                 >
                   Cancel
-                </button>
+                </ActionButton>
                 <button
                   type="submit"
                   disabled={submittingScenario}
