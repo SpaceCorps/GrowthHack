@@ -1075,4 +1075,120 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     });
     expect(container!.textContent).toContain("Syndication API Credentials & Settings");
   });
+
+  it("standardizes channel selector and hero format selector with SegmentedControl", async () => {
+    const article: Article = {
+      id: "art-channel-select-test",
+      title: "Channel Selector Modal Test",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Architecture",
+      summary: "Summary for channel selector test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const formattedCalls: string[] = [];
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              devto_configured: true,
+              hashnode_configured: true,
+              publish_as_draft: false,
+            }),
+        });
+      }
+      if (url.includes("/format/")) {
+        formattedCalls.push(url);
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              formatted_content: `Formatted content for ${url.split("/").pop()}`,
+              preview_type: "markdown",
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="export"
+        />,
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 1. Verify syndication channel selector has radiogroup accessibility semantics
+    const channelGroup = container!.querySelector(
+      'div[role="radiogroup"][aria-label="Syndication channel selector"]',
+    );
+    expect(channelGroup).toBeDefined();
+
+    const devtoRadio = channelGroup!.querySelector('button[role="radio"][aria-checked="true"]');
+    expect(devtoRadio?.textContent).toContain("Dev.to");
+    expect(devtoRadio?.className).toContain("bg-emerald-500/20");
+
+    // 2. Select Medium channel
+    const mediumRadio = Array.from(channelGroup!.querySelectorAll('button[role="radio"]')).find(
+      (btn) => btn.textContent?.trim() === "Medium",
+    );
+    expect(mediumRadio).toBeDefined();
+    expect(mediumRadio?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      mediumRadio!.click();
+      await Promise.resolve();
+    });
+
+    expect(mediumRadio?.getAttribute("aria-checked")).toBe("true");
+    expect(mediumRadio?.className).toContain("bg-emerald-500/20");
+    expect(formattedCalls.some((call) => call.includes("Medium"))).toBe(true);
+
+    // 3. Verify hero asset format selector has radiogroup semantics and switches formats
+    const heroGroup = container!.querySelector(
+      'div[role="radiogroup"][aria-label="Hero asset format selector"]',
+    );
+    expect(heroGroup).toBeDefined();
+
+    const dualRadio = Array.from(heroGroup!.querySelectorAll('button[role="radio"]')).find((btn) =>
+      btn.textContent?.includes("Dual"),
+    );
+    expect(dualRadio?.getAttribute("aria-checked")).toBe("true");
+    expect(dualRadio?.className).toContain("bg-cyan-500/20");
+
+    const svgRadio = Array.from(heroGroup!.querySelectorAll('button[role="radio"]')).find((btn) =>
+      btn.textContent?.includes("Vector SVG"),
+    );
+    expect(svgRadio).toBeDefined();
+    expect(svgRadio?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      svgRadio!.click();
+      await Promise.resolve();
+    });
+
+    expect(svgRadio?.getAttribute("aria-checked")).toBe("true");
+    expect(svgRadio?.className).toContain("bg-cyan-500/20");
+  });
 });
