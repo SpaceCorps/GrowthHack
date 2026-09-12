@@ -50,7 +50,8 @@ async fn test_auto_post_fresh_article_returns_200_and_publishes() {
     let content_dir = unique_temp_dir("fresh_content");
     let images_dir = unique_temp_dir("fresh_images");
 
-    let id = create_draft_article(api::router(guard.ctx()), "Instant Auto-Post Fresh Article").await;
+    let id =
+        create_draft_article(api::router(guard.ctx()), "Instant Auto-Post Fresh Article").await;
 
     let payload = serde_json::json!({
         "target_dir": content_dir.to_string_lossy(),
@@ -116,7 +117,8 @@ async fn test_auto_post_sync_hero_image_true_writes_asset_false_does_not() {
     let parsed: Value = serde_json::from_slice(&body).unwrap();
     assert!(!parsed["image_path"].is_null());
 
-    let id_without_hero = create_draft_article(api::router(guard.ctx()), "Auto Post Without Hero").await;
+    let id_without_hero =
+        create_draft_article(api::router(guard.ctx()), "Auto Post Without Hero").await;
     let payload_without_hero = serde_json::json!({
         "target_dir": content_dir.to_string_lossy(),
         "target_images_dir": images_dir.to_string_lossy(),
@@ -254,7 +256,10 @@ async fn test_auto_post_hero_format_svg_reflected_in_frontmatter() {
     let mdoc_file = content_dir.join(format!("{}.mdoc", slug));
     let content = std::fs::read_to_string(&mdoc_file).unwrap();
     assert!(content.contains(&format!("image: \"/site/images/blog/{}-hero.svg\"", slug)));
-    assert!(content.contains(&format!("image_svg: \"/site/images/blog/{}-hero.svg\"", slug)));
+    assert!(content.contains(&format!(
+        "image_svg: \"/site/images/blog/{}-hero.svg\"",
+        slug
+    )));
 
     let _ = std::fs::remove_dir_all(&content_dir);
     let _ = std::fs::remove_dir_all(&images_dir);
@@ -455,5 +460,240 @@ async fn test_generate_article_and_spotlight_backward_compatibility_without_time
     assert_eq!(response2.status(), StatusCode::ACCEPTED);
     let body2 = to_bytes(response2.into_body(), usize::MAX).await.unwrap();
     let parsed2: Value = serde_json::from_slice(&body2).unwrap();
-    assert!(parsed2["task_id"].as_str().unwrap().starts_with("task-art-"));
+    assert!(parsed2["task_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("task-art-"));
+}
+
+#[tokio::test]
+async fn test_generate_article_rejects_timeout_below_minimum() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let payload = serde_json::json!({
+        "feature": "Worktrees",
+        "angle": "Architecture",
+        "channel": "Website",
+        "timeout_secs": 9,
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        parsed["error"],
+        "timeout_secs must be between 10 and 3600 seconds"
+    );
+}
+
+#[tokio::test]
+async fn test_generate_article_rejects_timeout_above_maximum() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let payload = serde_json::json!({
+        "feature": "Worktrees",
+        "angle": "Architecture",
+        "channel": "Website",
+        "timeout_secs": 3601,
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        parsed["error"],
+        "timeout_secs must be between 10 and 3600 seconds"
+    );
+}
+
+#[tokio::test]
+async fn test_generate_spotlight_rejects_out_of_bounds_timeout() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let low_payload = serde_json::json!({
+        "project_name": "OpenBot",
+        "repo_url": "https://github.com/openbot-ai/openbot",
+        "tagline": "Autonomous robotics",
+        "key_features": ["Zero config"],
+        "target_channel": "LinkedIn",
+        "timeout_secs": 5,
+    });
+
+    let low_res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&low_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(low_res.status(), StatusCode::BAD_REQUEST);
+    let low_body = to_bytes(low_res.into_body(), usize::MAX).await.unwrap();
+    let low_parsed: Value = serde_json::from_slice(&low_body).unwrap();
+    assert_eq!(
+        low_parsed["error"],
+        "timeout_secs must be between 10 and 3600 seconds"
+    );
+
+    let app2 = api::router(guard.ctx());
+    let high_payload = serde_json::json!({
+        "project_name": "OpenBot",
+        "repo_url": "https://github.com/openbot-ai/openbot",
+        "tagline": "Autonomous robotics",
+        "key_features": ["Zero config"],
+        "target_channel": "LinkedIn",
+        "timeout_secs": 4000,
+    });
+
+    let high_res = app2
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&high_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(high_res.status(), StatusCode::BAD_REQUEST);
+    let high_body = to_bytes(high_res.into_body(), usize::MAX).await.unwrap();
+    let high_parsed: Value = serde_json::from_slice(&high_body).unwrap();
+    assert_eq!(
+        high_parsed["error"],
+        "timeout_secs must be between 10 and 3600 seconds"
+    );
+}
+
+#[tokio::test]
+async fn test_generate_article_and_spotlight_accept_boundary_timeouts() {
+    let guard = common::create_test_context();
+
+    // Test min boundary 10s on generate
+    let app1 = api::router(guard.ctx());
+    let res1 = app1
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "feature": "Worktrees",
+                        "angle": "Benchmark",
+                        "channel": "Website",
+                        "timeout_secs": 10,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res1.status(), StatusCode::ACCEPTED);
+
+    // Test max boundary 3600s on generate
+    let app2 = api::router(guard.ctx());
+    let res2 = app2
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "feature": "Worktrees",
+                        "angle": "Benchmark",
+                        "channel": "Website",
+                        "timeout_secs": 3600,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res2.status(), StatusCode::ACCEPTED);
+
+    // Test min boundary 10s on spotlight
+    let app3 = api::router(guard.ctx());
+    let res3 = app3
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_name": "OpenBot",
+                        "repo_url": "https://github.com/openbot-ai/openbot",
+                        "tagline": "Autonomous robotics",
+                        "key_features": ["Zero config"],
+                        "target_channel": "LinkedIn",
+                        "timeout_secs": 10,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res3.status(), StatusCode::ACCEPTED);
+
+    // Test max boundary 3600s on spotlight
+    let app4 = api::router(guard.ctx());
+    let res4 = app4
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_name": "OpenBot",
+                        "repo_url": "https://github.com/openbot-ai/openbot",
+                        "tagline": "Autonomous robotics",
+                        "key_features": ["Zero config"],
+                        "target_channel": "LinkedIn",
+                        "timeout_secs": 3600,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res4.status(), StatusCode::ACCEPTED);
 }

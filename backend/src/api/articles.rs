@@ -39,6 +39,9 @@ pub struct UpdateArticleRequest {
     pub outbound_citations: Option<Vec<String>>,
 }
 
+pub const MIN_ARTICLE_TIMEOUT_SECS: u64 = 10;
+pub const MAX_ARTICLE_TIMEOUT_SECS: u64 = 3600;
+
 #[derive(Deserialize)]
 pub struct GenerateArticleRequest {
     pub feature: String, // "Worktrees", "Multi-Agent Orchestration", "Issue-to-PR", "Verification Gates", "Voice Control", "Tunneling", "Review & Diffs"
@@ -443,6 +446,21 @@ pub async fn generate_article(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<GenerateArticleRequest>,
 ) -> impl IntoResponse {
+    if let Some(timeout) = payload.timeout_secs {
+        if !(MIN_ARTICLE_TIMEOUT_SECS..=MAX_ARTICLE_TIMEOUT_SECS).contains(&timeout) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!(
+                        "timeout_secs must be between {} and {} seconds",
+                        MIN_ARTICLE_TIMEOUT_SECS, MAX_ARTICLE_TIMEOUT_SECS
+                    )
+                })),
+            )
+                .into_response();
+        }
+    }
+
     let task_id = format!("task-art-{}", Uuid::new_v4().simple());
     let article_id = format!("art-{}", Uuid::new_v4().simple());
 
@@ -463,44 +481,49 @@ pub async fn generate_article(
     let timeout_override = payload.timeout_secs.map(std::time::Duration::from_secs);
 
     ctx.task_manager
-        .spawn_task_with_callback_and_timeout(&task_id, prompt, timeout_override, move |content, tx| async move {
-            let mut state = state_arc.write().await;
-            let title = content
-                .lines()
-                .find(|l| l.starts_with("# "))
-                .map(|l| l.trim_start_matches("# ").trim().to_string())
-                .unwrap_or_else(|| format!("Deep Dive: {} ({})", feature, angle));
+        .spawn_task_with_callback_and_timeout(
+            &task_id,
+            prompt,
+            timeout_override,
+            move |content, tx| async move {
+                let mut state = state_arc.write().await;
+                let title = content
+                    .lines()
+                    .find(|l| l.starts_with("# "))
+                    .map(|l| l.trim_start_matches("# ").trim().to_string())
+                    .unwrap_or_else(|| format!("Deep Dive: {} ({})", feature, angle));
 
-            let summary = format!(
-                "Deep-dive article exploring {} with a {} perspective for {}.",
-                feature, angle, channel
-            );
+                let summary = format!(
+                    "Deep-dive article exploring {} with a {} perspective for {}.",
+                    feature, angle, channel
+                );
 
-            let slug = slugify(&title);
-            let article = Article {
-                id: art_id_clone,
-                title,
-                feature,
-                channel,
-                angle,
-                summary,
-                content,
-                backlinks,
-                outbound_citations,
-                status: "Draft".to_string(),
-                created_at: Utc::now(),
-                published_at: None,
-                slug: Some(slug),
-                exports: Vec::new(),
-                engagement: None,
-                engagement_snapshots: Vec::new(),
-                engagement_badges: Vec::new(),
-                milestone_alerts: Vec::new(),
-            };
-            state.articles.insert(0, article);
-            let _ = state.save(&data_file);
-            let _ = tx.send("[SYSTEM] Article saved to drafts library.".to_string());
-        })
+                let slug = slugify(&title);
+                let article = Article {
+                    id: art_id_clone,
+                    title,
+                    feature,
+                    channel,
+                    angle,
+                    summary,
+                    content,
+                    backlinks,
+                    outbound_citations,
+                    status: "Draft".to_string(),
+                    created_at: Utc::now(),
+                    published_at: None,
+                    slug: Some(slug),
+                    exports: Vec::new(),
+                    engagement: None,
+                    engagement_snapshots: Vec::new(),
+                    engagement_badges: Vec::new(),
+                    milestone_alerts: Vec::new(),
+                };
+                state.articles.insert(0, article);
+                let _ = state.save(&data_file);
+                let _ = tx.send("[SYSTEM] Article saved to drafts library.".to_string());
+            },
+        )
         .await;
 
     (
@@ -511,12 +534,28 @@ pub async fn generate_article(
             message: "Article generation initiated with Antigravity".to_string(),
         }),
     )
+        .into_response()
 }
 
 pub async fn generate_spotlight(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<GenerateSpotlightRequest>,
 ) -> impl IntoResponse {
+    if let Some(timeout) = payload.timeout_secs {
+        if !(MIN_ARTICLE_TIMEOUT_SECS..=MAX_ARTICLE_TIMEOUT_SECS).contains(&timeout) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!(
+                        "timeout_secs must be between {} and {} seconds",
+                        MIN_ARTICLE_TIMEOUT_SECS, MAX_ARTICLE_TIMEOUT_SECS
+                    )
+                })),
+            )
+                .into_response();
+        }
+    }
+
     let task_id = format!("task-art-{}", Uuid::new_v4().simple());
     let article_id = format!("art-{}", Uuid::new_v4().simple());
 
@@ -532,46 +571,51 @@ pub async fn generate_spotlight(
     let timeout_override = payload.timeout_secs.map(std::time::Duration::from_secs);
 
     ctx.task_manager
-        .spawn_task_with_callback_and_timeout(&task_id, prompt, timeout_override, move |content, tx| async move {
-            let mut state = state_arc.write().await;
-            let title = content
-                .lines()
-                .find(|l| l.starts_with("# "))
-                .map(|l| l.trim_start_matches("# ").trim().to_string())
-                .unwrap_or_else(|| format!("Project Spotlight: {}", project_name));
+        .spawn_task_with_callback_and_timeout(
+            &task_id,
+            prompt,
+            timeout_override,
+            move |content, tx| async move {
+                let mut state = state_arc.write().await;
+                let title = content
+                    .lines()
+                    .find(|l| l.starts_with("# "))
+                    .map(|l| l.trim_start_matches("# ").trim().to_string())
+                    .unwrap_or_else(|| format!("Project Spotlight: {}", project_name));
 
-            let summary = format!(
-                "Stanislav Beliaev style open-source project spotlight on {} ({}).",
-                project_name, tagline
-            );
+                let summary = format!(
+                    "Stanislav Beliaev style open-source project spotlight on {} ({}).",
+                    project_name, tagline
+                );
 
-            let article = Article {
-                id: art_id_clone,
-                title,
-                feature: "Open Source Spotlight".to_string(),
-                channel,
-                angle: "Project Spotlight".to_string(),
-                summary,
-                content,
-                backlinks: vec![
-                    "https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
-                    repo_url.clone(),
-                ],
-                outbound_citations: vec![repo_url],
-                status: "Draft".to_string(),
-                created_at: Utc::now(),
-                published_at: None,
-                slug: None,
-                exports: Vec::new(),
-                engagement: None,
-                engagement_snapshots: Vec::new(),
-                engagement_badges: Vec::new(),
-                milestone_alerts: Vec::new(),
-            };
-            state.articles.insert(0, article);
-            let _ = state.save(&data_file);
-            let _ = tx.send("[SYSTEM] Project spotlight saved to drafts library.".to_string());
-        })
+                let article = Article {
+                    id: art_id_clone,
+                    title,
+                    feature: "Open Source Spotlight".to_string(),
+                    channel,
+                    angle: "Project Spotlight".to_string(),
+                    summary,
+                    content,
+                    backlinks: vec![
+                        "https://github.com/Ivy-Interactive/Ivy-Tendril".to_string(),
+                        repo_url.clone(),
+                    ],
+                    outbound_citations: vec![repo_url],
+                    status: "Draft".to_string(),
+                    created_at: Utc::now(),
+                    published_at: None,
+                    slug: None,
+                    exports: Vec::new(),
+                    engagement: None,
+                    engagement_snapshots: Vec::new(),
+                    engagement_badges: Vec::new(),
+                    milestone_alerts: Vec::new(),
+                };
+                state.articles.insert(0, article);
+                let _ = state.save(&data_file);
+                let _ = tx.send("[SYSTEM] Project spotlight saved to drafts library.".to_string());
+            },
+        )
         .await;
 
     (
@@ -582,6 +626,7 @@ pub async fn generate_spotlight(
             message: "Project spotlight generation initiated with Antigravity".to_string(),
         }),
     )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -2614,15 +2659,8 @@ pub fn calculate_engagement_velocity(
             })
             .collect();
 
-        let (
-            ch_vpd,
-            ch_rpd,
-            ch_cpd,
-            ch_vd24,
-            ch_rd24,
-            ch_cd24,
-            ch_trend,
-        ) = compute_velocity_from_series(&ch_points);
+        let (ch_vpd, ch_rpd, ch_cpd, ch_vd24, ch_rd24, ch_cd24, ch_trend) =
+            compute_velocity_from_series(&ch_points);
 
         channels.insert(
             ch,
@@ -3133,9 +3171,7 @@ pub async fn seed_engagement_batch(
     )
 }
 
-pub async fn reset_engagement_batch(
-    State(ctx): State<Arc<AppContext>>,
-) -> impl IntoResponse {
+pub async fn reset_engagement_batch(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
     if !is_dev_endpoints_enabled() {
         return (
             StatusCode::FORBIDDEN,
@@ -4855,16 +4891,25 @@ mod tests {
         let alerts = evaluate_article_milestones(&mut article, now);
         assert_eq!(alerts.len(), 2);
         assert_eq!(article.milestone_alerts.len(), 2);
-        assert!(article.engagement_badges.contains(&"100+ Views".to_string()));
-        assert!(article.engagement_badges.contains(&"25+ Reactions".to_string()));
-        assert!(!article.engagement_badges.contains(&"10+ Comments".to_string()));
+        assert!(article
+            .engagement_badges
+            .contains(&"100+ Views".to_string()));
+        assert!(article
+            .engagement_badges
+            .contains(&"25+ Reactions".to_string()));
+        assert!(!article
+            .engagement_badges
+            .contains(&"10+ Comments".to_string()));
 
         let view_alert = alerts.iter().find(|a| a.milestone_type == "views").unwrap();
         assert_eq!(view_alert.threshold, 100);
         assert_eq!(view_alert.badge_awarded, "100+ Views");
         assert!(!view_alert.acknowledged);
 
-        let reaction_alert = alerts.iter().find(|a| a.milestone_type == "reactions").unwrap();
+        let reaction_alert = alerts
+            .iter()
+            .find(|a| a.milestone_type == "reactions")
+            .unwrap();
         assert_eq!(reaction_alert.threshold, 25);
         assert_eq!(reaction_alert.badge_awarded, "25+ Reactions");
         assert!(!reaction_alert.acknowledged);
@@ -4951,8 +4996,12 @@ mod tests {
         assert_eq!(next_alerts[0].badge_awarded, "500+ Views");
         assert_eq!(next_alerts[0].threshold, 500);
 
-        assert!(article.engagement_badges.contains(&"100+ Views".to_string()));
-        assert!(article.engagement_badges.contains(&"500+ Views".to_string()));
+        assert!(article
+            .engagement_badges
+            .contains(&"100+ Views".to_string()));
+        assert!(article
+            .engagement_badges
+            .contains(&"500+ Views".to_string()));
         assert_eq!(article.milestone_alerts.len(), 2);
     }
 
@@ -5027,7 +5076,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
         assert_eq!(alerts.len(), 2);
 
@@ -5044,7 +5095,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let art_alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
         assert_eq!(art_alerts.len(), 2);
 
@@ -5075,7 +5128,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let unack_alerts: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
         assert_eq!(unack_alerts.len(), 1);
         assert_eq!(unack_alerts[0].id, "alert-102");
@@ -5106,7 +5161,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let remaining_unack: Vec<EngagementMilestoneAlert> = serde_json::from_slice(&body).unwrap();
         assert!(remaining_unack.is_empty());
     }
@@ -5138,7 +5195,9 @@ mod tests {
         .into_response();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], true);
         assert_eq!(json["article"]["engagement"]["views"], 1250);
@@ -5234,7 +5293,9 @@ mod tests {
         .into_response();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], true);
         assert_eq!(json["article"]["engagement"]["views"], 5000);
@@ -5254,23 +5315,24 @@ mod tests {
 
         // Verify 5K+ views threshold triggered
         assert!(art.engagement_badges.contains(&"5K+ Views".to_string()));
-        assert!(art.engagement_badges.contains(&"100+ Reactions".to_string()));
+        assert!(art
+            .engagement_badges
+            .contains(&"100+ Reactions".to_string()));
     }
 
     #[tokio::test]
     async fn test_seed_engagement_article_not_found() {
         let _lock = SEED_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let ctx = Arc::new(AppContext::default());
-        let resp = seed_article_engagement(
-            Path("non-existent-art-id".to_string()),
-            State(ctx),
-            None,
-        )
-        .await
-        .into_response();
+        let resp =
+            seed_article_engagement(Path("non-existent-art-id".to_string()), State(ctx), None)
+                .await
+                .into_response();
 
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], false);
         assert_eq!(json["error"], "Article not found");
@@ -5282,18 +5344,16 @@ mod tests {
         let ctx = Arc::new(AppContext::default());
         std::env::set_var("ENABLE_DEV_ENDPOINTS", "0");
 
-        let resp = seed_article_engagement(
-            Path("art-gating-test".to_string()),
-            State(ctx),
-            None,
-        )
-        .await
-        .into_response();
+        let resp = seed_article_engagement(Path("art-gating-test".to_string()), State(ctx), None)
+            .await
+            .into_response();
 
         std::env::remove_var("ENABLE_DEV_ENDPOINTS");
 
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], false);
         assert_eq!(
@@ -5331,7 +5391,9 @@ mod tests {
             .into_response();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], true);
         assert_eq!(json["seeded_count"], 2);
@@ -5411,7 +5473,9 @@ mod tests {
         .into_response();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], true);
         assert_eq!(json["article"]["engagement"]["views"], 0);
@@ -5439,7 +5503,11 @@ mod tests {
         assert_eq!(json["velocity"]["trend"], "Flat");
 
         let state = ctx.state.read().await;
-        let saved_art = state.articles.iter().find(|a| a.id == "art-seed-reset").unwrap();
+        let saved_art = state
+            .articles
+            .iter()
+            .find(|a| a.id == "art-seed-reset")
+            .unwrap();
         assert!(saved_art.engagement_badges.is_empty());
         assert!(saved_art.milestone_alerts.is_empty());
         assert!(saved_art.engagement_snapshots.is_empty());
@@ -5547,28 +5615,24 @@ mod tests {
             state.articles.clear();
             state.articles.push(art1);
             state.articles.push(art2);
-            state.engagement_alerts = vec![
-                EngagementMilestoneAlert {
-                    id: "global-alert-1".to_string(),
-                    article_id: "art-batch-reset-1".to_string(),
-                    article_title: "Article Batch Reset 1".to_string(),
-                    milestone_type: "views".to_string(),
-                    threshold: 100,
-                    message: "Global alert 1".to_string(),
-                    badge_awarded: "100+ Views".to_string(),
-                    triggered_at: now,
-                    acknowledged: false,
-                },
-            ];
-            state.global_engagement_snapshots = vec![
-                EngagementSnapshot {
-                    timestamp: now,
-                    views: 1500,
-                    reactions: 75,
-                    comments: 15,
-                    channels: std::collections::HashMap::new(),
-                },
-            ];
+            state.engagement_alerts = vec![EngagementMilestoneAlert {
+                id: "global-alert-1".to_string(),
+                article_id: "art-batch-reset-1".to_string(),
+                article_title: "Article Batch Reset 1".to_string(),
+                milestone_type: "views".to_string(),
+                threshold: 100,
+                message: "Global alert 1".to_string(),
+                badge_awarded: "100+ Views".to_string(),
+                triggered_at: now,
+                acknowledged: false,
+            }];
+            state.global_engagement_snapshots = vec![EngagementSnapshot {
+                timestamp: now,
+                views: 1500,
+                reactions: 75,
+                comments: 15,
+                channels: std::collections::HashMap::new(),
+            }];
         }
 
         let resp = reset_engagement_batch(State(ctx.clone()))
@@ -5576,7 +5640,9 @@ mod tests {
             .into_response();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], true);
         assert_eq!(json["reset_count"], 2);
@@ -5614,7 +5680,9 @@ mod tests {
         std::env::remove_var("ENABLE_DEV_ENDPOINTS");
 
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["success"], false);
         assert_eq!(
@@ -5623,4 +5691,3 @@ mod tests {
         );
     }
 }
-
