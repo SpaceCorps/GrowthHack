@@ -145,6 +145,11 @@ pub fn router(ctx: Arc<AppContext>) -> Router {
             "/api/settings/syndication",
             get(articles::get_syndication_settings).post(articles::update_syndication_settings),
         )
+        // Export Path Settings
+        .route(
+            "/api/settings/export-paths",
+            get(articles::get_export_path_settings).post(articles::update_export_path_settings),
+        )
         // Feature Video Demos & LinkedIn
         .route(
             "/api/demos",

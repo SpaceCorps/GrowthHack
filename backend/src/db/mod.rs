@@ -229,6 +229,14 @@ impl Default for SyndicationSettings {
     }
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExportSettings {
+    #[serde(default)]
+    pub ivy_web_content_path: Option<String>,
+    #[serde(default)]
+    pub ivy_web_images_path: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoryboardScene {
     pub stage: String, // "Hook", "WorktreeIsolation", "TestVerification", "PrBadgeOutro"
@@ -532,6 +540,8 @@ pub struct GrowthState {
     pub video_demos: Vec<VideoDemo>,
     #[serde(default)]
     pub syndication_settings: SyndicationSettings,
+    #[serde(default)]
+    pub export_settings: ExportSettings,
     #[serde(default)]
     pub packages: Vec<PackageManagerTarget>,
     #[serde(default)]
@@ -1071,6 +1081,7 @@ Check out [Ivy-Tendril on GitHub](https://github.com/Ivy-Interactive/Ivy-Tendril
             tasks,
             video_demos,
             syndication_settings: SyndicationSettings::default(),
+            export_settings: ExportSettings::default(),
             packages,
             latest_release: None,
             release_cache: Vec::new(),
