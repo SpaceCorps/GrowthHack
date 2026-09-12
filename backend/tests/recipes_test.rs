@@ -123,6 +123,7 @@ async fn test_run_recipe_endpoint_dispatches_task() {
         State(ctx.clone()),
         Json(RunRecipeRequest {
             parameters: overrides,
+            timeout_secs: None,
         }),
     )
     .await;
@@ -258,4 +259,35 @@ async fn test_submit_community_recipe_validation_failure() {
     let (status, Json(err)) = res.unwrap_err();
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err.error.contains("already exists"));
+}
+
+#[tokio::test]
+async fn test_run_recipe_accepts_optional_timeout_secs() {
+    let ctx = create_test_context();
+
+    let json_payload = r#"{"parameters": {}, "timeout_secs": 120}"#;
+    let request: RunRecipeRequest =
+        serde_json::from_str(json_payload).expect("deserialize RunRecipeRequest");
+    assert_eq!(request.timeout_secs, Some(120));
+
+    let resp = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request),
+    )
+    .await;
+
+    let (parts, body) = axum::response::IntoResponse::into_response(resp).into_parts();
+    assert_eq!(parts.status, StatusCode::ACCEPTED);
+
+    let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+    let response_data: growthhack_backend::api::recipes::RunRecipeResponse =
+        serde_json::from_slice(&bytes).unwrap();
+
+    assert!(response_data.task_id.starts_with("task-"));
+    assert_eq!(response_data.recipe_id, "recipe-bugfixer");
+
+    let state = ctx.state.read().await;
+    let task = state.tasks.iter().find(|t| t.id == response_data.task_id);
+    assert!(task.is_some());
 }

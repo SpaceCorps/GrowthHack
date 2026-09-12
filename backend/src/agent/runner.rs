@@ -28,6 +28,16 @@ impl AgentRunner {
     }
 
     pub async fn execute(&self, prompt: &str, tx: Sender<String>) -> Result<String, String> {
+        self.execute_with_timeout(prompt, tx, None).await
+    }
+
+    pub async fn execute_with_timeout(
+        &self,
+        prompt: &str,
+        tx: Sender<String>,
+        timeout_override: Option<std::time::Duration>,
+    ) -> Result<String, String> {
+        let effective_timeout = timeout_override.unwrap_or(self.timeout);
         let _ = tx.send("[SYSTEM] Initializing Antigravity agent runner...".to_string());
         let _ = tx.send(format!("[SYSTEM] Spawning: {:?}", self.agy_path));
         let _ = tx.send("[STAGE] Generating content with Antigravity engine...".to_string());
@@ -110,7 +120,7 @@ impl AgentRunner {
             }
         });
 
-        let status = match tokio::time::timeout(self.timeout, child.wait()).await {
+        let status = match tokio::time::timeout(effective_timeout, child.wait()).await {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => {
                 if let Some(ref path) = temp_file {
@@ -129,7 +139,7 @@ impl AgentRunner {
                 }
                 let msg = format!(
                     "Antigravity agent process timed out after {:?}",
-                    self.timeout
+                    effective_timeout
                 );
                 let _ = tx.send(format!("[ERROR] {}", msg));
                 return Err(msg);
@@ -232,5 +242,73 @@ mod tests {
     #[test]
     fn test_create_no_window_constant() {
         assert_eq!(CREATE_NO_WINDOW, 0x08000000);
+    }
+
+    #[tokio::test]
+    async fn test_agent_runner_custom_timeout_override() {
+        let temp_dir = std::env::temp_dir();
+        #[cfg(unix)]
+        let script_path = temp_dir.join(format!(
+            "slow_test_agy_override_{}.sh",
+            Uuid::new_v4().simple()
+        ));
+        #[cfg(windows)]
+        let script_path = temp_dir.join(format!(
+            "slow_test_agy_override_{}.bat",
+            Uuid::new_v4().simple()
+        ));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::write(&script_path, "#!/bin/sh\nsleep 2\n").expect("write test script");
+            let mut perms = std::fs::metadata(&script_path)
+                .expect("metadata")
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script_path, perms).expect("set permissions");
+        }
+
+        #[cfg(windows)]
+        {
+            std::fs::write(&script_path, "@echo off\r\nping 127.0.0.1 -n 3 > nul\r\n")
+                .expect("write test script");
+        }
+
+        // Runner has a large 300 second timeout by default
+        let runner =
+            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_secs(300));
+        let (tx, mut rx) = tokio::sync::broadcast::channel(32);
+
+        // Override with 50ms timeout
+        let res = runner
+            .execute_with_timeout(
+                "Test prompt with timeout override",
+                tx,
+                Some(std::time::Duration::from_millis(50)),
+            )
+            .await;
+
+        let _ = std::fs::remove_file(&script_path);
+
+        assert!(
+            res.is_err(),
+            "Expected timeout error with override, got {:?}",
+            res
+        );
+        let err = res.unwrap_err();
+        assert!(err.contains("timed out after 50ms"), "Error was: {}", err);
+
+        let mut received_error = false;
+        while let Ok(msg) = rx.try_recv() {
+            if msg.contains("timed out after 50ms") && msg.contains("[ERROR]") {
+                received_error = true;
+                break;
+            }
+        }
+        assert!(
+            received_error,
+            "Broadcast receiver should have received timeout [ERROR] event with override duration"
+        );
     }
 }
