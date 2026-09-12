@@ -6,6 +6,8 @@ import {
   getAutoPostDestination,
 } from "./ReviewQueue";
 import type { ReviewItem } from "../types";
+import { setupMockBlobUrl } from "../test";
+import type { MockBlobUrlController } from "../test";
 
 const mockItems: ReviewItem[] = [
   {
@@ -39,6 +41,7 @@ const mockItems: ReviewItem[] = [
 ];
 
 describe("ReviewQueue Component", () => {
+  let mockBlobUrl: MockBlobUrlController | null = null;
   let vibrateMock: ReturnType<typeof vi.fn>;
   let mockOscillator: {
     type: string;
@@ -59,6 +62,7 @@ describe("ReviewQueue Component", () => {
   };
 
   beforeEach(() => {
+    mockBlobUrl = setupMockBlobUrl();
     vi.useFakeTimers();
     localStorage.clear();
     resetSharedAudioContextForTesting();
@@ -112,6 +116,10 @@ describe("ReviewQueue Component", () => {
     vi.restoreAllMocks();
     localStorage.clear();
     resetSharedAudioContextForTesting();
+    if (mockBlobUrl) {
+      mockBlobUrl.restore();
+      mockBlobUrl = null;
+    }
   });
 
   it("renders card deck with initial review items", () => {
@@ -764,6 +772,79 @@ describe("ReviewQueue Component", () => {
       expect(screen.queryByText(publishedItem.title)).toBeNull();
       expect(screen.getByText("From GitHub Issue to Verified Pull Request")).toBeDefined();
       expect(screen.getByText("Export Approved (1)")).toBeDefined();
+    });
+  });
+
+  describe("Markdown Asset Export with mockBlobUrl", () => {
+    it("downloads bundled markdown file for approved and published assets", async () => {
+      const exportableItems: ReviewItem[] = [
+        {
+          ...mockItems[0],
+          status: "Approved",
+        },
+        {
+          ...mockItems[1],
+          status: "Published",
+        },
+      ];
+
+      render(<ReviewQueue items={exportableItems} />);
+
+      const exportBtn = screen.getByText("Export Approved (2)");
+      expect((exportBtn.closest("button") as HTMLButtonElement).disabled).toBe(false);
+
+      fireEvent.click(exportBtn);
+
+      expect(screen.getByText(/Export Approved Growth Assets/)).toBeDefined();
+
+      const downloadMdBtn = screen.getByRole("button", { name: /download \.md/i });
+      fireEvent.click(downloadMdBtn);
+
+      expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+      const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+      expect(blob).toBeInstanceOf(Blob);
+      expect((blob as Blob).type).toBe("text/markdown;charset=utf-8");
+
+      const markdownContent = await (blob as Blob).text();
+      expect(markdownContent).toContain("# 1. How Git Worktrees Solve Agent Hallucination");
+      expect(markdownContent).toContain("**Type:** article | **Channel:** Website");
+      expect(markdownContent).toContain("Preventing collisions in multi-agent coding.");
+      expect(markdownContent).toContain("Full content of article 1...");
+      expect(markdownContent).toContain(
+        "**Backlinks:** https://github.com/Ivy-Interactive/Ivy-Tendril",
+      );
+      expect(markdownContent).toContain("# 2. From GitHub Issue to Verified Pull Request");
+      expect(markdownContent).toContain("**Type:** video_demo | **Channel:** LinkedIn");
+      expect(markdownContent).toContain("========================================");
+
+      expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+      expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+      expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
+    });
+
+    it("downloads bundled markdown when exporting approved items from empty deck state", async () => {
+      const approvedItem: ReviewItem = {
+        ...mockItems[0],
+        status: "Approved",
+      };
+
+      render(<ReviewQueue items={[approvedItem]} />);
+
+      const exportBtn = screen.getByText("Export 1 Approved Items");
+      fireEvent.click(exportBtn);
+
+      const downloadMdBtn = screen.getByRole("button", { name: /download \.md/i });
+      fireEvent.click(downloadMdBtn);
+
+      expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+      const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+      expect(blob).toBeInstanceOf(Blob);
+      const markdownContent = await (blob as Blob).text();
+      expect(markdownContent).toContain("# 1. How Git Worktrees Solve Agent Hallucination");
+
+      expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+      expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+      expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
     });
   });
 });
