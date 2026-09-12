@@ -1,5 +1,7 @@
 pub mod runner;
 
+use crate::db::TaskTombstone;
+use chrono::Utc;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -8,11 +10,15 @@ pub use runner::AgentRunner;
 
 pub const DEFAULT_COMPLETED_TASK_TTL: std::time::Duration = std::time::Duration::from_secs(3600); // 1 hour
 pub const DEFAULT_MAX_COMPLETED_TASKS: usize = 100;
+pub const DEFAULT_TOMBSTONE_RETENTION: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600); // 7 days
+pub const DEFAULT_MAX_TOMBSTONES: usize = 1000;
 
 #[derive(Clone, Debug)]
 pub struct TaskManagerConfig {
     pub completed_ttl: std::time::Duration,
     pub max_completed_tasks: usize,
+    pub tombstone_retention: std::time::Duration,
+    pub max_tombstones: usize,
 }
 
 impl Default for TaskManagerConfig {
@@ -28,9 +34,22 @@ impl Default for TaskManagerConfig {
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(DEFAULT_MAX_COMPLETED_TASKS);
 
+        let tombstone_retention = std::env::var("TASK_TOMBSTONE_RETENTION_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(DEFAULT_TOMBSTONE_RETENTION);
+
+        let max_tombstones = std::env::var("TASK_MAX_TOMBSTONES")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_TOMBSTONES);
+
         Self {
             completed_ttl,
             max_completed_tasks,
+            tombstone_retention,
+            max_tombstones,
         }
     }
 }
@@ -54,7 +73,7 @@ pub struct TaskManagerPersistence {
 pub struct TaskManager {
     runner: AgentRunner,
     tasks: Arc<RwLock<HashMap<String, TaskEntry>>>,
-    evicted_tasks: Arc<RwLock<VecDeque<String>>>,
+    evicted_tasks: Arc<RwLock<VecDeque<TaskTombstone>>>,
     config: TaskManagerConfig,
     persistence: Option<Arc<TaskManagerPersistence>>,
 }
@@ -74,6 +93,18 @@ impl TaskManager {
         }
     }
 
+    fn is_tombstone_expired(
+        tombstone: &TaskTombstone,
+        retention: std::time::Duration,
+        now: chrono::DateTime<Utc>,
+    ) -> bool {
+        if let Ok(chrono_retention) = chrono::Duration::from_std(retention) {
+            now.signed_duration_since(tombstone.evicted_at) >= chrono_retention
+        } else {
+            false
+        }
+    }
+
     pub async fn with_persistence(
         runner: AgentRunner,
         config: TaskManagerConfig,
@@ -84,12 +115,17 @@ impl TaskManager {
             let s = state.read().await;
             s.task_tombstones.clone()
         };
+        let now = Utc::now();
         let mut deque = VecDeque::new();
-        for id in initial_tombstones {
-            if deque.len() >= 1000 {
-                deque.pop_front();
+        for tombstone in initial_tombstones {
+            if !Self::is_tombstone_expired(&tombstone, config.tombstone_retention, now)
+                && config.max_tombstones > 0
+            {
+                while deque.len() >= config.max_tombstones {
+                    deque.pop_front();
+                }
+                deque.push_back(tombstone);
             }
-            deque.push_back(id);
         }
 
         Self {
@@ -110,33 +146,41 @@ impl TaskManager {
             let s = state.read().await;
             s.task_tombstones.clone()
         };
+        let now = Utc::now();
         {
             let mut evicted = self.evicted_tasks.write().await;
-            for id in initial_tombstones {
-                if !evicted.contains(&id) {
-                    if evicted.len() >= 1000 {
+            for tombstone in initial_tombstones {
+                if !Self::is_tombstone_expired(&tombstone, self.config.tombstone_retention, now)
+                    && !evicted.iter().any(|t| t.task_id == tombstone.task_id)
+                    && self.config.max_tombstones > 0
+                {
+                    while evicted.len() >= self.config.max_tombstones {
                         evicted.pop_front();
                     }
-                    evicted.push_back(id);
+                    evicted.push_back(tombstone);
                 }
             }
         }
         self.persistence = Some(Arc::new(TaskManagerPersistence { state, data_file }));
     }
 
-    pub async fn load_tombstones(&self, tombstones: impl IntoIterator<Item = String>) {
+    pub async fn load_tombstones(&self, tombstones: impl IntoIterator<Item = TaskTombstone>) {
+        let now = Utc::now();
         let mut evicted = self.evicted_tasks.write().await;
-        for id in tombstones {
-            if !evicted.contains(&id) {
-                if evicted.len() >= 1000 {
+        for tombstone in tombstones {
+            if !Self::is_tombstone_expired(&tombstone, self.config.tombstone_retention, now)
+                && !evicted.iter().any(|t| t.task_id == tombstone.task_id)
+                && self.config.max_tombstones > 0
+            {
+                while evicted.len() >= self.config.max_tombstones {
                     evicted.pop_front();
                 }
-                evicted.push_back(id);
+                evicted.push_back(tombstone);
             }
         }
     }
 
-    async fn sync_tombstones(&self, evicted: &VecDeque<String>) {
+    async fn sync_tombstones(&self, evicted: &VecDeque<TaskTombstone>) {
         if let Some(p) = &self.persistence {
             let mut state = p.state.write().await;
             state.task_tombstones = evicted.iter().cloned().collect();
@@ -155,14 +199,15 @@ impl TaskManager {
                 entry.last_accessed = std::time::Instant::now();
                 (entry.tx.clone(), false, VecDeque::new())
             } else {
-                let (pruned_count, removed_tombstone, evicted_snapshot) = {
+                let (pruned_count, expired_tombstones, removed_tombstone, evicted_snapshot) = {
                     let mut evicted = self.evicted_tasks.write().await;
-                    let pruned = Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
+                    let (pruned, expired) =
+                        Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
                     let before_len = evicted.len();
-                    evicted.retain(|id| id != task_id);
+                    evicted.retain(|t| t.task_id != task_id);
                     let removed = evicted.len() < before_len;
                     let snapshot = evicted.clone();
-                    (pruned, removed, snapshot)
+                    (pruned, expired, removed, snapshot)
                 };
 
                 let (tx, mut rx) = broadcast::channel::<String>(256);
@@ -203,7 +248,11 @@ impl TaskManager {
                     last_accessed: now,
                 };
                 map.insert(task_id.to_string(), entry);
-                (tx, pruned_count > 0 || removed_tombstone, evicted_snapshot)
+                (
+                    tx,
+                    pruned_count > 0 || expired_tombstones > 0 || removed_tombstone,
+                    evicted_snapshot,
+                )
             }
         };
 
@@ -238,7 +287,7 @@ impl TaskManager {
 
     pub async fn is_evicted(&self, task_id: &str) -> bool {
         let evicted = self.evicted_tasks.read().await;
-        evicted.iter().any(|id| id == task_id)
+        evicted.iter().any(|t| t.task_id == task_id)
     }
 
     pub async fn subscribe(&self, task_id: &str) -> (Vec<String>, broadcast::Receiver<String>) {
@@ -289,15 +338,16 @@ impl TaskManager {
     /// Prune completed tasks according to TTL and maximum completed task capacity.
     /// Incomplete tasks are never pruned. Returns the number of evicted tasks.
     pub async fn prune_completed(&self) -> usize {
-        let (evicted_count, evicted_snapshot) = {
+        let (evicted_count, expired_tombstones, evicted_snapshot) = {
             let mut map = self.tasks.write().await;
             let mut evicted = self.evicted_tasks.write().await;
-            let count = Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
+            let (count, expired) =
+                Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
             let snapshot = evicted.clone();
-            (count, snapshot)
+            (count, expired, snapshot)
         };
 
-        if evicted_count > 0 {
+        if evicted_count > 0 || expired_tombstones > 0 {
             self.sync_tombstones(&evicted_snapshot).await;
         }
 
@@ -306,13 +356,19 @@ impl TaskManager {
 
     fn prune_completed_locked(
         map: &mut HashMap<String, TaskEntry>,
-        evicted_tasks: &mut VecDeque<String>,
+        evicted_tasks: &mut VecDeque<TaskTombstone>,
         config: &TaskManagerConfig,
-    ) -> usize {
+    ) -> (usize, usize) {
         let now = std::time::Instant::now();
-        let mut evicted = 0;
+        let now_utc = Utc::now();
+        let mut evicted_count = 0;
 
-        // 1. Evict tasks exceeding TTL
+        // 1. Prune tombstones exceeding retention window
+        let before_tombstones = evicted_tasks.len();
+        evicted_tasks.retain(|t| !Self::is_tombstone_expired(t, config.tombstone_retention, now_utc));
+        let expired_tombstones = before_tombstones - evicted_tasks.len();
+
+        // 2. Evict tasks exceeding TTL
         map.retain(|id, entry| {
             if entry.is_done {
                 let completed_at = entry.completed_at.unwrap_or(entry.created_at);
@@ -323,18 +379,23 @@ impl TaskManager {
                         "[EXPIRED] Task execution history expired and was evicted from cache."
                             .to_string(),
                     );
-                    if evicted_tasks.len() >= 1000 {
-                        evicted_tasks.pop_front();
+                    if config.max_tombstones > 0 {
+                        while evicted_tasks.len() >= config.max_tombstones {
+                            evicted_tasks.pop_front();
+                        }
+                        evicted_tasks.push_back(TaskTombstone {
+                            task_id: id.clone(),
+                            evicted_at: now_utc,
+                        });
                     }
-                    evicted_tasks.push_back(id.clone());
-                    evicted += 1;
+                    evicted_count += 1;
                     return false;
                 }
             }
             true
         });
 
-        // 2. If completed tasks count still exceeds max_completed_tasks, evict LRU completed tasks
+        // 3. If completed tasks count still exceeds max_completed_tasks, evict LRU completed tasks
         let mut completed_keys: Vec<(String, std::time::Instant)> = map
             .iter()
             .filter(|(_, entry)| entry.is_done)
@@ -351,16 +412,21 @@ impl TaskManager {
                         "[EXPIRED] Task execution history expired and was evicted from cache."
                             .to_string(),
                     );
-                    if evicted_tasks.len() >= 1000 {
-                        evicted_tasks.pop_front();
+                    if config.max_tombstones > 0 {
+                        while evicted_tasks.len() >= config.max_tombstones {
+                            evicted_tasks.pop_front();
+                        }
+                        evicted_tasks.push_back(TaskTombstone {
+                            task_id: id,
+                            evicted_at: now_utc,
+                        });
                     }
-                    evicted_tasks.push_back(id);
-                    evicted += 1;
+                    evicted_count += 1;
                 }
             }
         }
 
-        evicted
+        (evicted_count, expired_tombstones)
     }
 
     /// Return total number of tracked tasks.

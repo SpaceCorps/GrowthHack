@@ -481,6 +481,46 @@ pub struct PlaygroundMetrics {
     pub avg_completion_seconds: f64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskTombstone {
+    pub task_id: String,
+    pub evicted_at: DateTime<Utc>,
+}
+
+impl TaskTombstone {
+    pub fn new(task_id: impl Into<String>, evicted_at: DateTime<Utc>) -> Self {
+        Self {
+            task_id: task_id.into(),
+            evicted_at,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TaskTombstoneItem {
+    Structured(TaskTombstone),
+    Legacy(String),
+}
+
+pub fn deserialize_task_tombstones<'de, D>(deserializer: D) -> Result<Vec<TaskTombstone>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let items = Option::<Vec<TaskTombstoneItem>>::deserialize(deserializer)?
+        .unwrap_or_default();
+    Ok(items
+        .into_iter()
+        .map(|item| match item {
+            TaskTombstoneItem::Structured(t) => t,
+            TaskTombstoneItem::Legacy(task_id) => TaskTombstone {
+                task_id,
+                evicted_at: Utc::now(),
+            },
+        })
+        .collect())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GrowthState {
     pub issues: Vec<GrowthIssue>,
@@ -515,8 +555,8 @@ pub struct GrowthState {
     pub global_engagement_snapshots: Vec<EngagementSnapshot>,
     #[serde(default)]
     pub engagement_alerts: Vec<EngagementMilestoneAlert>,
-    #[serde(default)]
-    pub task_tombstones: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_task_tombstones")]
+    pub task_tombstones: Vec<TaskTombstone>,
 }
 
 pub type SharedState = Arc<RwLock<GrowthState>>;
@@ -3323,10 +3363,13 @@ mod tests {
     #[test]
     fn test_growth_state_tombstones_roundtrip() {
         let mut state = GrowthState::seed_default();
+        let t1 = Utc::now();
+        let t2 = t1 + chrono::Duration::seconds(10);
+        let t3 = t1 + chrono::Duration::seconds(20);
         state.task_tombstones = vec![
-            "task-evicted-1".to_string(),
-            "task-evicted-2".to_string(),
-            "task-evicted-3".to_string(),
+            TaskTombstone::new("task-evicted-1", t1),
+            TaskTombstone::new("task-evicted-2", t2),
+            TaskTombstone::new("task-evicted-3", t3),
         ];
 
         let json = serde_json::to_string_pretty(&state).expect("Serialization should succeed");
@@ -3334,9 +3377,38 @@ mod tests {
             serde_json::from_str(&json).expect("Deserialization should succeed");
 
         assert_eq!(deserialized.task_tombstones.len(), 3);
-        assert_eq!(deserialized.task_tombstones[0], "task-evicted-1");
-        assert_eq!(deserialized.task_tombstones[1], "task-evicted-2");
-        assert_eq!(deserialized.task_tombstones[2], "task-evicted-3");
+        assert_eq!(deserialized.task_tombstones[0].task_id, "task-evicted-1");
+        assert_eq!(deserialized.task_tombstones[0].evicted_at, t1);
+        assert_eq!(deserialized.task_tombstones[1].task_id, "task-evicted-2");
+        assert_eq!(deserialized.task_tombstones[1].evicted_at, t2);
+        assert_eq!(deserialized.task_tombstones[2].task_id, "task-evicted-3");
+        assert_eq!(deserialized.task_tombstones[2].evicted_at, t3);
+    }
+
+    #[test]
+    fn test_growth_state_tombstones_legacy_string_deserialization() {
+        let state = GrowthState::seed_default();
+        let mut value = serde_json::to_value(&state).expect("To JSON value should succeed");
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "task_tombstones".to_string(),
+                serde_json::json!(["task-legacy-1", "task-legacy-2"]),
+            );
+        }
+
+        let json = serde_json::to_string(&value).expect("Serialization should succeed");
+        let deserialized: GrowthState =
+            serde_json::from_str(&json).expect("Deserialization of legacy string array should succeed");
+
+        assert_eq!(deserialized.task_tombstones.len(), 2);
+        assert_eq!(deserialized.task_tombstones[0].task_id, "task-legacy-1");
+        assert_eq!(deserialized.task_tombstones[1].task_id, "task-legacy-2");
+        assert!(
+            Utc::now()
+                .signed_duration_since(deserialized.task_tombstones[0].evicted_at)
+                .num_seconds()
+                < 10
+        );
     }
 
     #[test]
