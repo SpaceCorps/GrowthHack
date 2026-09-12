@@ -3,6 +3,7 @@ import { ActionButton } from "./ActionButton";
 import { ArticleBacklinksTab } from "./ArticleBacklinksTab";
 import { ArticleExportTab } from "./ArticleExportTab";
 import { ArticleEngagementTab } from "./ArticleEngagementTab";
+import { SegmentedControl } from "./SegmentedControl";
 import type { Article } from "../types";
 import { X, Copy, Check, Globe, Send, Share2, FileText, Code, Activity } from "lucide-react";
 
@@ -100,66 +101,45 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           <p className="text-sm text-slate-400 mt-1">{article.summary}</p>
 
           {/* Sub-nav Tabs */}
-          <div className="flex items-center space-x-4 mt-4 border-b border-slate-800">
-            <button
-              onClick={() => setActiveTab("content")}
-              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-                activeTab === "content"
-                  ? "border-emerald-400 text-emerald-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Article Reading View</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("raw")}
-              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-                activeTab === "raw"
-                  ? "border-emerald-400 text-emerald-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Code className="w-3.5 h-3.5" />
-              <span>Raw Markdown</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("backlinks")}
-              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-                activeTab === "backlinks"
-                  ? "border-emerald-400 text-emerald-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>
-                Backlinks & Citations (
-                {(article.backlinks?.length || 0) + (article.outbound_citations?.length || 0)})
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab("export")}
-              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-                activeTab === "export"
-                  ? "border-cyan-400 text-cyan-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Export & Syndicate ({exportsList.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTab("engagement")}
-              className={`pb-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-                activeTab === "engagement"
-                  ? "border-pink-400 text-pink-300"
-                  : "border-transparent text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>Engagement & Velocity ({article.engagement_snapshots?.length || 0})</span>
-            </button>
-          </div>
+          <SegmentedControl
+            appearance="underline"
+            ariaLabel="Article view tabs"
+            value={activeTab}
+            onChange={(tab) => setActiveTab(tab)}
+            options={[
+              {
+                value: "content",
+                label: "Article Reading View",
+                icon: <FileText className="w-3.5 h-3.5" />,
+                variant: "emerald",
+              },
+              {
+                value: "raw",
+                label: "Raw Markdown",
+                icon: <Code className="w-3.5 h-3.5" />,
+                variant: "emerald",
+              },
+              {
+                value: "backlinks",
+                label: `Backlinks & Citations (${(article.backlinks?.length || 0) + (article.outbound_citations?.length || 0)})`,
+                icon: <Globe className="w-3.5 h-3.5" />,
+                variant: "emerald",
+              },
+              {
+                value: "export",
+                label: `Export & Syndicate (${exportsList.length})`,
+                icon: <Share2 className="w-3.5 h-3.5" />,
+                variant: "cyan",
+              },
+              {
+                value: "engagement",
+                label: `Engagement & Velocity (${article.engagement_snapshots?.length || 0})`,
+                icon: <Activity className="w-3.5 h-3.5" />,
+                variant: "pink",
+              },
+            ]}
+            className="mt-4"
+          />
         </div>
 
         {/* Modal Body */}
