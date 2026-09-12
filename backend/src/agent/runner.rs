@@ -432,9 +432,10 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&script_path, perms).expect("set permissions");
 
-        // Execute AgentRunner with a short timeout (500ms)
+        // Execute AgentRunner with a short timeout (1500ms), large enough that the script
+        // reliably writes its child PID under heavy test concurrency
         let runner =
-            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(500));
+            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(1500));
         let (tx, _rx) = tokio::sync::broadcast::channel(32);
 
         let res = runner
@@ -443,7 +444,9 @@ mod tests {
 
         assert!(res.is_err(), "Expected timeout error, got {:?}", res);
         let err = res.unwrap_err();
-        assert!(err.contains("timed out after 500ms"), "Error was: {}", err);
+        // Duration's Debug format renders sub-second values as "500ms" but second-scale
+        // values as "1.5s" rather than "1500ms".
+        assert!(err.contains("timed out after 1.5s"), "Error was: {}", err);
 
         // Read recorded child PID from temporary file
         assert!(
