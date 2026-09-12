@@ -1111,13 +1111,15 @@ export const DoctorDemo: React.FC = () => {
                 >
                   Cancel
                 </ActionButton>
-                <button
+                <ActionButton
                   type="submit"
-                  disabled={submittingScenario}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold disabled:opacity-50"
+                  variant="cyan"
+                  size="md"
+                  loading={submittingScenario}
+                  loadingText="Creating..."
                 >
-                  {submittingScenario ? "Creating..." : "Create Scenario"}
-                </button>
+                  Create Scenario
+                </ActionButton>
               </div>
             </form>
           </div>
