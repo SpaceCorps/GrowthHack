@@ -842,23 +842,17 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                     </p>
                   </div>
 
-                  <button
+                  <ActionButton
+                    variant="cyan"
+                    size="md"
+                    loading={isExportingIvy}
+                    loadingText="Exporting..."
+                    icon={<Download className="w-4 h-4" />}
                     onClick={handleExportIvyWeb}
-                    disabled={isExportingIvy}
-                    className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                    className="shrink-0"
                   >
-                    {isExportingIvy ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Exporting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span>Export to Ivy Web</span>
-                      </>
-                    )}
-                  </button>
+                    Export to Ivy Web
+                  </ActionButton>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -900,24 +894,16 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                       </span>
                     </div>
 
-                    <button
-                      type="button"
+                    <ActionButton
+                      variant="secondary"
+                      size="sm"
+                      loading={isSyncingHero}
+                      loadingText="Syncing Asset..."
+                      icon={<RefreshCw className="w-3.5 h-3.5 text-cyan-400" />}
                       onClick={handleSyncHeroAsset}
-                      disabled={isSyncingHero}
-                      className="flex items-center justify-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition-all hover:scale-[1.02] disabled:opacity-50"
                     >
-                      {isSyncingHero ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Syncing Asset...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Sync Hero Asset</span>
-                        </>
-                      )}
-                    </button>
+                      Sync Hero Asset
+                    </ActionButton>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -1074,49 +1060,38 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
 
                       {/* Action Toolbar */}
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
+                        <ActionButton
+                          variant="cyan"
+                          size="sm"
+                          loading={isSyncingRenderedPng}
+                          loadingText="Rasterizing & Syncing..."
+                          icon={<Upload className="w-3.5 h-3.5" />}
                           onClick={handleSyncRenderedPng}
-                          disabled={isSyncingRenderedPng}
-                          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow transition-all hover:scale-[1.02] disabled:opacity-50 cursor-pointer"
                         >
-                          {isSyncingRenderedPng ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Rasterizing &amp; Syncing...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>Sync Rendered PNG</span>
-                            </>
-                          )}
-                        </button>
+                          Sync Rendered PNG
+                        </ActionButton>
 
-                        <button
-                          type="button"
+                        <ActionButton
+                          variant="secondary"
+                          size="sm"
+                          loading={isRasterizing}
+                          loadingText="Download PNG"
+                          icon={<Download className="w-3.5 h-3.5 text-cyan-400" />}
                           onClick={handleDownloadPng}
-                          disabled={isRasterizing}
-                          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition-all hover:scale-[1.02] disabled:opacity-50 cursor-pointer"
                           title="Download high-resolution 1200x630 PNG for Twitter/X and LinkedIn"
                         >
-                          {isRasterizing ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Download className="w-3.5 h-3.5 text-cyan-400" />
-                          )}
-                          <span>Download PNG</span>
-                        </button>
+                          Download PNG
+                        </ActionButton>
 
-                        <button
-                          type="button"
+                        <ActionButton
+                          variant="secondary"
+                          size="sm"
+                          icon={<Code className="w-3.5 h-3.5 text-indigo-400" />}
                           onClick={handleDownloadSvg}
-                          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition-all hover:scale-[1.02] cursor-pointer"
                           title="Download standalone vector SVG"
                         >
-                          <Code className="w-3.5 h-3.5 text-indigo-400" />
-                          <span>Download SVG</span>
-                        </button>
+                          Download SVG
+                        </ActionButton>
                       </div>
                     </div>
 
@@ -1305,24 +1280,17 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                     </button>
 
                     {(selectedChannel === "Dev.to" || selectedChannel === "Hashnode") && (
-                      <button
-                        type="button"
+                      <ActionButton
+                        variant="indigo"
+                        size="md"
+                        loading={isPublishing}
+                        loadingText={`Publishing to ${selectedChannel}...`}
+                        icon={<Send className="w-3.5 h-3.5" />}
                         onClick={handlePublishDirectApi}
-                        disabled={isPublishing}
-                        className="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md transition-all hover:scale-[1.02] disabled:opacity-50"
+                        className="hover:scale-[1.02]"
                       >
-                        {isPublishing ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Publishing to {selectedChannel}...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Publish to {selectedChannel}</span>
-                          </>
-                        )}
-                      </button>
+                        Publish to {selectedChannel}
+                      </ActionButton>
                     )}
 
                     <ActionButton
@@ -1477,18 +1445,16 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                         <ActionButton variant="ghost" onClick={() => setIsConfigOpen(false)}>
                           Cancel
                         </ActionButton>
-                        <button
+                        <ActionButton
                           type="submit"
-                          disabled={isSavingSettings}
-                          className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                          variant="cyan"
+                          size="sm"
+                          loading={isSavingSettings}
+                          loadingText="Save Credentials"
+                          icon={<Check className="w-3.5 h-3.5" />}
                         >
-                          {isSavingSettings ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                          <span>Save Credentials</span>
-                        </button>
+                          Save Credentials
+                        </ActionButton>
                       </div>
                     </div>
                   </form>
@@ -1781,32 +1747,30 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    <ActionButton
+                      variant="secondary"
+                      size="sm"
+                      loading={isResettingEngagement}
+                      disabled={isSeedingEngagement}
+                      loadingText="Resetting..."
+                      icon={<RotateCcw className="w-3.5 h-3.5 text-slate-400" />}
                       onClick={handleResetEngagement}
-                      disabled={isResettingEngagement || isSeedingEngagement}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
                       title="Reset engagement metrics, snapshots, and badges to initial zero state"
                     >
-                      {isResettingEngagement ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
-                      ) : (
-                        <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-                      )}
-                      <span>{isResettingEngagement ? "Resetting..." : "Reset Engagement"}</span>
-                    </button>
-                    <button
+                      Reset Engagement
+                    </ActionButton>
+                    <ActionButton
+                      variant="secondary"
+                      size="sm"
+                      loading={isSeedingEngagement}
+                      disabled={isResettingEngagement}
+                      loadingText="Seeding..."
+                      icon={<Sparkles className="w-3.5 h-3.5 text-amber-400" />}
                       onClick={handleSeedEngagement}
-                      disabled={isSeedingEngagement || isResettingEngagement}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors disabled:opacity-50"
                       title="Seed simulated engagement metrics and milestone alerts for testing"
                     >
-                      {isSeedingEngagement ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                      ) : (
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      )}
-                      <span>{isSeedingEngagement ? "Seeding..." : "Seed Demo Engagement"}</span>
-                    </button>
+                      Seed Demo Engagement
+                    </ActionButton>
                   </div>
                 </div>
 

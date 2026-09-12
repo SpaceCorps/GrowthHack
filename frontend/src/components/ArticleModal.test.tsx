@@ -409,4 +409,150 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       "Reset article engagement metrics, snapshots, and badges to initial zero state.",
     );
   });
+
+  it("renders action buttons with expected variants and sets aria-busy='true' during loading states", async () => {
+    const article: Article = {
+      id: "art-export-test",
+      title: "Action Button Modal Test",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Architecture",
+      summary: "Summary for action button test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    let exportResolve: ((val: any) => void) | null = null;
+    let syncHeroResolve: ((val: any) => void) | null = null;
+    let publishResolve: ((val: any) => void) | null = null;
+
+    const exportPromise = new Promise((resolve) => {
+      exportResolve = resolve;
+    });
+    const syncHeroPromise = new Promise((resolve) => {
+      syncHeroResolve = resolve;
+    });
+    const publishPromise = new Promise((resolve) => {
+      publishResolve = resolve;
+    });
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              devto_configured: true,
+              hashnode_configured: true,
+              publish_as_draft: false,
+            }),
+        });
+      }
+      if (url.includes("/format/")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              formatted_content: "Formatted markdown content for Dev.to",
+              preview_type: "markdown",
+            }),
+        });
+      }
+      if (url.includes("/export/ivy-web")) {
+        return exportPromise;
+      }
+      if (url.includes("/sync-assets")) {
+        return syncHeroPromise;
+      }
+      if (url.includes("/publish/")) {
+        return publishPromise;
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="export"
+        />,
+      );
+    });
+
+    // Allow initial useEffect (syndication settings fetch) to resolve
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 1. Export to Ivy Web button (variant="cyan", size="md")
+    const exportBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Export to Ivy Web"),
+    );
+    expect(exportBtn).toBeDefined();
+    expect(exportBtn!.className).toContain("bg-cyan-600");
+    expect(exportBtn!.getAttribute("aria-busy")).toBeNull();
+
+    act(() => {
+      exportBtn!.click();
+    });
+    expect(exportBtn!.getAttribute("aria-busy")).toBe("true");
+    expect(exportBtn!.textContent).toContain("Exporting...");
+    expect(exportBtn!.querySelector(".animate-spin")).not.toBeNull();
+
+    // 2. Sync Hero Asset button (variant="secondary", size="sm")
+    const syncHeroBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Sync Hero Asset"),
+    );
+    expect(syncHeroBtn).toBeDefined();
+    expect(syncHeroBtn!.className).toContain("bg-slate-800");
+    expect(syncHeroBtn!.getAttribute("aria-busy")).toBeNull();
+
+    act(() => {
+      syncHeroBtn!.click();
+    });
+    expect(syncHeroBtn!.getAttribute("aria-busy")).toBe("true");
+    expect(syncHeroBtn!.textContent).toContain("Syncing Asset...");
+    expect(syncHeroBtn!.querySelector(".animate-spin")).not.toBeNull();
+
+    // 3. Publish to Channel button (variant="indigo", size="md")
+    const publishBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Publish to Dev.to"),
+    );
+    expect(publishBtn).toBeDefined();
+    expect(publishBtn!.className).toContain("bg-indigo-600");
+    expect(publishBtn!.getAttribute("aria-busy")).toBeNull();
+
+    act(() => {
+      publishBtn!.click();
+    });
+    expect(publishBtn!.getAttribute("aria-busy")).toBe("true");
+    expect(publishBtn!.textContent).toContain("Publishing to Dev.to...");
+    expect(publishBtn!.querySelector(".animate-spin")).not.toBeNull();
+
+    // Resolve pending promises to cleanly tear down
+    await act(async () => {
+      exportResolve!({
+        ok: true,
+        json: () => Promise.resolve({ success: true, file_path: "path", record: {} }),
+      });
+      syncHeroResolve!({
+        ok: true,
+        json: () => Promise.resolve({ success: true, image_path: "path" }),
+      });
+      publishResolve!({
+        ok: true,
+        json: () => Promise.resolve({ success: true, url: "url", record: {} }),
+      });
+    });
+  });
 });
