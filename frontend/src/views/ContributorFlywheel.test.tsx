@@ -189,6 +189,8 @@ describe("ContributorFlywheel View", () => {
   let mockBlobUrl: MockBlobUrlController | null = null;
 
   beforeEach(() => {
+    localStorage.clear();
+
     // Mock clipboard
     mockClipboard = setupMockClipboard();
 
@@ -331,6 +333,27 @@ describe("ContributorFlywheel View", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       expect.stringContaining("git clone https://github.com/SpaceCorps/GrowthHack.git"),
     );
+  });
+
+  it("persists the onboarding checklist to localStorage and rehydrates on remount", async () => {
+    const { unmount } = render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("checkbox-step-1")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("checkbox-step-1"));
+
+    expect(JSON.parse(localStorage.getItem("growthhack_onboarding_checklist") ?? "{}")).toEqual({
+      "step-1": true,
+    });
+
+    unmount();
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect((screen.getByTestId("checkbox-step-1") as HTMLInputElement).checked).toBe(true);
+    });
   });
 
   it("filters issues by category and status", async () => {

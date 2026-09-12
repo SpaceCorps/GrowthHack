@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { ActionButton } from "../components/ActionButton";
+import { useLocalStorage } from "../hooks";
 import type { ReviewItem } from "../types";
 import {
   Check,
@@ -40,6 +41,9 @@ export const getAutoPostDestination = (type: ReviewItem["type"]): string =>
 type FilterType = "all" | "article" | "video_demo" | "trend_synthesis" | "listing_blurb";
 
 const SWIPE_THRESHOLD = 120;
+
+export const STORAGE_KEY_REVIEW_SOUND_ENABLED = "growth_review_sound_enabled";
+export const STORAGE_KEY_REVIEW_AUTO_POST_ENABLED = "growth_review_auto_post_enabled";
 
 interface DeckAction {
   item: ReviewItem;
@@ -119,15 +123,10 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   const hasFeedbackRef = React.useRef<boolean>(false);
 
   // Audio feedback state (persisted to localStorage)
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.localStorage) return true;
-    try {
-      const stored = localStorage.getItem("growth_review_sound_enabled");
-      return stored === null ? true : stored === "true";
-    } catch {
-      return true;
-    }
-  });
+  const [soundEnabled, setSoundEnabled] = useLocalStorage<boolean>(
+    STORAGE_KEY_REVIEW_SOUND_ENABLED,
+    true,
+  );
   const soundEnabledRef = React.useRef<boolean>(soundEnabled);
 
   useEffect(() => {
@@ -135,29 +134,14 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   }, [soundEnabled]);
 
   const handleToggleSound = () => {
-    setSoundEnabled((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          localStorage.setItem("growth_review_sound_enabled", String(next));
-        } catch {
-          // Ignore localStorage access errors
-        }
-      }
-      return next;
-    });
+    setSoundEnabled((prev) => !prev);
   };
 
   // Instant auto-post toggle (persisted to localStorage, default enabled)
-  const [autoPostEnabled, setAutoPostEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.localStorage) return true;
-    try {
-      const stored = localStorage.getItem("growth_review_auto_post_enabled");
-      return stored === null ? true : stored === "true";
-    } catch {
-      return true;
-    }
-  });
+  const [autoPostEnabled, setAutoPostEnabled] = useLocalStorage<boolean>(
+    STORAGE_KEY_REVIEW_AUTO_POST_ENABLED,
+    true,
+  );
   const autoPostEnabledRef = React.useRef<boolean>(autoPostEnabled);
 
   useEffect(() => {
@@ -165,17 +149,7 @@ export const ReviewQueue: React.FC<ReviewQueueProps> = ({
   }, [autoPostEnabled]);
 
   const handleToggleAutoPost = () => {
-    setAutoPostEnabled((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          localStorage.setItem("growth_review_auto_post_enabled", String(next));
-        } catch {
-          // Ignore localStorage access errors
-        }
-      }
-      return next;
-    });
+    setAutoPostEnabled((prev) => !prev);
   };
 
   // Dispatch feedback toast state

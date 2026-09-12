@@ -1,5 +1,6 @@
 import React from "react";
 import type { ActiveTab, AgentStatus } from "../types";
+import { useLocalStorage } from "../hooks";
 import {
   Target,
   FileText,
@@ -73,15 +74,10 @@ export const Navigation: React.FC<NavigationProps> = ({
   isCollapsed: controlledIsCollapsed,
   onToggleCollapse,
 }) => {
-  const [internalCollapsed, setInternalCollapsed] = React.useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.localStorage) return false;
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED);
-      return stored === "true";
-    } catch {
-      return false;
-    }
-  });
+  const [internalCollapsed, setInternalCollapsed] = useLocalStorage<boolean>(
+    STORAGE_KEY_SIDEBAR_COLLAPSED,
+    false,
+  );
   const isCollapsed =
     controlledIsCollapsed !== undefined ? controlledIsCollapsed : internalCollapsed;
 
@@ -89,17 +85,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     if (onToggleCollapse) {
       onToggleCollapse();
     } else {
-      setInternalCollapsed((prev) => {
-        const next = !prev;
-        if (typeof window !== "undefined" && window.localStorage) {
-          try {
-            localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, String(next));
-          } catch {
-            // Ignore localStorage access errors (e.g. security or quota errors)
-          }
-        }
-        return next;
-      });
+      setInternalCollapsed((prev) => !prev);
     }
   };
 

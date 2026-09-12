@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { ActionButton } from "../components/ActionButton";
+import { useLocalStorage } from "../hooks";
 import type { Article, TrendTopic } from "../types";
 import {
   Radio,
@@ -112,23 +113,6 @@ export const DEFAULT_DISCUSSION_PRESETS = [
 
 export const STORAGE_KEY_DISCUSSION_SOURCES = "trendradar_discussion_sources";
 
-const getInitialDiscussionSources = (): string[] => {
-  try {
-    if (typeof window !== "undefined" && window.localStorage) {
-      const saved = window.localStorage.getItem(STORAGE_KEY_DISCUSSION_SOURCES);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return [...DEFAULT_DISCUSSION_PRESETS];
-};
-
 interface TrendRadarProps {
   trends: TrendTopic[];
   articles?: Article[];
@@ -167,22 +151,13 @@ export const TrendRadar: React.FC<TrendRadarProps> = ({
     );
   };
 
-  const [discussionSources, setDiscussionSources] = useState<string[]>(getInitialDiscussionSources);
+  const [discussionSources, setDiscussionSources] = useLocalStorage<string[]>(
+    STORAGE_KEY_DISCUSSION_SOURCES,
+    DEFAULT_DISCUSSION_PRESETS,
+    { validate: (v): v is string[] => Array.isArray(v) && v.length > 0 },
+  );
   const [showDiscussionConfig, setShowDiscussionConfig] = useState<boolean>(false);
   const [customSourceInput, setCustomSourceInput] = useState<string>("");
-
-  useEffect(() => {
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        window.localStorage.setItem(
-          STORAGE_KEY_DISCUSSION_SOURCES,
-          JSON.stringify(discussionSources),
-        );
-      }
-    } catch {
-      // ignore
-    }
-  }, [discussionSources]);
 
   const toggleDiscussionPreset = (preset: string) => {
     setDiscussionSources((prev) =>
