@@ -6,8 +6,8 @@ import type {
   ContributingGuideResponse,
   AllContributorsResponse,
 } from "../types";
-import { setupMockFetch, setupMockClipboard } from "../test";
-import type { MockFetchController, MockClipboardController } from "../test";
+import { setupMockFetch, setupMockClipboard, setupMockBlobUrl } from "../test";
+import type { MockFetchController, MockClipboardController, MockBlobUrlController } from "../test";
 
 const mockIssues: ContributorIssue[] = [
   {
@@ -186,22 +186,14 @@ const mockGitHubUsers = [
 describe("ContributorFlywheel View", () => {
   let mockController: MockFetchController | null = null;
   let mockClipboard: MockClipboardController | null = null;
+  let mockBlobUrl: MockBlobUrlController | null = null;
 
   beforeEach(() => {
     // Mock clipboard
     mockClipboard = setupMockClipboard();
 
     // Mock URL object methods for download test
-    Object.defineProperty(window.URL, "createObjectURL", {
-      value: vi.fn().mockReturnValue("blob:mock-url"),
-      configurable: true,
-      writable: true,
-    });
-    Object.defineProperty(window.URL, "revokeObjectURL", {
-      value: vi.fn(),
-      configurable: true,
-      writable: true,
-    });
+    mockBlobUrl = setupMockBlobUrl();
 
     // Mock fetch via setupMockFetch
     mockController = setupMockFetch({
@@ -266,6 +258,10 @@ describe("ContributorFlywheel View", () => {
     if (mockController) {
       mockController.restore();
       mockController = null;
+    }
+    if (mockBlobUrl) {
+      mockBlobUrl.restore();
+      mockBlobUrl = null;
     }
   });
 
@@ -459,7 +455,8 @@ describe("ContributorFlywheel View", () => {
     // Download .all-contributorsrc file
     const downloadBtn = screen.getByTestId("download-all-contributorsrc-btn");
     fireEvent.click(downloadBtn);
-    expect(window.URL.createObjectURL).toHaveBeenCalled();
+    expect(mockBlobUrl!.createObjectURL).toHaveBeenCalled();
+    expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalled();
   });
 
   it("opens verification modal, submits contributor verification with PR generation, and displays CLI commands", async () => {
