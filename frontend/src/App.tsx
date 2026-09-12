@@ -1203,6 +1203,7 @@ export const App: React.FC = () => {
               }}
               onUpdateStatus={handleUpdateArticleStatus}
               onSyncMetrics={handleSyncMetrics}
+              onResetEngagement={fetchAll}
             />
           )}
 
