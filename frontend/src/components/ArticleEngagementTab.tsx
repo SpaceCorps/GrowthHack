@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ActionButton } from "./ActionButton";
 import { EngagementVelocityChart } from "./EngagementVelocityChart";
+import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
 import type { Article, EngagementHistoryResponse } from "../types";
 import {
   CheckCircle2,
@@ -33,25 +34,10 @@ export const ArticleEngagementTab: React.FC<ArticleEngagementTabProps> = ({
   const [seedSuccessBanner, setSeedSuccessBanner] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
 
-  // Close reset confirmation dialog on Escape key
-  useEffect(() => {
-    if (!showResetConfirm) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (isResettingEngagement) {
-          return;
-        }
-        e.stopPropagation();
-        setShowResetConfirm(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [showResetConfirm, isResettingEngagement]);
+  const { overlayRef: resetOverlayRef, onBackdropClick: onResetBackdropClick } = useOverlayDismiss(
+    () => setShowResetConfirm(false),
+    { enabled: showResetConfirm, locked: isResettingEngagement, stopPropagation: true },
+  );
 
   useEffect(() => {
     if (!article?.id) {
@@ -440,13 +426,10 @@ export const ArticleEngagementTab: React.FC<ArticleEngagementTabProps> = ({
       {/* Confirmation Dialog Modal for Single-Article Reset */}
       {showResetConfirm && (
         <div
+          ref={resetOverlayRef}
           data-nested-overlay="true"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isResettingEngagement) {
-              setShowResetConfirm(false);
-            }
-          }}
+          onClick={onResetBackdropClick}
         >
           <div
             className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
