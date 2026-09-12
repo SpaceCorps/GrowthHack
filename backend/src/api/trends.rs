@@ -649,87 +649,80 @@ pub async fn scout_trends(
         build_scout_prompt(payload.sources.as_deref())
     };
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(content) => {
-                let parsed_items = parse_scouted_topics(&content);
-                if parsed_items.is_empty() {
-                    let _ = tx.send(
-                        "[WARN] No structured topics could be parsed from scout output."
-                            .to_string(),
-                    );
-                } else {
-                    let mut state = state_arc.write().await;
-                    let mut added_count = 0;
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            let parsed_items = parse_scouted_topics(&content);
+            if parsed_items.is_empty() {
+                let _ = tx.send(
+                    "[WARN] No structured topics could be parsed from scout output."
+                        .to_string(),
+                );
+            } else {
+                let mut state = state_arc.write().await;
+                let mut added_count = 0;
 
-                    for item in parsed_items {
-                        let topic_clean = item.topic.trim().to_string();
-                        let url_clean = item.url.as_deref().unwrap_or("").trim().to_string();
+                for item in parsed_items {
+                    let topic_clean = item.topic.trim().to_string();
+                    let url_clean = item.url.as_deref().unwrap_or("").trim().to_string();
 
-                        let is_dup = state.trends.iter().any(|t| {
-                            t.topic.trim().eq_ignore_ascii_case(&topic_clean)
-                                || (!url_clean.is_empty()
-                                    && t.url.trim().eq_ignore_ascii_case(&url_clean))
-                        });
+                    let is_dup = state.trends.iter().any(|t| {
+                        t.topic.trim().eq_ignore_ascii_case(&topic_clean)
+                            || (!url_clean.is_empty()
+                                && t.url.trim().eq_ignore_ascii_case(&url_clean))
+                    });
 
-                        if !is_dup && !topic_clean.is_empty() {
-                            let source = item.source.unwrap_or_else(|| "Reddit".to_string());
-                            let url = if url_clean.is_empty() {
-                                "https://github.com/trending".to_string()
-                            } else {
-                                url_clean
-                            };
-                            let engagement = item
-                                .engagement
-                                .unwrap_or_else(|| "Active trending".to_string());
-                            let summary = item.summary.unwrap_or_default();
-                            let tie_in = match item.tendril_tie_in.as_deref() {
-                                Some("subtle") => "subtle",
-                                Some("none") => "none",
-                                _ => "direct",
-                            };
+                    if !is_dup && !topic_clean.is_empty() {
+                        let source = item.source.unwrap_or_else(|| "Reddit".to_string());
+                        let url = if url_clean.is_empty() {
+                            "https://github.com/trending".to_string()
+                        } else {
+                            url_clean
+                        };
+                        let engagement = item
+                            .engagement
+                            .unwrap_or_else(|| "Active trending".to_string());
+                        let summary = item.summary.unwrap_or_default();
+                        let tie_in = match item.tendril_tie_in.as_deref() {
+                            Some("subtle") => "subtle",
+                            Some("none") => "none",
+                            _ => "direct",
+                        };
 
-                            let new_trend = TrendTopic {
-                                id: format!("trend-{}", Uuid::new_v4().simple()),
-                                source,
-                                topic: topic_clean,
-                                url,
-                                engagement,
-                                summary,
-                                tendril_tie_in: tie_in.to_string(),
-                                status: "Scouted".to_string(),
-                                generated_article_id: None,
-                                created_at: Utc::now(),
-                            };
-                            state.trends.insert(0, new_trend);
-                            added_count += 1;
-                        }
-                    }
-
-                    if added_count > 0 {
-                        let _ = state.save(&data_file);
-                        let _ = tx.send(format!(
-                            "[SYSTEM] Successfully scouted and persisted {} new trend topics to Radar.",
-                            added_count
-                        ));
-                    } else {
-                        let _ = tx.send(
-                            "[SYSTEM] Scouted topics were already present in Radar (deduplicated)."
-                                .to_string(),
-                        );
+                        let new_trend = TrendTopic {
+                            id: format!("trend-{}", Uuid::new_v4().simple()),
+                            source,
+                            topic: topic_clean,
+                            url,
+                            engagement,
+                            summary,
+                            tendril_tie_in: tie_in.to_string(),
+                            status: "Scouted".to_string(),
+                            generated_article_id: None,
+                            created_at: Utc::now(),
+                        };
+                        state.trends.insert(0, new_trend);
+                        added_count += 1;
                     }
                 }
+
+                if added_count > 0 {
+                    let _ = state.save(&data_file);
+                    let _ = tx.send(format!(
+                        "[SYSTEM] Successfully scouted and persisted {} new trend topics to Radar.",
+                        added_count
+                    ));
+                } else {
+                    let _ = tx.send(
+                        "[SYSTEM] Scouted topics were already present in Radar (deduplicated)."
+                            .to_string(),
+                    );
+                }
             }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Scout execution failed: {}", e));
-            }
-        }
-    });
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
@@ -804,8 +797,6 @@ Requirements:
         tie_in_instruction
     );
 
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let state_arc = ctx.state.clone();
     let data_file = ctx.data_file.clone();
     let art_id_clone = article_id.clone();
@@ -813,58 +804,53 @@ Requirements:
     let topic_title = trend.topic.clone();
     let tie_in_clone = tie_in.clone();
 
-    tokio::spawn(async move {
-        match runner.execute(&prompt, tx.clone()).await {
-            Ok(content) => {
-                let mut state = state_arc.write().await;
-                let title = content
-                    .lines()
-                    .find(|l| l.starts_with("# "))
-                    .map(|l| l.trim_start_matches("# ").trim().to_string())
-                    .unwrap_or_else(|| format!("Trend Analysis: {}", topic_title));
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+            let mut state = state_arc.write().await;
+            let title = content
+                .lines()
+                .find(|l| l.starts_with("# "))
+                .map(|l| l.trim_start_matches("# ").trim().to_string())
+                .unwrap_or_else(|| format!("Trend Analysis: {}", topic_title));
 
-                let slug = slugify(&title);
-                let article = Article {
-                    id: art_id_clone.clone(),
-                    title,
-                    feature: "Trend Analysis".to_string(),
-                    channel: channel.clone(),
-                    angle: "Trend Radar".to_string(),
-                    summary: format!("Real-time synthesis of trending topic: {}", topic_title),
-                    content,
-                    backlinks: if tie_in_clone != "none" {
-                        vec!["https://github.com/Ivy-Interactive/Ivy-Tendril".to_string()]
-                    } else {
-                        vec![]
-                    },
-                    outbound_citations: vec![trend.url.clone()],
-                    status: "Ready".to_string(),
-                    created_at: Utc::now(),
-                    published_at: None,
-                    slug: Some(slug),
-                    exports: Vec::new(),
-                    engagement: None,
-                    engagement_snapshots: Vec::new(),
-                    engagement_badges: Vec::new(),
-                    milestone_alerts: Vec::new(),
-                };
-                state.articles.insert(0, article);
+            let slug = slugify(&title);
+            let article = Article {
+                id: art_id_clone.clone(),
+                title,
+                feature: "Trend Analysis".to_string(),
+                channel: channel.clone(),
+                angle: "Trend Radar".to_string(),
+                summary: format!("Real-time synthesis of trending topic: {}", topic_title),
+                content,
+                backlinks: if tie_in_clone != "none" {
+                    vec!["https://github.com/Ivy-Interactive/Ivy-Tendril".to_string()]
+                } else {
+                    vec![]
+                },
+                outbound_citations: vec![trend.url.clone()],
+                status: "Ready".to_string(),
+                created_at: Utc::now(),
+                published_at: None,
+                slug: Some(slug),
+                exports: Vec::new(),
+                engagement: None,
+                engagement_snapshots: Vec::new(),
+                engagement_badges: Vec::new(),
+                milestone_alerts: Vec::new(),
+            };
+            state.articles.insert(0, article);
 
-                if let Some(t) = state.trends.iter_mut().find(|t| t.id == trend_id_clone) {
-                    t.status = "Published".to_string();
-                    t.generated_article_id = Some(art_id_clone);
-                    t.tendril_tie_in = tie_in_clone;
-                }
-                let _ = state.save(&data_file);
-                let _ = tx.send(
-                    "[SYSTEM] Trend article synthesized and saved to website drafts!".to_string(),
-                );
+            if let Some(t) = state.trends.iter_mut().find(|t| t.id == trend_id_clone) {
+                t.status = "Published".to_string();
+                t.generated_article_id = Some(art_id_clone);
+                t.tendril_tie_in = tie_in_clone;
             }
-            Err(e) => {
-                let _ = tx.send(format!("[ERROR] Synthesis failed: {}", e));
-            }
-        }
-    });
+            let _ = state.save(&data_file);
+            let _ = tx.send(
+                "[SYSTEM] Trend article synthesized and saved to website drafts!".to_string(),
+            );
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,

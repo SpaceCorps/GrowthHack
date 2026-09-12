@@ -59,13 +59,8 @@ pub async fn run_custom_agent_task(
     Json(payload): Json<CustomAgentRunRequest>,
 ) -> impl IntoResponse {
     let task_id = format!("task-custom-{}", Uuid::new_v4().simple());
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
     let prompt = payload.prompt.clone();
-
-    tokio::spawn(async move {
-        let _ = runner.execute(&prompt, tx).await;
-    });
+    ctx.task_manager.spawn_task(&task_id, prompt).await;
 
     (
         StatusCode::ACCEPTED,

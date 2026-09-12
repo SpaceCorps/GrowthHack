@@ -1584,17 +1584,12 @@ pub async fn dispatch_package_pr(
     let prompt = build_upstream_pr_agent_prompt(&target, &manifest, version);
 
     let task_id = format!("task-pkg-pr-{}", Uuid::new_v4().simple());
-    let tx = ctx.task_manager.get_or_create_channel(&task_id).await;
-    let runner = ctx.task_manager.runner().clone();
-
     let target_id = target.id.clone();
     let target_key = target.target_key.clone();
     let ctx_clone = ctx.clone();
-    let tx_clone = tx.clone();
 
-    tokio::spawn(async move {
-        let exec_result = runner.execute(&prompt, tx_clone.clone()).await;
-        if let Ok(output) = exec_result {
+    ctx.task_manager
+        .spawn_task_with_callback(&task_id, prompt, move |output, tx| async move {
             if let Some(found_url) = extract_pr_url(&output) {
                 let mut state = ctx_clone.state.write().await;
                 if let Some(pkg) = state
@@ -1607,10 +1602,10 @@ pub async fn dispatch_package_pr(
                     pkg.updated_at = Utc::now();
                     let _ = state.save(&ctx_clone.data_file);
                 }
-                let _ = tx_clone.send(format!("[SYSTEM] Upstream PR registered: {}", found_url));
+                let _ = tx.send(format!("[SYSTEM] Upstream PR registered: {}", found_url));
             }
-        }
-    });
+        })
+        .await;
 
     (
         StatusCode::ACCEPTED,
