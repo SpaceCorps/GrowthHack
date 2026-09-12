@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "../components/ActionButton";
+import { useLocalStorage } from "../hooks";
 import type {
   AllContributorsRcResponse,
   AllContributorsResponse,
@@ -96,14 +97,10 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
   const [expandedIssues, setExpandedIssues] = useState<Record<string, boolean>>({});
 
   // Checklist state stored in localStorage
-  const [completedSteps, setCompletedSteps] = useState<Record<string, boolean>>(() => {
-    try {
-      const saved = localStorage.getItem("growthhack_onboarding_checklist");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [completedSteps, setCompletedSteps] = useLocalStorage<Record<string, boolean>>(
+    "growthhack_onboarding_checklist",
+    {},
+  );
 
   // Claim modal state
   const [claimingIssue, setClaimingIssue] = useState<ContributorIssue | null>(null);
@@ -229,13 +226,7 @@ export const ContributorFlywheel: React.FC<ContributorFlywheelProps> = ({ onIssu
   }, []);
 
   const handleToggleStep = (stepId: string) => {
-    const updated = { ...completedSteps, [stepId]: !completedSteps[stepId] };
-    setCompletedSteps(updated);
-    try {
-      localStorage.setItem("growthhack_onboarding_checklist", JSON.stringify(updated));
-    } catch (err) {
-      console.error("Failed to persist checklist state:", err);
-    }
+    setCompletedSteps((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
   };
 
   const handleCopy = (text: string, key: string) => {
