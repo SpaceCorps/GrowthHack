@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sync_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        let mut interval = tokio::time::interval(sync_ctx.config.engagement_sync_interval);
         loop {
             interval.tick().await;
             tracing::info!("Running periodic syndication engagement metrics sync...");
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let timeout_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+        let mut interval = tokio::time::interval(timeout_ctx.config.claim_timeout_interval);
         loop {
             interval.tick().await;
             tracing::info!("Running periodic contributor issue claim timeout sweep...");
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pr_poll_ctx = Arc::clone(&ctx);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1800));
+        let mut interval = tokio::time::interval(pr_poll_ctx.config.listing_pr_poll_interval);
         loop {
             interval.tick().await;
             tracing::info!("Running periodic PR merge status check for submitted listings...");
@@ -95,8 +95,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let prune_tm = ctx.task_manager.clone();
+    let task_eviction_interval = ctx.config.task_eviction_interval;
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15 * 60));
+        let mut interval = tokio::time::interval(task_eviction_interval);
         loop {
             interval.tick().await;
             tracing::info!("Running periodic completed task eviction sweep...");
