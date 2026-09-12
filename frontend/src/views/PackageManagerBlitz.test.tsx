@@ -2,8 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { PackageManagerBlitz } from "./PackageManagerBlitz";
 import type { PackageManagerTarget } from "../types";
-import { setupMockFetch, createMockGhAuthStatus, setupMockClipboard } from "../test";
-import type { MockFetchController, MockClipboardController } from "../test";
+import {
+  setupMockFetch,
+  createMockGhAuthStatus,
+  setupMockClipboard,
+  setupMockBlobUrl,
+} from "../test";
+import type { MockFetchController, MockClipboardController, MockBlobUrlController } from "../test";
 
 const mockPackages: PackageManagerTarget[] = [
   {
@@ -66,9 +71,11 @@ const mockPackages: PackageManagerTarget[] = [
 describe("PackageManagerBlitz View", () => {
   let mockController: MockFetchController | null = null;
   let mockClipboard: MockClipboardController | null = null;
+  let mockBlobUrl: MockBlobUrlController | null = null;
 
   beforeEach(() => {
     mockClipboard = setupMockClipboard();
+    mockBlobUrl = setupMockBlobUrl();
     mockController = setupMockFetch({
       handlers: {
         "/api/packages/gh-auth-status": createMockGhAuthStatus(),
@@ -98,6 +105,10 @@ describe("PackageManagerBlitz View", () => {
     if (mockController) {
       mockController.restore();
       mockController = null;
+    }
+    if (mockBlobUrl) {
+      mockBlobUrl.restore();
+      mockBlobUrl = null;
     }
   });
 
@@ -527,5 +538,70 @@ describe("PackageManagerBlitz View", () => {
 
     await screen.findByTestId("fork-status-synchronized");
     expect(screen.queryByTestId("fork-status-warning")).toBeNull();
+  });
+
+  it("downloads active package manifest using mockBlobUrl", async () => {
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const inspectBtn = screen.getByTestId("inspect-manifest-homebrew");
+    fireEvent.click(inspectBtn);
+
+    const downloadBtn = await screen.findByTestId("download-manifest-btn");
+    expect(downloadBtn.textContent).toContain("homebrew.manifest");
+
+    fireEvent.click(downloadBtn);
+
+    expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+    const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(await (blob as Blob).text()).toBe("Mock content for homebrew");
+    expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+    expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+    expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
+  });
+
+  it("downloads manifest when switching target tabs", async () => {
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const inspectBtn = screen.getByTestId("inspect-manifest-homebrew");
+    fireEvent.click(inspectBtn);
+
+    await screen.findByTestId("download-manifest-btn");
+
+    // Switch to winget tab
+    const wingetTab = screen.getByTestId("manifest-tab-winget");
+    fireEvent.click(wingetTab);
+
+    // Wait for winget manifest content to load
+    await screen.findByText("Mock content for winget");
+
+    const downloadBtn = screen.getByTestId("download-manifest-btn");
+    expect(downloadBtn.textContent).toContain("winget.manifest");
+
+    fireEvent.click(downloadBtn);
+
+    expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+    const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(await (blob as Blob).text()).toBe("Mock content for winget");
+    expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+    expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+    expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
+
+    // Also switch to scoop tab
+    const scoopTab = screen.getByTestId("manifest-tab-scoop");
+    fireEvent.click(scoopTab);
+
+    await screen.findByText("Mock content for scoop");
+    expect(downloadBtn.textContent).toContain("scoop.manifest");
+
+    fireEvent.click(downloadBtn);
+
+    expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(2);
+    const [, secondCall] = mockBlobUrl!.createObjectURL.mock.calls;
+    expect(await (secondCall[0] as Blob).text()).toBe("Mock content for scoop");
+    expect(mockBlobUrl!.revokeObjectURL).toHaveBeenLastCalledWith("blob:mock-url");
+    expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url", "blob:mock-url"]);
+    expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url", "blob:mock-url"]);
   });
 });
