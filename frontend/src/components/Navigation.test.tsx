@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vite-plus/test";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { Navigation } from "./Navigation";
+import { Navigation, STORAGE_KEY_SIDEBAR_COLLAPSED } from "./Navigation";
 import type { ActiveTab } from "../types";
 
 describe("Navigation component", () => {
   afterEach(() => {
     cleanup();
+    localStorage.clear();
   });
   const defaultProps = {
     activeTab: "issues" as ActiveTab,
@@ -159,6 +160,29 @@ describe("Navigation component", () => {
 
     expect(aside?.className).toContain("lg:w-64");
     expect(screen.getByRole("button", { name: /collapse sidebar/i })).toBeDefined();
+  });
+
+  it("persists collapsed state to localStorage when toggled in uncontrolled mode", () => {
+    render(<Navigation {...defaultProps} />);
+
+    const collapseBtn = screen.getByRole("button", { name: /collapse sidebar/i });
+    fireEvent.click(collapseBtn);
+
+    expect(localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED)).toBe("true");
+
+    const expandBtn = screen.getByRole("button", { name: /expand sidebar/i });
+    fireEvent.click(expandBtn);
+
+    expect(localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED)).toBe("false");
+  });
+
+  it("rehydrates initial collapsed state from localStorage on mount", () => {
+    localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, "true");
+    const { container } = render(<Navigation {...defaultProps} />);
+
+    const aside = container.querySelector("aside");
+    expect(aside?.className).toContain("lg:w-16");
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeDefined();
   });
 
   it("opens and closes the mobile drawer when triggered", () => {
