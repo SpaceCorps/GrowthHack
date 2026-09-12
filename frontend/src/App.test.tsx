@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
-import { render, screen, act, cleanup } from "@testing-library/react";
+import { render, screen, act, cleanup, fireEvent } from "@testing-library/react";
 import { App, resolveActiveTabFromLocation } from "./App";
 import { setupMockFetch } from "./test";
 import type { MockFetchController } from "./test";
@@ -82,5 +82,38 @@ describe("App URL Hash Routing", () => {
 
     // Now switched to playground tab
     expect(await screen.findByText(/Interactive Browser Web Playground/i)).toBeDefined();
+  });
+
+  it("mounts App with sidebar navigation containing categories and navigation items", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    expect(screen.getByText("Growth & Content")).toBeDefined();
+    expect(screen.getByText("Distribution & Blitz")).toBeDefined();
+    expect(screen.getByText("Tools & Diagnostics")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Direct Action Issues/i })).toBeDefined();
+  });
+
+  it("toggles mobile drawer when mobile menu button is clicked", async () => {
+    await act(async () => {
+      render(<App />);
+    });
+
+    expect(screen.queryByTestId("mobile-backdrop")).toBeNull();
+
+    const openBtn = screen.getByRole("button", { name: /open sidebar/i });
+    await act(async () => {
+      fireEvent.click(openBtn);
+    });
+
+    expect(screen.getByTestId("mobile-backdrop")).toBeDefined();
+
+    const closeBtn = screen.getByRole("button", { name: /close sidebar/i });
+    await act(async () => {
+      fireEvent.click(closeBtn);
+    });
+
+    expect(screen.queryByTestId("mobile-backdrop")).toBeNull();
   });
 });

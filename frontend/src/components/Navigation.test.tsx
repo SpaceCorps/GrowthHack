@@ -119,7 +119,15 @@ describe("Navigation component", () => {
     expect(screen.getByText("Offline")).toBeDefined();
   });
 
-  it("verifies the brand logo, target meter, and agent status render in the top tier", () => {
+  it("organizes navigation items into categorized sections", () => {
+    render(<Navigation {...defaultProps} />);
+
+    expect(screen.getByText("Growth & Content")).toBeDefined();
+    expect(screen.getByText("Distribution & Blitz")).toBeDefined();
+    expect(screen.getByText("Tools & Diagnostics")).toBeDefined();
+  });
+
+  it("verifies the brand logo, target meter, and agent status render in the sidebar header", () => {
     const { container } = render(<Navigation {...defaultProps} />);
 
     expect(screen.getByText("SpaceCorps //")).toBeDefined();
@@ -127,18 +135,50 @@ describe("Navigation component", () => {
     expect(screen.getByText("Ivy-Tendril")).toBeDefined();
     expect(screen.getByText(/100,000 Stars/i)).toBeDefined();
 
-    // Verify two tiers exist
-    const header = container.querySelector("header");
-    expect(header).not.toBeNull();
-    const tiers = header?.children;
-    expect(tiers?.length).toBe(2);
+    const aside = container.querySelector("aside");
+    expect(aside).not.toBeNull();
+    expect(aside?.querySelector("nav")).not.toBeNull();
+    expect(aside?.textContent).toContain("SpaceCorps //");
+    expect(aside?.textContent).toContain("Antigravity");
+  });
 
-    // Tier 1 contains Brand & Agent status
-    expect(tiers?.[0].textContent).toContain("SpaceCorps //");
-    expect(tiers?.[0].textContent).toContain("Antigravity");
+  it("collapses and expands the sidebar when the collapse toggle button is clicked", () => {
+    const { container } = render(<Navigation {...defaultProps} />);
 
-    // Tier 2 contains navigation tabs
-    expect(tiers?.[1].querySelector("nav")).not.toBeNull();
+    const aside = container.querySelector("aside");
+    expect(aside?.className).toContain("lg:w-64");
+
+    const collapseBtn = screen.getByRole("button", { name: /collapse sidebar/i });
+    fireEvent.click(collapseBtn);
+
+    expect(aside?.className).toContain("lg:w-16");
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeDefined();
+
+    const expandBtn = screen.getByRole("button", { name: /expand sidebar/i });
+    fireEvent.click(expandBtn);
+
+    expect(aside?.className).toContain("lg:w-64");
+    expect(screen.getByRole("button", { name: /collapse sidebar/i })).toBeDefined();
+  });
+
+  it("opens and closes the mobile drawer when triggered", () => {
+    const onMobileClose = vi.fn();
+    const { rerender } = render(
+      <Navigation {...defaultProps} isMobileOpen={false} onMobileClose={onMobileClose} />,
+    );
+
+    expect(screen.queryByTestId("mobile-backdrop")).toBeNull();
+
+    rerender(<Navigation {...defaultProps} isMobileOpen={true} onMobileClose={onMobileClose} />);
+
+    const backdrop = screen.getByTestId("mobile-backdrop");
+    expect(backdrop).toBeDefined();
+    fireEvent.click(backdrop);
+    expect(onMobileClose).toHaveBeenCalledTimes(1);
+
+    const closeBtn = screen.getByRole("button", { name: /close sidebar/i });
+    fireEvent.click(closeBtn);
+    expect(onMobileClose).toHaveBeenCalledTimes(2);
   });
 
   it("scrolls the active tab button into view when activeTab changes", () => {
