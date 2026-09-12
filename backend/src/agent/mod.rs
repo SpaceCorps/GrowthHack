@@ -1,6 +1,6 @@
 pub mod runner;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 
@@ -49,6 +49,7 @@ pub struct TaskEntry {
 pub struct TaskManager {
     runner: AgentRunner,
     tasks: Arc<RwLock<HashMap<String, TaskEntry>>>,
+    evicted_tasks: Arc<RwLock<VecDeque<String>>>,
     config: TaskManagerConfig,
 }
 
@@ -61,6 +62,7 @@ impl TaskManager {
         Self {
             runner,
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            evicted_tasks: Arc::new(RwLock::new(VecDeque::new())),
             config,
         }
     }
@@ -75,7 +77,11 @@ impl TaskManager {
             entry.last_accessed = std::time::Instant::now();
             entry.tx.clone()
         } else {
-            Self::prune_completed_locked(&mut map, &self.config);
+            {
+                let mut evicted = self.evicted_tasks.write().await;
+                Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
+                evicted.retain(|id| id != task_id);
+            }
 
             let (tx, mut rx) = broadcast::channel::<String>(256);
             let tasks_clone = self.tasks.clone();
@@ -141,7 +147,24 @@ impl TaskManager {
         let _ = tx.send(msg);
     }
 
+    pub async fn is_evicted(&self, task_id: &str) -> bool {
+        let evicted = self.evicted_tasks.read().await;
+        evicted.iter().any(|id| id == task_id)
+    }
+
     pub async fn subscribe(&self, task_id: &str) -> (Vec<String>, broadcast::Receiver<String>) {
+        if self.is_evicted(task_id).await {
+            let (tx, rx) = broadcast::channel::<String>(1);
+            drop(tx);
+            return (
+                vec![
+                    "[EXPIRED] Task execution history expired and was evicted from cache."
+                        .to_string(),
+                ],
+                rx,
+            );
+        }
+
         let tx = self.get_or_create_channel(task_id).await;
         let mut map = self.tasks.write().await;
         let history = if let Some(entry) = map.get_mut(task_id) {
@@ -159,6 +182,12 @@ impl TaskManager {
     }
 
     pub async fn get_history(&self, task_id: &str) -> Vec<String> {
+        if self.is_evicted(task_id).await {
+            return vec![
+                "[EXPIRED] Task execution history expired and was evicted from cache.".to_string(),
+            ];
+        }
+
         let mut map = self.tasks.write().await;
         if let Some(entry) = map.get_mut(task_id) {
             entry.last_accessed = std::time::Instant::now();
@@ -172,23 +201,33 @@ impl TaskManager {
     /// Incomplete tasks are never pruned. Returns the number of evicted tasks.
     pub async fn prune_completed(&self) -> usize {
         let mut map = self.tasks.write().await;
-        Self::prune_completed_locked(&mut map, &self.config)
+        let mut evicted = self.evicted_tasks.write().await;
+        Self::prune_completed_locked(&mut map, &mut evicted, &self.config)
     }
 
     fn prune_completed_locked(
         map: &mut HashMap<String, TaskEntry>,
+        evicted_tasks: &mut VecDeque<String>,
         config: &TaskManagerConfig,
     ) -> usize {
         let now = std::time::Instant::now();
         let mut evicted = 0;
 
         // 1. Evict tasks exceeding TTL
-        map.retain(|_id, entry| {
+        map.retain(|id, entry| {
             if entry.is_done {
                 let completed_at = entry.completed_at.unwrap_or(entry.created_at);
                 if now.checked_duration_since(completed_at).unwrap_or_default()
                     >= config.completed_ttl
                 {
+                    let _ = entry.tx.send(
+                        "[EXPIRED] Task execution history expired and was evicted from cache."
+                            .to_string(),
+                    );
+                    if evicted_tasks.len() >= 1000 {
+                        evicted_tasks.pop_front();
+                    }
+                    evicted_tasks.push_back(id.clone());
                     evicted += 1;
                     return false;
                 }
@@ -208,8 +247,17 @@ impl TaskManager {
             completed_keys.sort_by_key(|(_, last_accessed)| *last_accessed);
             let excess = completed_keys.len() - config.max_completed_tasks;
             for (id, _) in completed_keys.into_iter().take(excess) {
-                map.remove(&id);
-                evicted += 1;
+                if let Some(entry) = map.remove(&id) {
+                    let _ = entry.tx.send(
+                        "[EXPIRED] Task execution history expired and was evicted from cache."
+                            .to_string(),
+                    );
+                    if evicted_tasks.len() >= 1000 {
+                        evicted_tasks.pop_front();
+                    }
+                    evicted_tasks.push_back(id);
+                    evicted += 1;
+                }
             }
         }
 

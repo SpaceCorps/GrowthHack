@@ -436,3 +436,110 @@ async fn test_task_manager_auto_prune_on_create() {
     );
     assert_eq!(task_manager.task_count().await, 1);
 }
+
+#[tokio::test]
+async fn test_task_manager_active_subscriber_receives_expired_on_ttl() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    let (_history, mut rx) = task_manager.subscribe("task-active-ttl").await;
+    task_manager
+        .send_log("task-active-ttl", "[DONE] Done".to_string())
+        .await;
+
+    // Sleep past TTL
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1);
+
+    // Active subscriber should receive [EXPIRED]
+    let mut received_expired = false;
+    while let Ok(msg) = rx.try_recv() {
+        if msg.starts_with("[EXPIRED]") {
+            received_expired = true;
+            break;
+        }
+    }
+    assert!(
+        received_expired,
+        "Active subscriber should receive [EXPIRED] upon TTL pruning"
+    );
+    assert!(task_manager.is_evicted("task-active-ttl").await);
+}
+
+#[tokio::test]
+async fn test_task_manager_active_subscriber_receives_expired_on_lru() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_secs(3600),
+        max_completed_tasks: 1,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    let (_history1, mut rx1) = task_manager.subscribe("task-lru-sub-1").await;
+    task_manager
+        .send_log("task-lru-sub-1", "[DONE] Task 1 done".to_string())
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    let (_history2, _rx2) = task_manager.subscribe("task-lru-sub-2").await;
+    task_manager
+        .send_log("task-lru-sub-2", "[DONE] Task 2 done".to_string())
+        .await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1);
+
+    // task-lru-sub-1 was older and evicted by LRU
+    let mut received_expired = false;
+    while let Ok(msg) = rx1.try_recv() {
+        if msg.starts_with("[EXPIRED]") {
+            received_expired = true;
+            break;
+        }
+    }
+    assert!(
+        received_expired,
+        "Active subscriber on task-lru-sub-1 should receive [EXPIRED] upon LRU pruning"
+    );
+    assert!(task_manager.is_evicted("task-lru-sub-1").await);
+    assert!(!task_manager.is_evicted("task-lru-sub-2").await);
+}
+
+#[tokio::test]
+async fn test_task_manager_reconnecting_subscriber_receives_expired() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    task_manager
+        .send_log("task-reconnect-1", "[DONE] Completed".to_string())
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1);
+    assert!(task_manager.is_evicted("task-reconnect-1").await);
+
+    // Now a reconnecting client subscribes to the evicted task
+    let (history, mut rx) = task_manager.subscribe("task-reconnect-1").await;
+    assert_eq!(history.len(), 1);
+    assert!(history[0].starts_with("[EXPIRED]"));
+
+    // Channel should be closed immediately (rx.recv() returns Closed)
+    let recv_res = rx.recv().await;
+    assert!(recv_res.is_err());
+
+    // Calling subscribe should not recreate the task
+    assert!(!task_manager.has_task("task-reconnect-1").await);
+}
