@@ -193,6 +193,29 @@ describe("PackageManagerBlitz View", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
   });
 
+  it("exposes manifest tab bar as an accessible tablist with keyboard navigation", () => {
+    render(<PackageManagerBlitz packages={mockPackages} />);
+
+    const inspectBtn = screen.getByTestId("inspect-manifest-btn");
+    fireEvent.click(inspectBtn);
+
+    const tablist = screen.getByRole("tablist", { name: "Manifest target tabs" });
+    expect(tablist).toBeDefined();
+
+    const homebrewTab = screen.getByTestId("manifest-tab-homebrew");
+    expect(homebrewTab.getAttribute("role")).toBe("tab");
+    expect(homebrewTab.getAttribute("aria-selected")).toBe("true");
+
+    const wingetTab = screen.getByTestId("manifest-tab-winget");
+    expect(wingetTab.getAttribute("role")).toBe("tab");
+    expect(wingetTab.getAttribute("aria-selected")).toBe("false");
+
+    // ArrowRight on the focused active tab switches the inspected manifest
+    fireEvent.keyDown(tablist, { key: "ArrowRight" });
+    expect(screen.getByText("Package Manifest Inspector: Ivy.Tendril.yaml")).toBeDefined();
+    expect(wingetTab.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("updates submission status and calls onUpdatePackageStatus callback", async () => {
     const onUpdateStatus = vi.fn().mockImplementation(() => Promise.resolve());
     render(<PackageManagerBlitz packages={mockPackages} onUpdatePackageStatus={onUpdateStatus} />);
