@@ -1,6 +1,6 @@
 import React, { useRef } from "react";
 
-export type SegmentedControlVariant = "emerald" | "cyan" | "indigo" | "pink" | "secondary";
+export type SegmentedControlVariant = "emerald" | "cyan" | "indigo" | "pink" | "rose" | "secondary";
 export type SegmentedControlSize = "xs" | "sm" | "md";
 export type SegmentedControlAppearance = "pills" | "underline";
 
@@ -11,6 +11,7 @@ export interface SegmentedControlOption<T extends string = string> {
   icon?: React.ReactNode;
   disabled?: boolean;
   variant?: SegmentedControlVariant;
+  testId?: string;
 }
 
 export interface SegmentedControlProps<T extends string = string> {
@@ -31,6 +32,7 @@ const activePillVariantClasses: Record<SegmentedControlVariant, string> = {
   cyan: "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm font-semibold",
   indigo: "bg-indigo-500/20 text-indigo-300 border border-indigo-500/50 shadow-sm font-semibold",
   pink: "bg-pink-500/20 text-pink-300 border border-pink-500/50 shadow-sm font-semibold",
+  rose: "bg-rose-500/20 text-rose-300 border border-rose-500/50 shadow-sm font-semibold",
   secondary: "bg-slate-800 text-slate-200 border border-slate-700 shadow-sm font-semibold",
 };
 
@@ -39,6 +41,7 @@ const activeUnderlineVariantClasses: Record<SegmentedControlVariant, string> = {
   cyan: "border-cyan-400 text-cyan-300",
   indigo: "border-indigo-400 text-indigo-300",
   pink: "border-pink-400 text-pink-300",
+  rose: "border-rose-400 text-rose-300",
   secondary: "border-slate-400 text-slate-200",
 };
 
@@ -47,6 +50,7 @@ const focusRingClasses: Record<SegmentedControlVariant, string> = {
   cyan: "focus:ring-cyan-500",
   indigo: "focus:ring-indigo-500",
   pink: "focus:ring-pink-500",
+  rose: "focus:ring-rose-500",
   secondary: "focus:ring-slate-500",
 };
 
@@ -171,6 +175,7 @@ export function SegmentedControl<T extends string = string>({
             }}
             type="button"
             role={itemRole}
+            data-testid={optionObj.testId}
             {...ariaProps}
             tabIndex={isSelected ? 0 : -1}
             disabled={isOptionDisabled}
