@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ListingBlitz } from "./ListingBlitz";
 import type { Listing } from "../types";
-import { setupMockFetch } from "../test";
-import type { MockFetchController } from "../test";
+import { setupMockFetch, setupMockClipboard } from "../test";
+import type { MockFetchController, MockClipboardController } from "../test";
 
 const mockListings: Listing[] = [
   {
@@ -81,14 +81,10 @@ describe("ListingBlitz View", () => {
     githubStatus: { configured: true, username: "testuser", message: "ok" },
   };
 
+  let mockClipboard: MockClipboardController | null = null;
+
   beforeEach(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: vi.fn().mockResolvedValue(undefined),
-      },
-      writable: true,
-      configurable: true,
-    });
+    mockClipboard = setupMockClipboard();
 
     mockController = setupMockFetch({
       handlers: {
@@ -104,6 +100,10 @@ describe("ListingBlitz View", () => {
     cleanup();
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
     if (mockController) {
       mockController.restore();
       mockController = null;

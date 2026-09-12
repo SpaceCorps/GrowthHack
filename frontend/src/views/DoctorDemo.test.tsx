@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { DoctorDemo } from "./DoctorDemo";
 import type { DiagnosticReport, DemoScenario, DemoRunState, OnboardingMetrics } from "../types";
-import { setupMockFetch } from "../test";
-import type { MockFetchController } from "../test";
+import { setupMockFetch, setupMockClipboard } from "../test";
+import type { MockFetchController, MockClipboardController } from "../test";
 
 const mockReport: DiagnosticReport = {
   timestamp: "2026-09-10T18:00:00Z",
@@ -98,18 +98,11 @@ const mockMetrics: OnboardingMetrics = {
 };
 
 describe("DoctorDemo View Component", () => {
-  let clipboardWriteTextMock: any;
+  let mockClipboard: MockClipboardController | null = null;
   let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
-    clipboardWriteTextMock = vi.fn().mockImplementation(() => Promise.resolve());
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: clipboardWriteTextMock,
-      },
-      configurable: true,
-      writable: true,
-    });
+    mockClipboard = setupMockClipboard();
 
     vi.spyOn(window, "open").mockImplementation(() => null);
 
@@ -156,6 +149,10 @@ describe("DoctorDemo View Component", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
     if (mockController) {
       mockController.restore();
       mockController = null;
@@ -217,7 +214,7 @@ describe("DoctorDemo View Component", () => {
       fireEvent.click(copyButtons[0]);
     });
 
-    expect(clipboardWriteTextMock).toHaveBeenCalled();
+    expect(mockClipboard?.writeText).toHaveBeenCalled();
   });
 
   it("executes replayable demo workflow stepper to PR generation", async () => {
