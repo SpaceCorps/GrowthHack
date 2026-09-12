@@ -45,6 +45,8 @@ pub struct GenerateArticleRequest {
     pub angle: String, // "Benchmark", "Architecture", "Comparison", "Tutorial", "Postmortem", "Ecosystem"
     pub channel: String, // "Website", "Dev.to", "Hashnode", "Medium", "Substack", "XThread", "Reddit"
     pub extra_context: Option<String>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +64,8 @@ pub struct GenerateSpotlightRequest {
     pub key_features: Vec<String>,
     pub target_channel: String, // "LinkedIn", "XThread", "Reddit", "Dev.to"
     pub extra_notes: Option<String>,
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
 }
 
 pub async fn list_articles(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
@@ -456,8 +460,10 @@ pub async fn generate_article(
     let channel = payload.channel.clone();
     let angle = payload.angle.clone();
 
+    let timeout_override = payload.timeout_secs.map(std::time::Duration::from_secs);
+
     ctx.task_manager
-        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+        .spawn_task_with_callback_and_timeout(&task_id, prompt, timeout_override, move |content, tx| async move {
             let mut state = state_arc.write().await;
             let title = content
                 .lines()
@@ -523,9 +529,10 @@ pub async fn generate_spotlight(
     let repo_url = payload.repo_url.clone();
     let channel = payload.target_channel.clone();
     let tagline = payload.tagline.clone();
+    let timeout_override = payload.timeout_secs.map(std::time::Duration::from_secs);
 
     ctx.task_manager
-        .spawn_task_with_callback(&task_id, prompt, move |content, tx| async move {
+        .spawn_task_with_callback_and_timeout(&task_id, prompt, timeout_override, move |content, tx| async move {
             let mut state = state_arc.write().await;
             let title = content
                 .lines()
@@ -3570,6 +3577,7 @@ mod tests {
             ],
             target_channel: "LinkedIn".to_string(),
             extra_notes: Some("Runs on Raspberry Pi 5".to_string()),
+            timeout_secs: None,
         };
 
         let prompt = build_project_spotlight_prompt(&req);

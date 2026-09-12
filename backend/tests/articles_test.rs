@@ -336,3 +336,124 @@ async fn test_auto_post_unwritable_target_dir_returns_500_and_stays_unpublished(
 
     let _ = std::fs::remove_file(&blocker_path);
 }
+
+#[tokio::test]
+async fn test_generate_article_accepts_optional_timeout_secs() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let payload = serde_json::json!({
+        "feature": "Worktrees",
+        "angle": "Architecture",
+        "channel": "Website",
+        "extra_context": "Test context",
+        "timeout_secs": 180,
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert!(parsed["task_id"].as_str().unwrap().starts_with("task-art-"));
+    assert!(parsed["article_id"].as_str().unwrap().starts_with("art-"));
+}
+
+#[tokio::test]
+async fn test_generate_spotlight_accepts_optional_timeout_secs() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let payload = serde_json::json!({
+        "project_name": "OpenBot",
+        "repo_url": "https://github.com/openbot-ai/openbot",
+        "tagline": "Autonomous desktop robotics in 50 lines of Rust",
+        "key_features": ["Zero-dependency binary", "Local model inference"],
+        "target_channel": "LinkedIn",
+        "extra_notes": "Runs on Raspberry Pi 5",
+        "timeout_secs": 240,
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert!(parsed["task_id"].as_str().unwrap().starts_with("task-art-"));
+    assert!(parsed["article_id"].as_str().unwrap().starts_with("art-"));
+}
+
+#[tokio::test]
+async fn test_generate_article_and_spotlight_backward_compatibility_without_timeout() {
+    let guard = common::create_test_context();
+    let app = api::router(guard.ctx());
+
+    let article_payload = serde_json::json!({
+        "feature": "Worktrees",
+        "angle": "Benchmark",
+        "channel": "Dev.to",
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&article_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let parsed: Value = serde_json::from_slice(&body).unwrap();
+    assert!(parsed["task_id"].as_str().unwrap().starts_with("task-art-"));
+
+    let app2 = api::router(guard.ctx());
+    let spotlight_payload = serde_json::json!({
+        "project_name": "OpenBot",
+        "repo_url": "https://github.com/openbot-ai/openbot",
+        "tagline": "Autonomous desktop robotics",
+        "key_features": ["Local model inference"],
+        "target_channel": "XThread",
+    });
+
+    let response2 = app2
+        .oneshot(
+            Request::builder()
+                .uri("/api/articles/generate-spotlight")
+                .method("POST")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&spotlight_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response2.status(), StatusCode::ACCEPTED);
+    let body2 = to_bytes(response2.into_body(), usize::MAX).await.unwrap();
+    let parsed2: Value = serde_json::from_slice(&body2).unwrap();
+    assert!(parsed2["task_id"].as_str().unwrap().starts_with("task-art-"));
+}
