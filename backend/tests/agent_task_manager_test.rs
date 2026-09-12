@@ -543,3 +543,145 @@ async fn test_task_manager_reconnecting_subscriber_receives_expired() {
     // Calling subscribe should not recreate the task
     assert!(!task_manager.has_task("task-reconnect-1").await);
 }
+
+#[tokio::test]
+async fn test_task_manager_tombstone_hydration() {
+    let data_file = std::env::temp_dir().join(format!(
+        "test_growth_data_hydrate_{}.json",
+        uuid::Uuid::new_v4().simple()
+    ));
+
+    let mut state = growthhack_backend::db::GrowthState::seed_default();
+    state.task_tombstones = vec![
+        "task-persisted-1".to_string(),
+        "task-persisted-2".to_string(),
+    ];
+    state.save(&data_file).unwrap();
+
+    let shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let task_manager = TaskManager::with_persistence(
+        runner,
+        TaskManagerConfig::default(),
+        shared_state,
+        data_file.clone(),
+    )
+    .await;
+
+    assert!(task_manager.is_evicted("task-persisted-1").await);
+    assert!(task_manager.is_evicted("task-persisted-2").await);
+    assert!(!task_manager.is_evicted("task-unknown").await);
+
+    let _ = std::fs::remove_file(&data_file);
+}
+
+#[tokio::test]
+async fn test_task_manager_tombstone_persistence_on_prune() {
+    let data_file = std::env::temp_dir().join(format!(
+        "test_growth_data_prune_{}.json",
+        uuid::Uuid::new_v4().simple()
+    ));
+
+    let state = growthhack_backend::db::GrowthState::seed_default();
+    state.save(&data_file).unwrap();
+
+    let shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_persistence(
+        runner,
+        config,
+        std::sync::Arc::clone(&shared_state),
+        data_file.clone(),
+    )
+    .await;
+
+    task_manager
+        .send_log(
+            "task-evict-me-1",
+            "[DONE] Completed successfully".to_string(),
+        )
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1);
+    assert!(task_manager.is_evicted("task-evict-me-1").await);
+
+    // Verify in-memory state was updated
+    {
+        let s = shared_state.read().await;
+        assert!(s.task_tombstones.contains(&"task-evict-me-1".to_string()));
+    }
+
+    // Verify file on disk was updated
+    let loaded_state = growthhack_backend::db::GrowthState::load_or_init(&data_file);
+    assert!(loaded_state
+        .task_tombstones
+        .contains(&"task-evict-me-1".to_string()));
+
+    let _ = std::fs::remove_file(&data_file);
+}
+
+#[tokio::test]
+async fn test_task_manager_survives_restart() {
+    let data_file = std::env::temp_dir().join(format!(
+        "test_growth_data_restart_{}.json",
+        uuid::Uuid::new_v4().simple()
+    ));
+
+    let state = growthhack_backend::db::GrowthState::seed_default();
+    state.save(&data_file).unwrap();
+
+    let shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_persistence(
+        runner.clone(),
+        config.clone(),
+        std::sync::Arc::clone(&shared_state),
+        data_file.clone(),
+    )
+    .await;
+
+    task_manager
+        .send_log("task-restart-1", "[DONE] Finished".to_string())
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1);
+    assert!(task_manager.is_evicted("task-restart-1").await);
+
+    // Drop original TaskManager and state to simulate complete backend shutdown
+    drop(task_manager);
+    drop(shared_state);
+
+    // Simulate backend startup: reload state from disk and initialize new TaskManager
+    let restarted_state = growthhack_backend::db::GrowthState::load_or_init(&data_file);
+    let restarted_shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(restarted_state));
+    let new_task_manager =
+        TaskManager::with_persistence(runner, config, restarted_shared_state, data_file.clone())
+            .await;
+
+    assert!(new_task_manager.is_evicted("task-restart-1").await);
+
+    let (history, mut rx) = new_task_manager.subscribe("task-restart-1").await;
+    assert_eq!(history.len(), 1);
+    assert!(history[0].starts_with("[EXPIRED]"));
+
+    let recv_res = rx.recv().await;
+    assert!(recv_res.is_err());
+
+    assert!(!new_task_manager.has_task("task-restart-1").await);
+
+    let _ = std::fs::remove_file(&data_file);
+}

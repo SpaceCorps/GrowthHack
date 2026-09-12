@@ -45,12 +45,18 @@ pub struct TaskEntry {
     pub last_accessed: std::time::Instant,
 }
 
+pub struct TaskManagerPersistence {
+    pub state: crate::db::SharedState,
+    pub data_file: std::path::PathBuf,
+}
+
 #[derive(Clone)]
 pub struct TaskManager {
     runner: AgentRunner,
     tasks: Arc<RwLock<HashMap<String, TaskEntry>>>,
     evicted_tasks: Arc<RwLock<VecDeque<String>>>,
     config: TaskManagerConfig,
+    persistence: Option<Arc<TaskManagerPersistence>>,
 }
 
 impl TaskManager {
@@ -64,6 +70,77 @@ impl TaskManager {
             tasks: Arc::new(RwLock::new(HashMap::new())),
             evicted_tasks: Arc::new(RwLock::new(VecDeque::new())),
             config,
+            persistence: None,
+        }
+    }
+
+    pub async fn with_persistence(
+        runner: AgentRunner,
+        config: TaskManagerConfig,
+        state: crate::db::SharedState,
+        data_file: std::path::PathBuf,
+    ) -> Self {
+        let initial_tombstones = {
+            let s = state.read().await;
+            s.task_tombstones.clone()
+        };
+        let mut deque = VecDeque::new();
+        for id in initial_tombstones {
+            if deque.len() >= 1000 {
+                deque.pop_front();
+            }
+            deque.push_back(id);
+        }
+
+        Self {
+            runner,
+            tasks: Arc::new(RwLock::new(HashMap::new())),
+            evicted_tasks: Arc::new(RwLock::new(deque)),
+            config,
+            persistence: Some(Arc::new(TaskManagerPersistence { state, data_file })),
+        }
+    }
+
+    pub async fn attach_persistence(
+        &mut self,
+        state: crate::db::SharedState,
+        data_file: std::path::PathBuf,
+    ) {
+        let initial_tombstones = {
+            let s = state.read().await;
+            s.task_tombstones.clone()
+        };
+        {
+            let mut evicted = self.evicted_tasks.write().await;
+            for id in initial_tombstones {
+                if !evicted.contains(&id) {
+                    if evicted.len() >= 1000 {
+                        evicted.pop_front();
+                    }
+                    evicted.push_back(id);
+                }
+            }
+        }
+        self.persistence = Some(Arc::new(TaskManagerPersistence { state, data_file }));
+    }
+
+    pub async fn load_tombstones(&self, tombstones: impl IntoIterator<Item = String>) {
+        let mut evicted = self.evicted_tasks.write().await;
+        for id in tombstones {
+            if !evicted.contains(&id) {
+                if evicted.len() >= 1000 {
+                    evicted.pop_front();
+                }
+                evicted.push_back(id);
+            }
+        }
+    }
+
+    async fn sync_tombstones(&self, evicted: &VecDeque<String>) {
+        if let Some(p) = &self.persistence {
+            let mut state = p.state.write().await;
+            state.task_tombstones = evicted.iter().cloned().collect();
+            let _ = state.save(&p.data_file);
         }
     }
 
@@ -72,57 +149,69 @@ impl TaskManager {
     }
 
     pub async fn get_or_create_channel(&self, task_id: &str) -> broadcast::Sender<String> {
-        let mut map = self.tasks.write().await;
-        if let Some(entry) = map.get_mut(task_id) {
-            entry.last_accessed = std::time::Instant::now();
-            entry.tx.clone()
-        } else {
-            {
-                let mut evicted = self.evicted_tasks.write().await;
-                Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
-                evicted.retain(|id| id != task_id);
-            }
+        let (tx, need_sync, evicted_snapshot) = {
+            let mut map = self.tasks.write().await;
+            if let Some(entry) = map.get_mut(task_id) {
+                entry.last_accessed = std::time::Instant::now();
+                (entry.tx.clone(), false, VecDeque::new())
+            } else {
+                let (pruned_count, removed_tombstone, evicted_snapshot) = {
+                    let mut evicted = self.evicted_tasks.write().await;
+                    let pruned = Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
+                    let before_len = evicted.len();
+                    evicted.retain(|id| id != task_id);
+                    let removed = evicted.len() < before_len;
+                    let snapshot = evicted.clone();
+                    (pruned, removed, snapshot)
+                };
 
-            let (tx, mut rx) = broadcast::channel::<String>(256);
-            let tasks_clone = self.tasks.clone();
-            let tid = task_id.to_string();
+                let (tx, mut rx) = broadcast::channel::<String>(256);
+                let tasks_clone = self.tasks.clone();
+                let tid = task_id.to_string();
 
-            tokio::spawn(async move {
-                while let Ok(msg) = rx.recv().await {
-                    let mut m = tasks_clone.write().await;
-                    if let Some(entry) = m.get_mut(&tid) {
-                        if entry.send_log_pending > 0 {
-                            entry.send_log_pending -= 1;
-                            continue;
+                tokio::spawn(async move {
+                    while let Ok(msg) = rx.recv().await {
+                        let mut m = tasks_clone.write().await;
+                        if let Some(entry) = m.get_mut(&tid) {
+                            if entry.send_log_pending > 0 {
+                                entry.send_log_pending -= 1;
+                                continue;
+                            }
+                            if msg.contains("[DONE]") || msg.starts_with("[ERROR]") {
+                                entry.is_done = true;
+                                entry
+                                    .completed_at
+                                    .get_or_insert_with(std::time::Instant::now);
+                            }
+                            if entry.history.len() >= 500 {
+                                entry.history.remove(0);
+                            }
+                            entry.history.push(msg);
+                            entry.last_accessed = std::time::Instant::now();
                         }
-                        if msg.contains("[DONE]") || msg.starts_with("[ERROR]") {
-                            entry.is_done = true;
-                            entry
-                                .completed_at
-                                .get_or_insert_with(std::time::Instant::now);
-                        }
-                        if entry.history.len() >= 500 {
-                            entry.history.remove(0);
-                        }
-                        entry.history.push(msg);
-                        entry.last_accessed = std::time::Instant::now();
                     }
-                }
-            });
+                });
 
-            let now = std::time::Instant::now();
-            let entry = TaskEntry {
-                tx: tx.clone(),
-                history: Vec::new(),
-                is_done: false,
-                send_log_pending: 0,
-                created_at: now,
-                completed_at: None,
-                last_accessed: now,
-            };
-            map.insert(task_id.to_string(), entry);
-            tx
+                let now = std::time::Instant::now();
+                let entry = TaskEntry {
+                    tx: tx.clone(),
+                    history: Vec::new(),
+                    is_done: false,
+                    send_log_pending: 0,
+                    created_at: now,
+                    completed_at: None,
+                    last_accessed: now,
+                };
+                map.insert(task_id.to_string(), entry);
+                (tx, pruned_count > 0 || removed_tombstone, evicted_snapshot)
+            }
+        };
+
+        if need_sync {
+            self.sync_tombstones(&evicted_snapshot).await;
         }
+
+        tx
     }
 
     pub async fn send_log(&self, task_id: &str, msg: String) {
@@ -200,9 +289,19 @@ impl TaskManager {
     /// Prune completed tasks according to TTL and maximum completed task capacity.
     /// Incomplete tasks are never pruned. Returns the number of evicted tasks.
     pub async fn prune_completed(&self) -> usize {
-        let mut map = self.tasks.write().await;
-        let mut evicted = self.evicted_tasks.write().await;
-        Self::prune_completed_locked(&mut map, &mut evicted, &self.config)
+        let (evicted_count, evicted_snapshot) = {
+            let mut map = self.tasks.write().await;
+            let mut evicted = self.evicted_tasks.write().await;
+            let count = Self::prune_completed_locked(&mut map, &mut evicted, &self.config);
+            let snapshot = evicted.clone();
+            (count, snapshot)
+        };
+
+        if evicted_count > 0 {
+            self.sync_tombstones(&evicted_snapshot).await;
+        }
+
+        evicted_count
     }
 
     fn prune_completed_locked(
