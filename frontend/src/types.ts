@@ -102,6 +102,9 @@ export interface Article {
   image_path?: string;
   exports?: ExportRecord[];
   engagement?: EngagementMetrics;
+  views?: number;
+  reactions?: number;
+  comments?: number;
   engagement_snapshots?: EngagementSnapshot[];
   engagement_badges?: string[];
   milestone_alerts?: EngagementMilestoneAlert[];
