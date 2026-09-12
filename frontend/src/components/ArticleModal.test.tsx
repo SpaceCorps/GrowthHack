@@ -555,4 +555,119 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       });
     });
   });
+
+  it("renders ActionButton in credential warning callouts when syndication API credentials are unconfigured", async () => {
+    const article: Article = {
+      id: "art-cred-warning-test",
+      title: "Credential Warning Modal Test",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Architecture",
+      summary: "Summary for credential warning test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              devto_configured: false,
+              hashnode_configured: false,
+              publish_as_draft: true,
+            }),
+        });
+      }
+      if (url.includes("/format/")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              formatted_content: "Formatted markdown content",
+              preview_type: "markdown",
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="export"
+        />,
+      );
+    });
+
+    // Allow initial useEffect (syndication settings fetch) to resolve
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 1. Verify Dev.to warning callout renders ActionButton with variant="secondary" and size="xs"
+    const devtoBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Configure Dev.to Key"),
+    );
+    expect(devtoBtn).toBeDefined();
+    expect(devtoBtn!.className).toContain("bg-slate-800");
+    expect(devtoBtn!.className).toContain("text-slate-200");
+    expect(devtoBtn!.className).toContain("px-2.5");
+    expect(devtoBtn!.className).toContain("py-1");
+
+    // Clicking it opens the configuration drawer
+    expect(container!.textContent).not.toContain("Syndication API Credentials & Settings");
+    await act(async () => {
+      devtoBtn!.click();
+    });
+    expect(container!.textContent).toContain("Syndication API Credentials & Settings");
+
+    // Close the drawer for the next check
+    const closeConfigBtn = Array.from(container!.querySelectorAll("button")).find(
+      (btn) => btn.querySelector("svg.lucide-x") !== null,
+    );
+    if (closeConfigBtn) {
+      await act(async () => {
+        closeConfigBtn.click();
+      });
+    }
+
+    // 2. Switch to Hashnode channel
+    const hashnodeTabBtn = Array.from(container!.querySelectorAll("button")).find(
+      (btn) => btn.textContent?.trim() === "Hashnode",
+    );
+    expect(hashnodeTabBtn).toBeDefined();
+    await act(async () => {
+      hashnodeTabBtn!.click();
+      await Promise.resolve();
+    });
+
+    // Verify Hashnode warning callout renders ActionButton with variant="secondary" and size="xs"
+    const hashnodeBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Configure Hashnode Token"),
+    );
+    expect(hashnodeBtn).toBeDefined();
+    expect(hashnodeBtn!.className).toContain("bg-slate-800");
+    expect(hashnodeBtn!.className).toContain("text-slate-200");
+    expect(hashnodeBtn!.className).toContain("px-2.5");
+    expect(hashnodeBtn!.className).toContain("py-1");
+
+    // Clicking it opens the configuration drawer
+    await act(async () => {
+      hashnodeBtn!.click();
+    });
+    expect(container!.textContent).toContain("Syndication API Credentials & Settings");
+  });
 });
