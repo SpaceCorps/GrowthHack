@@ -289,7 +289,10 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
     e.preventDefault();
     const parsedTimeout = timeoutSecs.trim() ? parseInt(timeoutSecs.trim(), 10) : undefined;
     const validTimeout =
-      parsedTimeout && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+      parsedTimeout &&
+      Number.isFinite(parsedTimeout) &&
+      parsedTimeout >= 10 &&
+      parsedTimeout <= 3600
         ? parsedTimeout
         : undefined;
     if (validTimeout !== undefined) {
@@ -318,7 +321,10 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
       ? parseInt(spotlightTimeoutSecs.trim(), 10)
       : undefined;
     const validTimeout =
-      parsedTimeout && Number.isFinite(parsedTimeout) && parsedTimeout > 0
+      parsedTimeout &&
+      Number.isFinite(parsedTimeout) &&
+      parsedTimeout >= 10 &&
+      parsedTimeout <= 3600
         ? parsedTimeout
         : undefined;
 
@@ -483,7 +489,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="10"
+                    max="3600"
                     value={timeoutSecs}
                     onChange={(e) => setTimeoutSecs(e.target.value)}
                     placeholder="Default (300s)"
@@ -617,7 +624,8 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="10"
+                    max="3600"
                     value={spotlightTimeoutSecs}
                     onChange={(e) => setSpotlightTimeoutSecs(e.target.value)}
                     placeholder="Default (300s)"
