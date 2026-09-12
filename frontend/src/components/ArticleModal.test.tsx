@@ -396,6 +396,23 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       resetButton!.click();
     });
 
+    // Clicking "Reset Engagement" opens confirmation modal and does not dispatch API immediately
+    expect(sentPayload).toBeNull();
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(container!.textContent).toContain(
+      "Are you sure you want to reset all reader engagement metrics",
+    );
+
+    // Clicking "Confirm Reset" in confirmation modal dispatches seed-engagement API
+    const confirmButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Confirm Reset"),
+    );
+    expect(confirmButton).toBeDefined();
+
+    await act(async () => {
+      confirmButton!.click();
+    });
+
     expect(sentPayload).toEqual({
       views: 0,
       reactions: 0,
@@ -405,9 +422,100 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       reset_badges: true,
     });
     expect(onArticleUpdatedMock).toHaveBeenCalledWith(resetArticle);
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
     expect(container!.textContent).toContain(
       "Reset article engagement metrics, snapshots, and badges to initial zero state.",
     );
+  });
+
+  it("cancels reset confirmation dialog without calling seed-engagement API", async () => {
+    const article: Article = {
+      id: "art-reset-cancel-test",
+      title: "Dev Reset Cancel Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset cancel test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    let fetchCalled = false;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/seed-engagement")) {
+        fetchCalled = true;
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(fetchCalled).toBe(false);
+
+    const cancelButton = Array.from(container!.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Cancel",
+    );
+    expect(cancelButton).toBeDefined();
+
+    await act(async () => {
+      cancelButton!.click();
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(fetchCalled).toBe(false);
+
+    // Also test dismissing via the close X button
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    const closeButton = container!.querySelector(
+      'button[aria-label="Close confirmation dialog"]',
+    ) as HTMLButtonElement | null;
+    expect(closeButton).toBeDefined();
+
+    await act(async () => {
+      closeButton!.click();
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(fetchCalled).toBe(false);
   });
 
   it("renders action buttons with expected variants and sets aria-busy='true' during loading states", async () => {
