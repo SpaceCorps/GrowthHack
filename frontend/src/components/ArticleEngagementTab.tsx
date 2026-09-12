@@ -440,6 +440,7 @@ export const ArticleEngagementTab: React.FC<ArticleEngagementTabProps> = ({
       {/* Confirmation Dialog Modal for Single-Article Reset */}
       {showResetConfirm && (
         <div
+          data-nested-overlay="true"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isResettingEngagement) {

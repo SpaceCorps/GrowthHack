@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { ArticleBacklinksTab } from "./ArticleBacklinksTab";
 import { ArticleExportTab } from "./ArticleExportTab";
@@ -26,10 +26,27 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const [activeTab, setActiveTab] = useState<
     "content" | "raw" | "backlinks" | "export" | "engagement"
   >(initialTab);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [article?.id, initialTab]);
+
+  // Close the modal on Escape unless a nested confirmation dialog owns the key
+  useEffect(() => {
+    if (!article) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (overlayRef.current?.querySelector('[data-nested-overlay="true"]')) return;
+      onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [article, onClose]);
 
   if (!article) return null;
 
@@ -42,7 +59,13 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div
+      ref={overlayRef}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+    >
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-800 bg-slate-950/60">
