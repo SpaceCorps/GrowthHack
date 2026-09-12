@@ -53,6 +53,8 @@ interface NavSection {
   items: NavItem[];
 }
 
+export const STORAGE_KEY_SIDEBAR_COLLAPSED = "growthhack_sidebar_collapsed";
+
 export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   setActiveTab,
@@ -71,7 +73,15 @@ export const Navigation: React.FC<NavigationProps> = ({
   isCollapsed: controlledIsCollapsed,
   onToggleCollapse,
 }) => {
-  const [internalCollapsed, setInternalCollapsed] = React.useState(false);
+  const [internalCollapsed, setInternalCollapsed] = React.useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED);
+      return stored === "true";
+    } catch {
+      return false;
+    }
+  });
   const isCollapsed =
     controlledIsCollapsed !== undefined ? controlledIsCollapsed : internalCollapsed;
 
@@ -79,7 +89,17 @@ export const Navigation: React.FC<NavigationProps> = ({
     if (onToggleCollapse) {
       onToggleCollapse();
     } else {
-      setInternalCollapsed((prev) => !prev);
+      setInternalCollapsed((prev) => {
+        const next = !prev;
+        if (typeof window !== "undefined" && window.localStorage) {
+          try {
+            localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, String(next));
+          } catch {
+            // Ignore localStorage access errors (e.g. security or quota errors)
+          }
+        }
+        return next;
+      });
     }
   };
 
