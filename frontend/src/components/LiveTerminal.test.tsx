@@ -95,4 +95,22 @@ describe("LiveTerminal Component", () => {
       "[STAGE] Generating content with Antigravity engine...",
     );
   });
+
+  it("renders expired badge and suppresses disconnect error when [EXPIRED] event is received", async () => {
+    await act(async () => {
+      root!.render(<LiveTerminal taskId="task-test-expired" />);
+    });
+
+    const instance = MockEventSource.instances[0];
+    expect(instance).toBeDefined();
+
+    await act(async () => {
+      instance.emitMessage("[EXPIRED] Task execution history expired and was evicted from cache.");
+      instance.emitError();
+    });
+
+    expect(container!.textContent).toContain("Expired");
+    expect(container!.textContent).not.toContain("[ERROR] Stream connection disconnected or lost.");
+    expect(container!.textContent).not.toContain("Disconnected");
+  });
 });

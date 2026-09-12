@@ -16,9 +16,9 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
 }) => {
   const [logs, setLogs] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [status, setStatus] = useState<"connecting" | "running" | "completed" | "error">(
-    "connecting",
-  );
+  const [status, setStatus] = useState<
+    "connecting" | "running" | "completed" | "error" | "expired"
+  >("connecting");
   const [copied, setCopied] = useState(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +53,12 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
         if (onTaskCompleted) {
           onTaskCompleted();
         }
+      } else if (line.includes("[EXPIRED]")) {
+        setIsStreaming(false);
+        setStatus("expired");
+        if (onTaskCompleted) {
+          onTaskCompleted();
+        }
       } else if (line.includes("[ERROR]")) {
         setIsStreaming(false);
         setStatus("error");
@@ -68,6 +74,11 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
       setIsStreaming(false);
       eventSource.close();
       setLogs((prev) => {
+        const hasExpired = prev.some((l) => l.includes("[EXPIRED]"));
+        if (hasExpired) {
+          setStatus("expired");
+          return prev;
+        }
         const hasDone = prev.some((l) => l.includes("[DONE]"));
         if (!hasDone) {
           setStatus("error");
@@ -111,7 +122,11 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
           </div>
           <Terminal className="w-3.5 h-3.5 text-emerald-400 ml-1" />
           <span className="font-semibold text-slate-200">{title}</span>
-          {status === "error" ? (
+          {status === "expired" ? (
+            <span className="flex items-center gap-1 text-[10px] text-amber-400 font-sans px-2 py-0.5 rounded-full bg-amber-950 border border-amber-800">
+              Expired
+            </span>
+          ) : status === "error" ? (
             <span className="flex items-center gap-1 text-[10px] text-rose-400 font-sans px-2 py-0.5 rounded-full bg-rose-950 border border-rose-800">
               Disconnected
             </span>
@@ -162,6 +177,7 @@ export const LiveTerminal: React.FC<LiveTerminalProps> = ({
           else if (line.startsWith("[STAGE]")) lineClass = "text-purple-400 font-semibold";
           else if (line.startsWith("[PROMPT]")) lineClass = "text-indigo-400 italic";
           else if (line.startsWith("[DONE]")) lineClass = "text-emerald-400 font-bold";
+          else if (line.startsWith("[EXPIRED]")) lineClass = "text-amber-400 font-semibold";
           else if (line.startsWith("[ERROR]")) lineClass = "text-rose-400 font-semibold";
           else if (line.startsWith("[WARNING]")) lineClass = "text-amber-400 font-semibold";
           else if (line.startsWith("[STDERR]")) lineClass = "text-amber-300/80";
