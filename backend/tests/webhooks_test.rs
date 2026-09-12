@@ -250,7 +250,10 @@ async fn test_webhook_debouncing_coalesces_concurrent_requests() {
     ctx_val.metrics_debouncer = Arc::clone(&debouncer);
     let ctx = Arc::new(ctx_val);
 
-    worker.spawn(Arc::downgrade(&ctx));
+    worker.spawn(
+        Arc::downgrade(&ctx),
+        tokio_util::sync::CancellationToken::new(),
+    );
 
     let app = api::router(Arc::clone(&ctx));
 
@@ -565,7 +568,10 @@ async fn test_github_webhook_unmatched_issue_returns_ok() {
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["received"], true);
     assert_eq!(json["matched_issue_id"], serde_json::Value::Null);
-    assert!(json["message"].as_str().unwrap().contains("No local contributor issue matched"));
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("No local contributor issue matched"));
 }
 
 #[tokio::test]

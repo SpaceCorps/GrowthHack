@@ -53,10 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metrics_debouncer: Arc::clone(&metrics_debouncer),
     });
 
-    metrics_worker.spawn(Arc::downgrade(&ctx));
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let metrics_token = cancel_token.child_token();
+    let metrics_handle = metrics_worker.spawn(Arc::downgrade(&ctx), metrics_token);
 
     let base_delay = ctx.config.background_tasks_initial_delay;
-    let cancel_token = tokio_util::sync::CancellationToken::new();
 
     let sync_ctx = Arc::clone(&ctx);
     let sync_token = cancel_token.child_token();
@@ -192,9 +193,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("HTTP server stopped. Waiting for background tasks to terminate...");
     let shutdown_timeout = std::time::Duration::from_secs(10);
     let tasks_shutdown = async {
-        let _ = tokio::join!(sync_handle, timeout_handle, pr_poll_handle, prune_handle);
+        let _ = tokio::join!(
+            sync_handle,
+            timeout_handle,
+            pr_poll_handle,
+            prune_handle,
+            metrics_handle,
+        );
     };
-    if tokio::time::timeout(shutdown_timeout, tasks_shutdown).await.is_err() {
+    if tokio::time::timeout(shutdown_timeout, tasks_shutdown)
+        .await
+        .is_err()
+    {
         tracing::warn!("Timed out waiting for background tasks to stop cleanly");
     } else {
         tracing::info!("All background tasks stopped cleanly. Shutdown complete.");
