@@ -1191,4 +1191,142 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     expect(svgRadio?.getAttribute("aria-checked")).toBe("true");
     expect(svgRadio?.className).toContain("bg-cyan-500/20");
   });
+
+  it("renders primary modal navigation with tablist and switches tabs via click and keyboard", async () => {
+    const article: Article = {
+      id: "art-nav-tabs-test",
+      title: "Modal Navigation Tabs Test Article",
+      feature: "Worktrees",
+      channel: "Dev.to",
+      angle: "Architecture",
+      summary: "Summary for navigation tabs test",
+      content: "# Heading\nTest content for modal",
+      backlinks: ["https://example.com/source"],
+      outbound_citations: ["https://example.com/ref"],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+      exports: [
+        {
+          id: "exp-1",
+          article_id: "art-nav-tabs-test",
+          channel: "Dev.to",
+          export_type: "syndication",
+          created_at: new Date().toISOString(),
+          status: "Success",
+        },
+      ],
+      engagement_snapshots: [
+        {
+          timestamp: new Date().toISOString(),
+          views: 100,
+          reactions: 10,
+          comments: 2,
+        },
+      ],
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              devto_configured: true,
+              hashnode_configured: true,
+              publish_as_draft: false,
+            }),
+        });
+      }
+      if (url.includes("/engagement-history")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              snapshots: [],
+              velocity: {
+                views_per_day: 0,
+                reactions_per_day: 0,
+                comments_per_day: 0,
+                views_24h: 0,
+                reactions_24h: 0,
+                comments_24h: 0,
+                trend: "Flat",
+                channels: {},
+              },
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="content"
+        />,
+      );
+    });
+
+    // 1. Verify primary modal navigation renders role="tablist" with 5 tabs
+    const tablist = container!.querySelector('div[role="tablist"][aria-label="Article view tabs"]');
+    expect(tablist).toBeDefined();
+
+    const tabs = Array.from(tablist!.querySelectorAll('button[role="tab"]'));
+    expect(tabs).toHaveLength(5);
+
+    const [contentTab, rawTab, backlinksTab, exportTab, engagementTab] = tabs;
+
+    expect(contentTab.getAttribute("aria-selected")).toBe("true");
+    expect(contentTab.textContent).toContain("Article Reading View");
+
+    expect(rawTab.getAttribute("aria-selected")).toBe("false");
+    expect(rawTab.textContent).toContain("Raw Markdown");
+
+    expect(backlinksTab.getAttribute("aria-selected")).toBe("false");
+    expect(backlinksTab.textContent).toContain("Backlinks & Citations (2)");
+
+    expect(exportTab.getAttribute("aria-selected")).toBe("false");
+    expect(exportTab.textContent).toContain("Export & Syndicate (1)");
+
+    expect(engagementTab.getAttribute("aria-selected")).toBe("false");
+    expect(engagementTab.textContent).toContain("Engagement & Velocity (1)");
+
+    // Initially active tab is "content", displays article reading content
+    expect(container!.textContent).toContain("Test content for modal");
+
+    // 2. Click "raw" tab to switch to Raw Markdown view
+    await act(async () => {
+      rawTab.click();
+    });
+
+    expect(rawTab.getAttribute("aria-selected")).toBe("true");
+    expect(contentTab.getAttribute("aria-selected")).toBe("false");
+    const textarea = container!.querySelector("textarea");
+    expect(textarea).toBeDefined();
+    expect(textarea?.value).toBe(article.content);
+
+    // 3. Switch tabs via keyboard navigation (ArrowRight from rawTab goes to backlinks)
+    await act(async () => {
+      tablist!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+
+    expect(backlinksTab.getAttribute("aria-selected")).toBe("true");
+    expect(container!.textContent).toContain("https://example.com/source");
+
+    // 4. Click export tab and verify syndication view is displayed
+    await act(async () => {
+      exportTab.click();
+    });
+
+    expect(exportTab.getAttribute("aria-selected")).toBe("true");
+    expect(container!.textContent).toContain("Export to Ivy Web");
+  });
 });
