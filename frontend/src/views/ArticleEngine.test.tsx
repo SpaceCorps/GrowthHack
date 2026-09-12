@@ -73,6 +73,18 @@ describe("ArticleEngine Component", () => {
           json: async () => ({ success: true, updated_count: 0 }),
         });
       }
+      if (typeof url === "string" && url.includes("/api/articles/reset-engagement")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            reset_count: 2,
+            message:
+              "Reset all article engagement metrics, milestone alerts, and global snapshots to zero.",
+          }),
+        });
+      }
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -780,6 +792,83 @@ describe("ArticleEngine Component", () => {
     expect(container!.textContent).toContain("Milestone Achievement Alerts");
     expect(container!.textContent).toContain("Automated Growth Hack");
     expect(container!.textContent).toContain("+42.0/day");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("reset all metrics button calls reset API, triggers onResetEngagement, shows loading state, and displays feedback banner", async () => {
+    let resolveReset!: () => void;
+    const resetPromise = new Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>(
+      (resolve) => {
+        resolveReset = () =>
+          resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              success: true,
+              reset_count: 2,
+              message:
+                "Reset all article engagement metrics, milestone alerts, and global snapshots to zero.",
+            }),
+          });
+      },
+    );
+
+    const onResetEngagement = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, _options) => {
+      if (typeof url === "string" && url.includes("/api/articles/reset-engagement")) {
+        return resetPromise as unknown as Response;
+      }
+      if (typeof url === "string" && url.includes("/api/articles/engagement-history")) {
+        return new Response(JSON.stringify({ snapshots: [], velocity: null }), { status: 200 });
+      }
+      if (typeof url === "string" && url.includes("/api/articles/alerts")) {
+        return new Response("[]", { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          onResetEngagement={onResetEngagement}
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Reset All Metrics"),
+    );
+    expect(resetButton).toBeDefined();
+    expect(resetButton?.title).toBe(
+      "Reset all workspace engagement metrics, snapshots, and badges to zero",
+    );
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/articles/reset-engagement",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(resetButton!.textContent).toContain("Resetting...");
+    expect(resetButton!.disabled).toBe(true);
+
+    await act(async () => {
+      resolveReset();
+    });
+
+    expect(onResetEngagement).toHaveBeenCalled();
+    expect(resetButton!.textContent).toContain("Reset All Metrics");
+    expect(resetButton!.disabled).toBe(false);
+    expect(container!.textContent).toContain(
+      "Reset all article engagement metrics, milestone alerts, and global snapshots to zero.",
+    );
 
     fetchSpy.mockRestore();
   });

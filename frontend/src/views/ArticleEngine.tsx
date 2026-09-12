@@ -20,6 +20,7 @@ import {
   Award,
   Trophy,
   CheckCheck,
+  RotateCcw,
 } from "lucide-react";
 import { EngagementVelocityChart } from "../components/EngagementVelocityChart";
 import { ActionButton } from "../components/ActionButton";
@@ -41,6 +42,7 @@ export interface ArticleEngineProps {
   ) => void;
   onUpdateStatus: (id: string, status: "Draft" | "Ready" | "Published") => void;
   onSyncMetrics?: () => Promise<void> | void;
+  onResetEngagement?: () => Promise<void> | void;
 }
 
 export const ArticleEngine: React.FC<ArticleEngineProps> = ({
@@ -50,9 +52,12 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   onSelectArticle,
   onUpdateStatus,
   onSyncMetrics,
+  onResetEngagement,
 }) => {
   const [mode, setMode] = useState<"feature" | "spotlight">("feature");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isResettingAll, setIsResettingAll] = useState(false);
+  const [resetBanner, setResetBanner] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [globalHistory, setGlobalHistory] = useState<EngagementHistoryResponse | null>(null);
   const [alerts, setAlerts] = useState<EngagementMilestoneAlert[]>([]);
@@ -138,6 +143,43 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
       setSyncError(msg);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleResetAllEngagement = async () => {
+    setIsResettingAll(true);
+    try {
+      const res = await fetch("/api/articles/reset-engagement", { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`Reset failed with status ${res.status}`);
+      }
+      let msg =
+        "Reset all article engagement metrics, milestone alerts, and global snapshots to zero.";
+      try {
+        const data = await res.json();
+        if (data?.message) {
+          msg = data.message;
+        }
+      } catch {
+        // ignore
+      }
+      if (onResetEngagement) {
+        await onResetEngagement();
+      }
+      fetchGlobalHistory().catch(() => {});
+      fetchAlerts().catch(() => {});
+      setResetBanner(msg);
+      setTimeout(() => {
+        setResetBanner(null);
+      }, 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Reset failed";
+      setResetBanner(`Error: ${msg}`);
+      setTimeout(() => {
+        setResetBanner(null);
+      }, 5000);
+    } finally {
+      setIsResettingAll(false);
     }
   };
 
@@ -604,17 +646,48 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                   <Flame className="w-4 h-4 text-amber-400" />
                   <span>Reader Engagement</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSync}
-                  disabled={isSyncing}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                  title="Sync reader engagement metrics from Dev.to and Hashnode"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-                  <span>{isSyncing ? "Syncing..." : "Sync Metrics"}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSync}
+                    disabled={isSyncing || isResettingAll}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    title="Sync reader engagement metrics from Dev.to and Hashnode"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                    <span>{isSyncing ? "Syncing..." : "Sync Metrics"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetAllEngagement}
+                    disabled={isResettingAll || isSyncing}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    title="Reset all workspace engagement metrics, snapshots, and badges to zero"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isResettingAll ? "animate-spin" : ""}`} />
+                    <span>{isResettingAll ? "Resetting..." : "Reset All Metrics"}</span>
+                  </button>
+                </div>
               </div>
+
+              {resetBanner && (
+                <div
+                  className={`mb-3 p-2 rounded text-[11px] flex items-center justify-between ${
+                    resetBanner.startsWith("Error:")
+                      ? "bg-rose-950/50 border border-rose-800 text-rose-300"
+                      : "bg-emerald-950/50 border border-emerald-800 text-emerald-300"
+                  }`}
+                >
+                  <span>{resetBanner}</span>
+                  <button
+                    type="button"
+                    onClick={() => setResetBanner(null)}
+                    className="ml-2 text-slate-400 hover:text-slate-200"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
               {syncError && (
                 <div className="mb-3 p-2 rounded bg-rose-950/50 border border-rose-800 text-[11px] text-rose-300">
