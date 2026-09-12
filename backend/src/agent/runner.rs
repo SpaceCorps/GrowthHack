@@ -167,7 +167,12 @@ impl AgentRunner {
         #[cfg(windows)]
         if let Some(ref job) = job_object {
             if let Some(raw_proc) = child.raw_handle() {
-                job.assign_process(raw_proc);
+                if !job.assign_process(raw_proc) {
+                    tracing::warn!(
+                        "Failed to assign child process to Windows Job Object: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
             }
         }
 
@@ -544,6 +549,20 @@ mod tests {
             process_dead,
             "Descendant process (PID {}) should have been killed by Job Object termination",
             child_pid
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_job_object_assign_process_invalid_handle_returns_false() {
+        let job = JobObject::new();
+        assert!(job.is_some(), "Failed to create JobObject");
+        let job = job.unwrap();
+        let invalid_handle = std::ptr::null_mut();
+        let result = job.assign_process(invalid_handle);
+        assert!(
+            !result,
+            "assign_process should return false for invalid handle"
         );
     }
 }
