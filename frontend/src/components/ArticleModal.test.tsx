@@ -2,6 +2,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { ArticleModal } from "./ArticleModal";
+import { setupMockBlobUrl } from "../test";
+import type { MockBlobUrlController } from "../test";
 import type { Article } from "../types";
 
 // @ts-expect-error global flag for react act support
@@ -10,12 +12,14 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 describe("ArticleModal Component - Dev Seed Engagement", () => {
   let container: HTMLDivElement | null = null;
   let root: ReturnType<typeof createRoot> | null = null;
+  let mockBlobUrl: MockBlobUrlController | null = null;
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    mockBlobUrl = setupMockBlobUrl();
   });
 
   afterEach(() => {
@@ -26,6 +30,10 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       container.remove();
       container = null;
       root = null;
+    }
+    if (mockBlobUrl) {
+      mockBlobUrl.restore();
+      mockBlobUrl = null;
     }
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -1787,5 +1795,81 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       overlay!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("downloads a vector SVG hero banner from the export tab's Download SVG button", async () => {
+    const article: Article = {
+      id: "art-svg-download-test",
+      title: "SVG Download Export Test Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for SVG download test",
+      content: "Content for SVG download test",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              devto_configured: false,
+              hashnode_configured: false,
+              publish_as_draft: true,
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="export"
+        />,
+      );
+    });
+
+    const clickedDownloads: string[] = [];
+    const originalClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      clickedDownloads.push(this.download);
+    };
+
+    try {
+      const downloadSvgBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+        btn.textContent?.includes("Download SVG"),
+      );
+      expect(downloadSvgBtn).toBeDefined();
+
+      await act(async () => {
+        downloadSvgBtn!.click();
+      });
+
+      expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+      const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+      expect(blob).toBeInstanceOf(Blob);
+      expect((blob as Blob).type).toBe("image/svg+xml;charset=utf-8");
+      expect(await (blob as Blob).text()).toContain("<svg");
+      expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+      expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+      expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
+
+      expect(clickedDownloads.some((name) => name.endsWith("-hero.svg"))).toBe(true);
+      expect(container!.textContent).toContain("Downloaded vector SVG!");
+    } finally {
+      HTMLAnchorElement.prototype.click = originalClick;
+    }
   });
 });

@@ -265,6 +265,107 @@ describe("RecipeHub View", () => {
     ).toBeDefined();
   });
 
+  it("renders runner timeout input with min 10 and max 3600", () => {
+    const { container } = render(<RecipeHub recipes={mockRecipes} />);
+
+    const customizeButtons = screen.getAllByRole("button", { name: /customize & run/i });
+    fireEvent.click(customizeButtons[0]);
+
+    const timeoutInput = container.querySelector('input[type="number"]');
+    expect(timeoutInput).toBeDefined();
+    expect(timeoutInput?.getAttribute("min")).toBe("10");
+    expect(timeoutInput?.getAttribute("max")).toBe("3600");
+  });
+
+  it("passes a valid timeout to onRunRecipe", async () => {
+    const onRunRecipeMock = vi.fn();
+    const { container } = render(<RecipeHub recipes={mockRecipes} onRunRecipe={onRunRecipeMock} />);
+
+    const customizeButtons = screen.getAllByRole("button", { name: /customize & run/i });
+    fireEvent.click(customizeButtons[0]);
+
+    const timeoutInput = container.querySelector('input[type="number"]');
+    fireEvent.change(timeoutInput!, { target: { value: "600" } });
+
+    const executeButton = screen.getByRole("button", { name: /execute in tendril/i });
+    fireEvent.click(executeButton);
+
+    await waitFor(() => {
+      expect(onRunRecipeMock).toHaveBeenCalledWith(
+        "recipe-bugfixer",
+        expect.objectContaining({ issue_id: "42" }),
+        600,
+      );
+    });
+  });
+
+  it("omits an out-of-bounds timeout", async () => {
+    const testCases = ["9", "5000", "abc"];
+
+    for (const value of testCases) {
+      const onRunRecipeMock = vi.fn();
+      const { container, unmount } = render(
+        <RecipeHub recipes={mockRecipes} onRunRecipe={onRunRecipeMock} />,
+      );
+
+      const customizeButtons = screen.getAllByRole("button", { name: /customize & run/i });
+      fireEvent.click(customizeButtons[0]);
+
+      const timeoutInput = container.querySelector('input[type="number"]');
+      fireEvent.change(timeoutInput!, { target: { value } });
+
+      const executeButton = screen.getByRole("button", { name: /execute in tendril/i });
+      fireEvent.click(executeButton);
+
+      await waitFor(() => {
+        expect(onRunRecipeMock).toHaveBeenCalledWith(
+          "recipe-bugfixer",
+          expect.objectContaining({ issue_id: "42" }),
+          undefined,
+        );
+      });
+
+      unmount();
+    }
+  });
+
+  it("omits the timeout when the field is left blank", async () => {
+    const onRunRecipeMock = vi.fn();
+    render(<RecipeHub recipes={mockRecipes} onRunRecipe={onRunRecipeMock} />);
+
+    const customizeButtons = screen.getAllByRole("button", { name: /customize & run/i });
+    fireEvent.click(customizeButtons[0]);
+
+    const executeButton = screen.getByRole("button", { name: /execute in tendril/i });
+    fireEvent.click(executeButton);
+
+    await waitFor(() => {
+      expect(onRunRecipeMock).toHaveBeenCalledWith(
+        "recipe-bugfixer",
+        expect.objectContaining({ issue_id: "42" }),
+        undefined,
+      );
+    });
+  });
+
+  it("resets the timeout field when the configurator is reopened", () => {
+    const { container } = render(<RecipeHub recipes={mockRecipes} />);
+
+    const customizeButtons = screen.getAllByRole("button", { name: /customize & run/i });
+    fireEvent.click(customizeButtons[0]);
+
+    let timeoutInput = container.querySelector('input[type="number"]') as HTMLInputElement;
+    fireEvent.change(timeoutInput, { target: { value: "600" } });
+    expect(timeoutInput.value).toBe("600");
+
+    const cancelButton = screen.getByRole("button", { name: /cancel/i });
+    fireEvent.click(cancelButton);
+
+    fireEvent.click(customizeButtons[1]);
+    timeoutInput = container.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(timeoutInput.value).toBe("");
+  });
+
   it("copies CLI snippet to clipboard", async () => {
     render(<RecipeHub recipes={mockRecipes} />);
 

@@ -924,12 +924,48 @@ pub struct RecordExportRequest {
     pub target_path: Option<String>,
 }
 
+fn non_empty(s: Option<&str>) -> Option<String> {
+    s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Resolution order: request payload -> persisted `export_settings` override -> `Config` default.
+/// `settings_override` is passed as a plain `Option<&str>` (rather than `&GrowthState`) so this can
+/// be called while a caller-held borrow into a different `GrowthState` field (e.g. `articles`) is
+/// still live.
+fn resolve_export_content_path(
+    ctx: &AppContext,
+    payload_dir: Option<String>,
+    settings_override: Option<&str>,
+) -> std::path::PathBuf {
+    payload_dir
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| non_empty(settings_override))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| ctx.ivy_web_content_path.clone())
+}
+
+fn resolve_export_images_path(
+    ctx: &AppContext,
+    payload_dir: Option<String>,
+    settings_override: Option<&str>,
+) -> std::path::PathBuf {
+    payload_dir
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| non_empty(settings_override))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| ctx.ivy_web_images_path.clone())
+}
+
 pub async fn export_ivy_web(
     Path(id): Path<String>,
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<ExportIvyWebRequest>,
 ) -> impl IntoResponse {
     let mut state = ctx.state.write().await;
+    let content_override = state.export_settings.ivy_web_content_path.clone();
+    let images_override = state.export_settings.ivy_web_images_path.clone();
     if let Some(article) = state.articles.iter_mut().find(|a| a.id == id) {
         let slug = article
             .slug
@@ -937,10 +973,11 @@ pub async fn export_ivy_web(
             .unwrap_or_else(|| slugify(&article.title));
         article.slug = Some(slug.clone());
 
-        let target_dir = payload
-            .target_dir
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| ctx.ivy_web_content_path.clone());
+        let target_dir = resolve_export_content_path(
+            &ctx,
+            payload.target_dir.clone(),
+            content_override.as_deref(),
+        );
 
         if let Err(e) = std::fs::create_dir_all(&target_dir) {
             return (
@@ -964,10 +1001,11 @@ pub async fn export_ivy_web(
         let mut image_path_str = None;
 
         if sync_hero {
-            let images_dir = payload
-                .target_images_dir
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+            let images_dir = resolve_export_images_path(
+                &ctx,
+                payload.target_images_dir.clone(),
+                images_override.as_deref(),
+            );
 
             match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
                 Ok(img_path) => {
@@ -1059,10 +1097,11 @@ pub async fn auto_post_article(
     let post_content =
         generate_ivy_web_post_with_options(article, &slug, payload.hero_format.as_deref());
 
-    let target_dir = payload
-        .target_dir
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| ctx.ivy_web_content_path.clone());
+    let target_dir = resolve_export_content_path(
+        &ctx,
+        payload.target_dir.clone(),
+        state.export_settings.ivy_web_content_path.as_deref(),
+    );
 
     if let Err(e) = std::fs::create_dir_all(&target_dir) {
         return (
@@ -1083,10 +1122,11 @@ pub async fn auto_post_article(
     let mut image_path_str = None;
 
     if sync_hero {
-        let images_dir = payload
-            .target_images_dir
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+        let images_dir = resolve_export_images_path(
+            &ctx,
+            payload.target_images_dir.clone(),
+            state.export_settings.ivy_web_images_path.as_deref(),
+        );
 
         match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
             Ok(img_path) => {
@@ -1156,10 +1196,11 @@ pub async fn sync_assets(
             .clone()
             .unwrap_or_else(|| slugify(&article.title));
 
-        let images_dir = payload
-            .and_then(|p| p.0.target_images_dir)
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+        let images_dir = resolve_export_images_path(
+            &ctx,
+            payload.and_then(|p| p.0.target_images_dir),
+            state.export_settings.ivy_web_images_path.as_deref(),
+        );
 
         match sync_hero_asset(&slug, &images_dir, &article.title, &article.angle) {
             Ok(img_path) => (
@@ -1250,10 +1291,11 @@ pub async fn upload_hero_image(
             .clone()
             .unwrap_or_else(|| slugify(&article.title));
 
-        let images_dir = payload
-            .target_images_dir
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| ctx.ivy_web_images_path.clone());
+        let images_dir = resolve_export_images_path(
+            &ctx,
+            payload.target_images_dir.clone(),
+            state.export_settings.ivy_web_images_path.as_deref(),
+        );
 
         let blog_dir = if images_dir.file_name().and_then(|f| f.to_str()) == Some("blog") {
             images_dir
@@ -1526,6 +1568,96 @@ pub async fn update_syndication_settings(
         publish_as_draft: state.syndication_settings.publish_as_draft,
         webhook_secret_configured,
         webhook_secret_preview,
+    };
+
+    (StatusCode::OK, Json(res))
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExportPathSettingsResponse {
+    pub content_path: String,
+    pub images_path: String,
+    pub content_path_source: String,
+    pub images_path_source: String,
+    pub content_path_override: Option<String>,
+    pub images_path_override: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct UpdateExportPathSettingsRequest {
+    pub ivy_web_content_path: Option<String>,
+    pub ivy_web_images_path: Option<String>,
+}
+
+pub async fn get_export_path_settings(State(ctx): State<Arc<AppContext>>) -> impl IntoResponse {
+    let state = ctx.state.read().await;
+    let content_override = state.export_settings.ivy_web_content_path.clone();
+    let images_override = state.export_settings.ivy_web_images_path.clone();
+
+    let content_path = resolve_export_content_path(&ctx, None, content_override.as_deref());
+    let images_path = resolve_export_images_path(&ctx, None, images_override.as_deref());
+
+    let content_path_source = if content_override.is_some() {
+        "settings".to_string()
+    } else {
+        ctx.config.ivy_web_content_path_source.as_str().to_string()
+    };
+    let images_path_source = if images_override.is_some() {
+        "settings".to_string()
+    } else {
+        ctx.config.ivy_web_images_path_source.as_str().to_string()
+    };
+
+    let res = ExportPathSettingsResponse {
+        content_path: content_path.to_string_lossy().to_string(),
+        images_path: images_path.to_string_lossy().to_string(),
+        content_path_source,
+        images_path_source,
+        content_path_override: content_override,
+        images_path_override: images_override,
+    };
+
+    (StatusCode::OK, Json(res))
+}
+
+pub async fn update_export_path_settings(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<UpdateExportPathSettingsRequest>,
+) -> impl IntoResponse {
+    let mut state = ctx.state.write().await;
+    if let Some(ref p) = payload.ivy_web_content_path {
+        state.export_settings.ivy_web_content_path = non_empty(Some(p));
+    }
+    if let Some(ref p) = payload.ivy_web_images_path {
+        state.export_settings.ivy_web_images_path = non_empty(Some(p));
+    }
+
+    let _ = state.save(&ctx.data_file);
+
+    let content_override = state.export_settings.ivy_web_content_path.clone();
+    let images_override = state.export_settings.ivy_web_images_path.clone();
+
+    let content_path = resolve_export_content_path(&ctx, None, content_override.as_deref());
+    let images_path = resolve_export_images_path(&ctx, None, images_override.as_deref());
+
+    let content_path_source = if content_override.is_some() {
+        "settings".to_string()
+    } else {
+        ctx.config.ivy_web_content_path_source.as_str().to_string()
+    };
+    let images_path_source = if images_override.is_some() {
+        "settings".to_string()
+    } else {
+        ctx.config.ivy_web_images_path_source.as_str().to_string()
+    };
+
+    let res = ExportPathSettingsResponse {
+        content_path: content_path.to_string_lossy().to_string(),
+        images_path: images_path.to_string_lossy().to_string(),
+        content_path_source,
+        images_path_source,
+        content_path_override: content_override,
+        images_path_override: images_override,
     };
 
     (StatusCode::OK, Json(res))
@@ -3974,6 +4106,236 @@ mod tests {
         assert!(images_dir
             .join("blog/test-sync-assets-endpoint-hero.png")
             .exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_get_export_path_settings_returns_config_paths() {
+        let temp_dir = std::env::temp_dir().join("test_get_export_path_settings");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let data_file = temp_dir.join("data.json");
+        let content_dir = temp_dir.join("content");
+        let images_dir = temp_dir.join("images");
+
+        let ctx = std::sync::Arc::new(AppContext {
+            data_file,
+            ivy_web_content_path: content_dir.clone(),
+            ivy_web_images_path: images_dir.clone(),
+            ..AppContext::new_test()
+        });
+
+        let resp = get_export_path_settings(axum::extract::State(ctx))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: ExportPathSettingsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(parsed.content_path, content_dir.to_string_lossy());
+        assert_eq!(parsed.images_path, images_dir.to_string_lossy());
+        assert_ne!(parsed.content_path_source, "settings");
+        assert_ne!(parsed.images_path_source, "settings");
+        assert_eq!(parsed.content_path_override, None);
+        assert_eq!(parsed.images_path_override, None);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_update_export_path_settings_persists_override() {
+        let temp_dir = std::env::temp_dir().join("test_update_export_path_settings_persists");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let data_file = temp_dir.join("data.json");
+        let override_content = temp_dir.join("override/content").to_string_lossy().to_string();
+        let override_images = temp_dir.join("override/images").to_string_lossy().to_string();
+
+        let ctx = std::sync::Arc::new(AppContext {
+            data_file: data_file.clone(),
+            ..AppContext::new_test()
+        });
+
+        let req = UpdateExportPathSettingsRequest {
+            ivy_web_content_path: Some(override_content.clone()),
+            ivy_web_images_path: Some(override_images.clone()),
+        };
+
+        let resp = update_export_path_settings(axum::extract::State(ctx), axum::extract::Json(req))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: ExportPathSettingsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(parsed.content_path, override_content);
+        assert_eq!(parsed.images_path, override_images);
+        assert_eq!(parsed.content_path_source, "settings");
+        assert_eq!(parsed.images_path_source, "settings");
+
+        let saved = crate::db::GrowthState::load_or_init(&data_file);
+        assert_eq!(
+            saved.export_settings.ivy_web_content_path,
+            Some(override_content)
+        );
+        assert_eq!(
+            saved.export_settings.ivy_web_images_path,
+            Some(override_images)
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_update_export_path_settings_blank_clears_override() {
+        let temp_dir = std::env::temp_dir().join("test_update_export_path_settings_blank");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let data_file = temp_dir.join("data.json");
+        let content_dir = temp_dir.join("content");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        growth_state.export_settings.ivy_web_content_path = Some("/some/prior/override".to_string());
+
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            data_file,
+            ivy_web_content_path: content_dir.clone(),
+            ..AppContext::new_test()
+        });
+
+        let req = UpdateExportPathSettingsRequest {
+            ivy_web_content_path: Some("".to_string()),
+            ivy_web_images_path: None,
+        };
+
+        let resp = update_export_path_settings(axum::extract::State(ctx), axum::extract::Json(req))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: ExportPathSettingsResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(parsed.content_path_override, None);
+        assert_eq!(parsed.content_path, content_dir.to_string_lossy());
+        assert_ne!(parsed.content_path_source, "settings");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_export_ivy_web_uses_settings_override() {
+        let temp_dir = std::env::temp_dir().join("test_export_ivy_web_uses_settings_override");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let data_file = temp_dir.join("data.json");
+        let ctx_content_dir = temp_dir.join("ctx-content");
+        let ctx_images_dir = temp_dir.join("ctx-images");
+        let override_content_dir = temp_dir.join("override-content");
+        let override_images_dir = temp_dir.join("override-images");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        growth_state.export_settings.ivy_web_content_path =
+            Some(override_content_dir.to_string_lossy().to_string());
+        growth_state.export_settings.ivy_web_images_path =
+            Some(override_images_dir.to_string_lossy().to_string());
+        let article = Article {
+            id: "art-settings-override".to_string(),
+            title: "Test Settings Override".to_string(),
+            summary: "Testing export settings override".to_string(),
+            content: "## Content".to_string(),
+            slug: Some("test-settings-override".to_string()),
+            ..Article::default_for_test()
+        };
+        growth_state.articles.push(article);
+
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            data_file,
+            ivy_web_content_path: ctx_content_dir,
+            ivy_web_images_path: ctx_images_dir,
+            ..AppContext::new_test()
+        });
+
+        let req = ExportIvyWebRequest {
+            target_dir: None,
+            target_images_dir: None,
+            sync_hero_image: Some(true),
+            hero_format: Some("dual".to_string()),
+        };
+
+        let resp = export_ivy_web(
+            axum::extract::Path("art-settings-override".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Json(req),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        assert!(override_content_dir
+            .join("test-settings-override.mdoc")
+            .exists());
+        assert!(override_images_dir
+            .join("blog/test-settings-override-hero.png")
+            .exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_export_payload_beats_settings_override() {
+        let temp_dir = std::env::temp_dir().join("test_export_payload_beats_settings_override");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let data_file = temp_dir.join("data.json");
+        let override_content_dir = temp_dir.join("override-content");
+        let payload_content_dir = temp_dir.join("payload-content");
+        let payload_images_dir = temp_dir.join("payload-images");
+
+        let mut growth_state = crate::db::GrowthState::seed_default();
+        growth_state.export_settings.ivy_web_content_path =
+            Some(override_content_dir.to_string_lossy().to_string());
+        let article = Article {
+            id: "art-payload-wins".to_string(),
+            title: "Test Payload Wins".to_string(),
+            summary: "Testing payload beats settings override".to_string(),
+            content: "## Content".to_string(),
+            slug: Some("test-payload-wins".to_string()),
+            ..Article::default_for_test()
+        };
+        growth_state.articles.push(article);
+
+        let ctx = std::sync::Arc::new(AppContext {
+            state: std::sync::Arc::new(tokio::sync::RwLock::new(growth_state)),
+            data_file,
+            ..AppContext::new_test()
+        });
+
+        let req = ExportIvyWebRequest {
+            target_dir: Some(payload_content_dir.to_string_lossy().to_string()),
+            target_images_dir: Some(payload_images_dir.to_string_lossy().to_string()),
+            sync_hero_image: Some(true),
+            hero_format: Some("dual".to_string()),
+        };
+
+        let resp = export_ivy_web(
+            axum::extract::Path("art-payload-wins".to_string()),
+            axum::extract::State(ctx),
+            axum::extract::Json(req),
+        )
+        .await
+        .into_response();
+
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+        assert!(payload_content_dir
+            .join("test-payload-wins.mdoc")
+            .exists());
+        assert!(!override_content_dir.exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

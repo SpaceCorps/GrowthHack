@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ActionButton } from "../components/ActionButton";
+import { SegmentedControl } from "../components/SegmentedControl";
 import type {
   PackageManagerTarget,
   PackageManifestResponse,
@@ -1270,26 +1271,19 @@ Installers:
             </div>
 
             {/* Manifest Target Tabs */}
-            <div className="px-6 pt-3 border-b border-slate-800 flex space-x-2 overflow-x-auto">
-              {Object.keys(defaultManifests).map((tabKey) => {
-                const isTabActive = activeManifestTab === tabKey;
-                const tabManifest = defaultManifests[tabKey];
-                return (
-                  <button
-                    key={tabKey}
-                    data-testid={`manifest-tab-${tabKey}`}
-                    onClick={() => handleTabSwitch(tabKey)}
-                    className={`px-3.5 py-2 text-xs font-mono font-medium rounded-t-lg transition-all border-b-2 flex items-center gap-1.5 ${
-                      isTabActive
-                        ? "border-indigo-500 text-indigo-300 bg-slate-800/60"
-                        : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
-                    }`}
-                  >
-                    <span>{tabManifest.filename}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              appearance="underline"
+              variant="indigo"
+              ariaLabel="Manifest target tabs"
+              className="px-6 pt-3 overflow-x-auto"
+              value={activeManifestTab}
+              onChange={handleTabSwitch}
+              options={Object.keys(defaultManifests).map((tabKey) => ({
+                value: tabKey,
+                testId: `manifest-tab-${tabKey}`,
+                label: <span className="font-mono">{defaultManifests[tabKey].filename}</span>,
+              }))}
+            />
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-4 flex-1">

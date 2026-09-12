@@ -165,6 +165,23 @@ describe("VideoDemos View", () => {
     expect(screen.getByText(/@playwright\/test/)).toBeDefined();
   });
 
+  it("navigates platform copy tabs via ArrowRight/ArrowLeft on the tablist", () => {
+    render(<VideoDemos demos={mockDemos} />);
+
+    const twitterTab = screen.getByTestId("tab-demo-test-1-twitter");
+    const tablist = twitterTab.closest('[role="tablist"]') as HTMLElement;
+    expect(tablist).not.toBeNull();
+
+    // Default tab is LinkedIn; ArrowRight moves to X/Twitter
+    fireEvent.keyDown(tablist, { key: "ArrowRight" });
+    expect(screen.getByText("1/3 Git worktrees thread part 1")).toBeDefined();
+    expect(twitterTab.getAttribute("aria-selected")).toBe("true");
+
+    // ArrowLeft moves back to LinkedIn
+    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+    expect(screen.getByText("LinkedIn hook post content for Git Worktrees.")).toBeDefined();
+  });
+
   it("copies platform script and full package to clipboard", () => {
     render(<VideoDemos demos={mockDemos} />);
 

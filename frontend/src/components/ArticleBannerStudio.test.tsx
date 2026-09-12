@@ -2,6 +2,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { ArticleBannerStudio } from "./ArticleBannerStudio";
+import { setupMockBlobUrl } from "../test";
+import type { MockBlobUrlController } from "../test";
 import type { Article } from "../types";
 
 // @ts-expect-error global flag for react act support
@@ -18,6 +20,7 @@ vi.mock("../utils/banner", async (importOriginal) => {
 describe("ArticleBannerStudio Component", () => {
   let container: HTMLDivElement | null = null;
   let root: ReturnType<typeof createRoot> | null = null;
+  let mockBlobUrl: MockBlobUrlController | null = null;
   const originalFetch = globalThis.fetch;
 
   const mockArticle: Article = {
@@ -38,6 +41,7 @@ describe("ArticleBannerStudio Component", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    mockBlobUrl = setupMockBlobUrl();
   });
 
   afterEach(() => {
@@ -48,6 +52,10 @@ describe("ArticleBannerStudio Component", () => {
       container.remove();
       container = null;
       root = null;
+    }
+    if (mockBlobUrl) {
+      mockBlobUrl.restore();
+      mockBlobUrl = null;
     }
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -136,11 +144,6 @@ describe("ArticleBannerStudio Component", () => {
   });
 
   it("triggers anchor download flow on Download PNG and Download SVG button clicks", async () => {
-    const createObjectURLMock = vi.fn().mockReturnValue("blob:mock-svg-url");
-    const revokeObjectURLMock = vi.fn();
-    globalThis.URL.createObjectURL = createObjectURLMock;
-    globalThis.URL.revokeObjectURL = revokeObjectURLMock;
-
     const clickedDownloads: string[] = [];
     const originalClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
@@ -167,7 +170,14 @@ describe("ArticleBannerStudio Component", () => {
         downloadSvgBtn!.click();
       });
 
-      expect(createObjectURLMock).toHaveBeenCalled();
+      expect(mockBlobUrl!.createObjectURL).toHaveBeenCalledTimes(1);
+      const [blob] = mockBlobUrl!.createObjectURL.mock.calls[0];
+      expect(blob).toBeInstanceOf(Blob);
+      expect((blob as Blob).type).toBe("image/svg+xml;charset=utf-8");
+      expect(await (blob as Blob).text()).toContain("<svg");
+      expect(mockBlobUrl!.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+      expect(mockBlobUrl!.getCreatedUrls()).toEqual(["blob:mock-url"]);
+      expect(mockBlobUrl!.getRevokedUrls()).toEqual(["blob:mock-url"]);
       expect(clickedDownloads).toContain("autonomous-agent-orchestration-hero.svg");
       expect(container!.textContent).toContain("Downloaded vector SVG!");
 

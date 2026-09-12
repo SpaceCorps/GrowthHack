@@ -1,6 +1,21 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathSource {
+    Environment,
+    Detected,
+}
+
+impl PathSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PathSource::Environment => "environment",
+            PathSource::Detected => "detected",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub host: IpAddr,
@@ -10,6 +25,8 @@ pub struct Config {
     pub frontend_dist_dir: Option<PathBuf>,
     pub ivy_web_content_path: PathBuf,
     pub ivy_web_images_path: PathBuf,
+    pub ivy_web_content_path_source: PathSource,
+    pub ivy_web_images_path_source: PathSource,
     pub devto_api_key: Option<String>,
     pub hashnode_api_key: Option<String>,
     pub hashnode_publication_id: Option<String>,
@@ -193,16 +210,28 @@ impl Config {
             std::env::current_exe().ok().as_deref(),
         );
 
-        let ivy_web_content_path = resolve_ivy_web_content_path(
-            std::env::var("IVY_WEB_CONTENT_PATH").ok(),
-            home.as_deref(),
-        );
+        let content_env = std::env::var("IVY_WEB_CONTENT_PATH")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let ivy_web_content_path_source = if content_env.is_some() {
+            PathSource::Environment
+        } else {
+            PathSource::Detected
+        };
+        let ivy_web_content_path = resolve_ivy_web_content_path(content_env, home.as_deref());
 
-        let ivy_web_images_path = resolve_ivy_web_images_path(
-            std::env::var("IVY_WEB_IMAGES_PATH").ok(),
-            &ivy_web_content_path,
-            home.as_deref(),
-        );
+        let images_env = std::env::var("IVY_WEB_IMAGES_PATH")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let ivy_web_images_path_source = if images_env.is_some() {
+            PathSource::Environment
+        } else {
+            PathSource::Detected
+        };
+        let ivy_web_images_path =
+            resolve_ivy_web_images_path(images_env, &ivy_web_content_path, home.as_deref());
 
         let devto_api_key = std::env::var("DEVTO_API_KEY")
             .ok()
@@ -269,6 +298,8 @@ impl Config {
             frontend_dist_dir,
             ivy_web_content_path,
             ivy_web_images_path,
+            ivy_web_content_path_source,
+            ivy_web_images_path_source,
             devto_api_key,
             hashnode_api_key,
             hashnode_publication_id,
@@ -354,6 +385,50 @@ mod tests {
         assert_eq!(resolved, test_images);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_ivy_web_path_source_environment() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("IVY_WEB_CONTENT_PATH", "/custom/content/posts");
+        std::env::set_var("IVY_WEB_IMAGES_PATH", "/custom/site/images");
+        let config = Config::load();
+        std::env::remove_var("IVY_WEB_CONTENT_PATH");
+        std::env::remove_var("IVY_WEB_IMAGES_PATH");
+        assert_eq!(config.ivy_web_content_path_source, PathSource::Environment);
+        assert_eq!(config.ivy_web_images_path_source, PathSource::Environment);
+        assert_eq!(
+            config.ivy_web_content_path,
+            PathBuf::from("/custom/content/posts")
+        );
+        assert_eq!(
+            config.ivy_web_images_path,
+            PathBuf::from("/custom/site/images")
+        );
+    }
+
+    #[test]
+    fn test_ivy_web_path_source_detected_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("IVY_WEB_CONTENT_PATH");
+        std::env::remove_var("IVY_WEB_IMAGES_PATH");
+        let config = Config::load();
+        assert_eq!(config.ivy_web_content_path_source, PathSource::Detected);
+        assert_eq!(config.ivy_web_images_path_source, PathSource::Detected);
+    }
+
+    #[test]
+    fn test_blank_ivy_web_env_var_is_ignored() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("IVY_WEB_CONTENT_PATH", "");
+        std::env::set_var("IVY_WEB_IMAGES_PATH", "");
+        let config = Config::load();
+        std::env::remove_var("IVY_WEB_CONTENT_PATH");
+        std::env::remove_var("IVY_WEB_IMAGES_PATH");
+        assert_eq!(config.ivy_web_content_path_source, PathSource::Detected);
+        assert_eq!(config.ivy_web_images_path_source, PathSource::Detected);
+        assert_ne!(config.ivy_web_content_path, PathBuf::from(""));
+        assert_ne!(config.ivy_web_images_path, PathBuf::from(""));
     }
 
     #[test]

@@ -432,9 +432,10 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&script_path, perms).expect("set permissions");
 
-        // Execute AgentRunner with a short timeout (500ms)
+        // Execute AgentRunner with a short timeout (1500ms), large enough that the script
+        // reliably writes its child PID under heavy test concurrency
         let runner =
-            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(500));
+            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(1500));
         let (tx, _rx) = tokio::sync::broadcast::channel(32);
 
         let res = runner
@@ -443,7 +444,9 @@ mod tests {
 
         assert!(res.is_err(), "Expected timeout error, got {:?}", res);
         let err = res.unwrap_err();
-        assert!(err.contains("timed out after 500ms"), "Error was: {}", err);
+        // Duration's Debug format renders sub-second values as "500ms" but second-scale
+        // values as "1.5s" rather than "1500ms".
+        assert!(err.contains("timed out after 1.5s"), "Error was: {}", err);
 
         // Read recorded child PID from temporary file
         assert!(
@@ -500,9 +503,11 @@ mod tests {
         );
         std::fs::write(&script_path, script_content).expect("write test script");
 
-        // Execute AgentRunner with a short timeout (500ms)
-        let runner =
-            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(500));
+        // Timeout must be long enough that the script writes its child PID under heavy
+        // test concurrency (PowerShell cold start is the dominant cost), yet far below
+        // the 30s the spawned child runs for, so the kill path is still what is exercised.
+        let timeout = std::time::Duration::from_millis(5000);
+        let runner = AgentRunner::with_timeout(script_path.clone(), timeout);
         let (tx, _rx) = tokio::sync::broadcast::channel(32);
 
         let res = runner
@@ -511,39 +516,63 @@ mod tests {
 
         assert!(res.is_err(), "Expected timeout error, got {:?}", res);
         let err = res.unwrap_err();
-        assert!(err.contains("timed out after 500ms"), "Error was: {}", err);
+        let expected = format!("timed out after {:?}", timeout);
+        assert!(err.contains(&expected), "Error was: {}", err);
 
-        // Read recorded child PID from temporary file
-        assert!(
-            pid_file_path.exists(),
-            "PID file should have been written by test script"
-        );
-        let pid_str = std::fs::read_to_string(&pid_file_path).expect("read pid file");
-        let child_pid: u32 = pid_str.trim().parse().expect("parse child PID");
-
-        // Check that descendant background process is no longer running
-        let mut process_dead = false;
-        for _ in 0..20 {
-            unsafe {
-                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, child_pid);
-                if handle == 0 {
-                    process_dead = true;
-                    break;
-                }
-                let mut exit_code: u32 = 0;
-                let res = GetExitCodeProcess(handle, &mut exit_code);
-                CloseHandle(handle);
-                if res != 0 && exit_code != 259 {
-                    process_dead = true;
-                    break;
-                }
+        // The PID file is written by a separate process; allow a bounded settling window
+        // rather than asserting on a single instantaneous check.
+        let mut pid_file_written = false;
+        for _ in 0..40 {
+            if pid_file_path.exists() {
+                pid_file_written = true;
+                break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
 
-        // Clean up temporary test files
+        // Read recorded child PID from the temporary file while it still exists (cleanup below
+        // removes it), only if the poll loop above actually observed it.
+        let child_pid: Option<u32> = if pid_file_written {
+            std::fs::read_to_string(&pid_file_path)
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+        } else {
+            None
+        };
+
+        // Check that descendant background process is no longer running. This only needs
+        // child_pid, not the files, so it can run before cleanup.
+        let mut process_dead = false;
+        if let Some(child_pid) = child_pid {
+            for _ in 0..20 {
+                unsafe {
+                    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, child_pid);
+                    if handle == 0 {
+                        process_dead = true;
+                        break;
+                    }
+                    let mut exit_code: u32 = 0;
+                    let res = GetExitCodeProcess(handle, &mut exit_code);
+                    CloseHandle(handle);
+                    if res != 0 && exit_code != 259 {
+                        process_dead = true;
+                        break;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+
+        // Clean up temporary test files ahead of the assertions below, so a flake doesn't
+        // leak them into %TEMP%.
         let _ = std::fs::remove_file(&script_path);
         let _ = std::fs::remove_file(&pid_file_path);
+
+        assert!(
+            pid_file_written,
+            "PID file should have been written by test script within 2s"
+        );
+        let child_pid = child_pid.expect("parse child PID");
 
         assert!(
             process_dead,

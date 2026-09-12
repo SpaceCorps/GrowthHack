@@ -249,12 +249,16 @@ export const App: React.FC = () => {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  const handleRunRecipe = async (recipeId: string, parameters: Record<string, string>) => {
+  const handleRunRecipe = async (
+    recipeId: string,
+    parameters: Record<string, string>,
+    timeoutSecs?: number,
+  ) => {
     try {
       const res = await fetch(`/api/recipes/${recipeId}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parameters }),
+        body: JSON.stringify({ parameters, timeout_secs: timeoutSecs || undefined }),
       });
       if (res.ok) {
         const data: RunRecipeResponse = await res.json();

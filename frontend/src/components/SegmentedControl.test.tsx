@@ -250,6 +250,37 @@ describe("SegmentedControl Component", () => {
     expect(activeBtn.className).toContain("border-pink-500/50");
   });
 
+  it("renders data-testid on options that specify one, and omits it otherwise", () => {
+    const options: SegmentedControlOption[] = [
+      { value: "withTestId", label: "With TestId", testId: "option-with-test-id" },
+      { value: "withoutTestId", label: "Without TestId" },
+    ];
+
+    render(<SegmentedControl options={options} value="withTestId" onChange={vi.fn()} />);
+
+    expect(screen.getByTestId("option-with-test-id")).toBeDefined();
+
+    const withoutTestIdBtn = screen.getByRole("radio", { name: "Without TestId" });
+    expect(withoutTestIdBtn.hasAttribute("data-testid")).toBe(false);
+  });
+
+  it("applies rose variant active underline classes", () => {
+    const options = ["RoseTab", "OtherTab"];
+    render(
+      <SegmentedControl
+        appearance="underline"
+        options={options}
+        value="RoseTab"
+        onChange={vi.fn()}
+        variant="rose"
+      />,
+    );
+
+    const activeTab = screen.getByRole("tab", { name: "RoseTab" });
+    expect(activeTab.className).toContain("border-rose-400");
+    expect(activeTab.className).toContain("text-rose-300");
+  });
+
   it("navigates options via keyboard arrow keys, Home, and End", () => {
     const handleChange = vi.fn();
     const options = ["Tab1", "Tab2", "Tab3", "Tab4"];
