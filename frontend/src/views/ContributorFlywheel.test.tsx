@@ -6,8 +6,8 @@ import type {
   ContributingGuideResponse,
   AllContributorsResponse,
 } from "../types";
-import { setupMockFetch } from "../test";
-import type { MockFetchController } from "../test";
+import { setupMockFetch, setupMockClipboard } from "../test";
+import type { MockFetchController, MockClipboardController } from "../test";
 
 const mockIssues: ContributorIssue[] = [
   {
@@ -185,16 +185,11 @@ const mockGitHubUsers = [
 
 describe("ContributorFlywheel View", () => {
   let mockController: MockFetchController | null = null;
+  let mockClipboard: MockClipboardController | null = null;
 
   beforeEach(() => {
     // Mock clipboard
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: vi.fn().mockImplementation(() => Promise.resolve()),
-      },
-      configurable: true,
-      writable: true,
-    });
+    mockClipboard = setupMockClipboard();
 
     // Mock URL object methods for download test
     Object.defineProperty(window.URL, "createObjectURL", {
@@ -264,6 +259,10 @@ describe("ContributorFlywheel View", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
     if (mockController) {
       mockController.restore();
       mockController = null;

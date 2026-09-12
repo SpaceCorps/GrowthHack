@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { PackageManagerBlitz } from "./PackageManagerBlitz";
 import type { PackageManagerTarget } from "../types";
-import { setupMockFetch, createMockGhAuthStatus } from "../test";
-import type { MockFetchController } from "../test";
+import { setupMockFetch, createMockGhAuthStatus, setupMockClipboard } from "../test";
+import type { MockFetchController, MockClipboardController } from "../test";
 
 const mockPackages: PackageManagerTarget[] = [
   {
@@ -65,15 +65,10 @@ const mockPackages: PackageManagerTarget[] = [
 
 describe("PackageManagerBlitz View", () => {
   let mockController: MockFetchController | null = null;
+  let mockClipboard: MockClipboardController | null = null;
 
   beforeEach(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: vi.fn().mockResolvedValue(undefined),
-      },
-      writable: true,
-      configurable: true,
-    });
+    mockClipboard = setupMockClipboard();
     mockController = setupMockFetch({
       handlers: {
         "/api/packages/gh-auth-status": createMockGhAuthStatus(),
@@ -96,6 +91,10 @@ describe("PackageManagerBlitz View", () => {
 
   afterEach(() => {
     cleanup();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
     if (mockController) {
       mockController.restore();
       mockController = null;

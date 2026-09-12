@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { RecipeHub } from "./RecipeHub";
 import type { Recipe } from "../types";
+import { setupMockClipboard } from "../test";
+import type { MockClipboardController } from "../test";
 
 const mockRecipes: Recipe[] = [
   {
@@ -164,19 +166,19 @@ const mockRecipes: Recipe[] = [
 ];
 
 describe("RecipeHub View", () => {
+  let mockClipboard: MockClipboardController | null = null;
+
   beforeEach(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: vi.fn().mockResolvedValue(undefined),
-      },
-      writable: true,
-      configurable: true,
-    });
+    mockClipboard = setupMockClipboard();
   });
 
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
   });
 
   it("renders all 5 seeded gold-standard recipes with category pills and tags", () => {

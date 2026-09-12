@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { VideoDemos } from "./VideoDemos";
 import type { VideoDemo } from "../types";
-import { setupMockFetch } from "../test";
-import type { MockFetchController } from "../test";
+import { setupMockFetch, setupMockClipboard } from "../test";
+import type { MockFetchController, MockClipboardController } from "../test";
 
 const mockDemos: VideoDemo[] = [
   {
@@ -82,18 +82,11 @@ const mockDemos: VideoDemo[] = [
 ];
 
 describe("VideoDemos View", () => {
-  let writeTextMock: ReturnType<typeof vi.fn>;
+  let mockClipboard: MockClipboardController | null = null;
   let mockController: MockFetchController | null = null;
 
   beforeEach(() => {
-    writeTextMock = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      value: {
-        writeText: writeTextMock,
-      },
-      writable: true,
-      configurable: true,
-    });
+    mockClipboard = setupMockClipboard();
 
     mockController = setupMockFetch({
       handlers: {
@@ -106,6 +99,10 @@ describe("VideoDemos View", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    if (mockClipboard) {
+      mockClipboard.restore();
+      mockClipboard = null;
+    }
     if (mockController) {
       mockController.restore();
       mockController = null;
@@ -174,12 +171,16 @@ describe("VideoDemos View", () => {
     const copyPostBtn = screen.getAllByText("Copy Post")[0];
     fireEvent.click(copyPostBtn);
 
-    expect(writeTextMock).toHaveBeenCalledWith("LinkedIn hook post content for Git Worktrees.");
+    expect(mockClipboard?.writeText).toHaveBeenCalledWith(
+      "LinkedIn hook post content for Git Worktrees.",
+    );
 
     const copyPackageBtn = screen.getAllByText("Copy Full Package")[0];
     fireEvent.click(copyPackageBtn);
 
-    expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining("=== LINKEDIN POST ==="));
+    expect(mockClipboard?.writeText).toHaveBeenCalledWith(
+      expect.stringContaining("=== LINKEDIN POST ==="),
+    );
   });
 
   it("submits generation request and handles callback", async () => {
