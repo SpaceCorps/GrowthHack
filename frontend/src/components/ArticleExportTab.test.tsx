@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { ArticleExportTab } from "./ArticleExportTab";
-import type { Article, SyndicationStatusResponse } from "../types";
+import type { Article, ExportPathSettings, SyndicationStatusResponse } from "../types";
 
 // @ts-expect-error global flag for react act support
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -57,6 +57,15 @@ describe("ArticleExportTab Component", () => {
     webhook_secret_preview: "sec_...9999",
   };
 
+  const mockExportPaths: ExportPathSettings = {
+    content_path: "/srv/ivy-web/content/posts",
+    images_path: "/srv/ivy-web/public/site/images",
+    content_path_source: "detected",
+    images_path_source: "detected",
+    content_path_override: null,
+    images_path_override: null,
+  };
+
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -78,6 +87,12 @@ describe("ArticleExportTab Component", () => {
 
   it("updates preview format when switching channel tabs", async () => {
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
       if (url.includes("/settings/syndication")) {
         return Promise.resolve({
           ok: true,
@@ -137,6 +152,12 @@ describe("ArticleExportTab Component", () => {
     let savedSettings: any = null;
 
     globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
       if (url.includes("/settings/syndication")) {
         if (init?.method === "POST") {
           savedSettings = JSON.parse(init?.body as string);
@@ -212,6 +233,12 @@ describe("ArticleExportTab Component", () => {
 
   it("renders credential warning banners for unconfigured channels", async () => {
     globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
       if (url.includes("/settings/syndication")) {
         return Promise.resolve({
           ok: true,
@@ -260,6 +287,12 @@ describe("ArticleExportTab Component", () => {
     const onArticleUpdated = vi.fn();
 
     globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
       if (url.includes("/settings/syndication")) {
         return Promise.resolve({
           ok: true,
@@ -311,5 +344,147 @@ describe("ArticleExportTab Component", () => {
     expect(container!.textContent).toContain("Successfully syndicated to Dev.to!");
     expect(container!.textContent).toContain("Open Published Article");
     expect(onArticleUpdated).toHaveBeenCalled();
+  });
+
+  it("renders backend-resolved default export paths as placeholders", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(unconfiguredSettings),
+        });
+      }
+      if (url.includes("/format/")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ formatted_content: "Content", preview_type: "markdown" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(<ArticleExportTab article={mockArticle} />);
+    });
+
+    const inputs = Array.from(
+      container!.querySelectorAll("input[type='text']"),
+    ) as HTMLInputElement[];
+    const placeholders = inputs.map((input) => input.placeholder);
+
+    expect(placeholders.some((p) => p.includes(mockExportPaths.content_path))).toBe(true);
+    expect(placeholders.some((p) => p.includes(mockExportPaths.images_path))).toBe(true);
+    expect(placeholders.every((p) => !p.includes("rorychatt"))).toBe(true);
+    expect(container!.textContent).not.toContain("rorychatt");
+  });
+
+  it("saves export path defaults via the Save as Default button and refreshes the displayed default", async () => {
+    let savedRequestBody: any = null;
+    const savedResponse: ExportPathSettings = {
+      ...mockExportPaths,
+      content_path: "/custom/override/content",
+      content_path_source: "settings",
+      content_path_override: "/custom/override/content",
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/settings/export-paths")) {
+        if (init?.method === "POST") {
+          savedRequestBody = JSON.parse(init?.body as string);
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(savedResponse),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(mockExportPaths),
+        });
+      }
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(unconfiguredSettings),
+        });
+      }
+      if (url.includes("/format/")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ formatted_content: "Content", preview_type: "markdown" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(<ArticleExportTab article={mockArticle} />);
+    });
+
+    const contentInput = container!.querySelector("input[type='text']") as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(contentInput, "/custom/override/content");
+      contentInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    const saveBtn = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Save as Default"),
+    );
+    expect(saveBtn).toBeDefined();
+
+    await act(async () => {
+      saveBtn!.click();
+    });
+
+    expect(savedRequestBody).toBeDefined();
+    expect(savedRequestBody.ivy_web_content_path).toBe("/custom/override/content");
+    expect(contentInput.placeholder).toContain("/custom/override/content");
+  });
+
+  it("falls back to a generic placeholder when the export-paths fetch fails", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/settings/export-paths")) {
+        return Promise.reject(new Error("network error"));
+      }
+      if (url.includes("/settings/syndication")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(unconfiguredSettings),
+        });
+      }
+      if (url.includes("/format/")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ formatted_content: "Content", preview_type: "markdown" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(<ArticleExportTab article={mockArticle} />);
+    });
+
+    const contentInput = container!.querySelector("input[type='text']") as HTMLInputElement;
+    expect(contentInput.placeholder).toBe("Default: resolved by backend");
+    expect(container!.textContent).not.toContain("rorychatt");
   });
 });
