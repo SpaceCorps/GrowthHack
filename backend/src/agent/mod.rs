@@ -6,32 +6,77 @@ use tokio::sync::{broadcast, RwLock};
 
 pub use runner::AgentRunner;
 
+pub const DEFAULT_COMPLETED_TASK_TTL: std::time::Duration = std::time::Duration::from_secs(3600); // 1 hour
+pub const DEFAULT_MAX_COMPLETED_TASKS: usize = 100;
+
+#[derive(Clone, Debug)]
+pub struct TaskManagerConfig {
+    pub completed_ttl: std::time::Duration,
+    pub max_completed_tasks: usize,
+}
+
+impl Default for TaskManagerConfig {
+    fn default() -> Self {
+        let completed_ttl = std::env::var("TASK_COMPLETED_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(DEFAULT_COMPLETED_TASK_TTL);
+
+        let max_completed_tasks = std::env::var("TASK_MAX_COMPLETED_TASKS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_COMPLETED_TASKS);
+
+        Self {
+            completed_ttl,
+            max_completed_tasks,
+        }
+    }
+}
+
 pub struct TaskEntry {
     pub tx: broadcast::Sender<String>,
     pub history: Vec<String>,
     pub is_done: bool,
     send_log_pending: usize,
+    pub created_at: std::time::Instant,
+    pub completed_at: Option<std::time::Instant>,
+    pub last_accessed: std::time::Instant,
 }
 
 #[derive(Clone)]
 pub struct TaskManager {
     runner: AgentRunner,
     tasks: Arc<RwLock<HashMap<String, TaskEntry>>>,
+    config: TaskManagerConfig,
 }
 
 impl TaskManager {
     pub fn new(runner: AgentRunner) -> Self {
+        Self::with_config(runner, TaskManagerConfig::default())
+    }
+
+    pub fn with_config(runner: AgentRunner, config: TaskManagerConfig) -> Self {
         Self {
             runner,
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            config,
         }
+    }
+
+    pub fn config(&self) -> &TaskManagerConfig {
+        &self.config
     }
 
     pub async fn get_or_create_channel(&self, task_id: &str) -> broadcast::Sender<String> {
         let mut map = self.tasks.write().await;
-        if let Some(entry) = map.get(task_id) {
+        if let Some(entry) = map.get_mut(task_id) {
+            entry.last_accessed = std::time::Instant::now();
             entry.tx.clone()
         } else {
+            Self::prune_completed_locked(&mut map, &self.config);
+
             let (tx, mut rx) = broadcast::channel::<String>(256);
             let tasks_clone = self.tasks.clone();
             let tid = task_id.to_string();
@@ -44,22 +89,30 @@ impl TaskManager {
                             entry.send_log_pending -= 1;
                             continue;
                         }
-                        if msg.contains("[DONE]") {
+                        if msg.contains("[DONE]") || msg.starts_with("[ERROR]") {
                             entry.is_done = true;
+                            entry
+                                .completed_at
+                                .get_or_insert_with(std::time::Instant::now);
                         }
                         if entry.history.len() >= 500 {
                             entry.history.remove(0);
                         }
                         entry.history.push(msg);
+                        entry.last_accessed = std::time::Instant::now();
                     }
                 }
             });
 
+            let now = std::time::Instant::now();
             let entry = TaskEntry {
                 tx: tx.clone(),
                 history: Vec::new(),
                 is_done: false,
                 send_log_pending: 0,
+                created_at: now,
+                completed_at: None,
+                last_accessed: now,
             };
             map.insert(task_id.to_string(), entry);
             tx
@@ -71,13 +124,17 @@ impl TaskManager {
         {
             let mut map = self.tasks.write().await;
             if let Some(entry) = map.get_mut(task_id) {
-                if msg.contains("[DONE]") {
+                if msg.contains("[DONE]") || msg.starts_with("[ERROR]") {
                     entry.is_done = true;
+                    entry
+                        .completed_at
+                        .get_or_insert_with(std::time::Instant::now);
                 }
                 if entry.history.len() >= 500 {
                     entry.history.remove(0);
                 }
                 entry.history.push(msg.clone());
+                entry.last_accessed = std::time::Instant::now();
                 entry.send_log_pending += 1;
             }
         }
@@ -86,11 +143,13 @@ impl TaskManager {
 
     pub async fn subscribe(&self, task_id: &str) -> (Vec<String>, broadcast::Receiver<String>) {
         let tx = self.get_or_create_channel(task_id).await;
-        let map = self.tasks.read().await;
-        let history = map
-            .get(task_id)
-            .map(|e| e.history.clone())
-            .unwrap_or_default();
+        let mut map = self.tasks.write().await;
+        let history = if let Some(entry) = map.get_mut(task_id) {
+            entry.last_accessed = std::time::Instant::now();
+            entry.history.clone()
+        } else {
+            Vec::new()
+        };
         (history, tx.subscribe())
     }
 
@@ -100,10 +159,81 @@ impl TaskManager {
     }
 
     pub async fn get_history(&self, task_id: &str) -> Vec<String> {
-        let map = self.tasks.read().await;
-        map.get(task_id)
-            .map(|e| e.history.clone())
-            .unwrap_or_default()
+        let mut map = self.tasks.write().await;
+        if let Some(entry) = map.get_mut(task_id) {
+            entry.last_accessed = std::time::Instant::now();
+            entry.history.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Prune completed tasks according to TTL and maximum completed task capacity.
+    /// Incomplete tasks are never pruned. Returns the number of evicted tasks.
+    pub async fn prune_completed(&self) -> usize {
+        let mut map = self.tasks.write().await;
+        Self::prune_completed_locked(&mut map, &self.config)
+    }
+
+    fn prune_completed_locked(
+        map: &mut HashMap<String, TaskEntry>,
+        config: &TaskManagerConfig,
+    ) -> usize {
+        let now = std::time::Instant::now();
+        let mut evicted = 0;
+
+        // 1. Evict tasks exceeding TTL
+        map.retain(|_id, entry| {
+            if entry.is_done {
+                let completed_at = entry.completed_at.unwrap_or(entry.created_at);
+                if now.checked_duration_since(completed_at).unwrap_or_default()
+                    >= config.completed_ttl
+                {
+                    evicted += 1;
+                    return false;
+                }
+            }
+            true
+        });
+
+        // 2. If completed tasks count still exceeds max_completed_tasks, evict LRU completed tasks
+        let mut completed_keys: Vec<(String, std::time::Instant)> = map
+            .iter()
+            .filter(|(_, entry)| entry.is_done)
+            .map(|(id, entry)| (id.clone(), entry.last_accessed))
+            .collect();
+
+        if completed_keys.len() > config.max_completed_tasks {
+            // Sort ascending by last_accessed so oldest accessed are first
+            completed_keys.sort_by_key(|(_, last_accessed)| *last_accessed);
+            let excess = completed_keys.len() - config.max_completed_tasks;
+            for (id, _) in completed_keys.into_iter().take(excess) {
+                map.remove(&id);
+                evicted += 1;
+            }
+        }
+
+        evicted
+    }
+
+    /// Return total number of tracked tasks.
+    pub async fn task_count(&self) -> usize {
+        self.tasks.read().await.len()
+    }
+
+    /// Return total number of completed tasks.
+    pub async fn completed_task_count(&self) -> usize {
+        self.tasks
+            .read()
+            .await
+            .values()
+            .filter(|e| e.is_done)
+            .count()
+    }
+
+    /// Check if a task exists in the task manager.
+    pub async fn has_task(&self, task_id: &str) -> bool {
+        self.tasks.read().await.contains_key(task_id)
     }
 
     pub fn runner(&self) -> &AgentRunner {

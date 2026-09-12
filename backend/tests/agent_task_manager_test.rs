@@ -1,4 +1,4 @@
-use growthhack_backend::agent::{AgentRunner, TaskManager};
+use growthhack_backend::agent::{AgentRunner, TaskManager, TaskManagerConfig};
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -244,4 +244,195 @@ async fn test_task_manager_spawn_task_with_timeout_override() {
     );
 
     let _ = std::fs::remove_file(mock_path);
+}
+
+#[tokio::test]
+async fn test_task_manager_prune_completed_ttl() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(50),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    // Create tasks:
+    // task-ttl-old: will be marked done early, then sleep > TTL
+    // task-ttl-young: created early, but marked done after sleep
+    // task-active: will remain in-progress (not done)
+    task_manager
+        .send_log("task-ttl-old", "[LOG] Starting old task".to_string())
+        .await;
+    task_manager
+        .send_log("task-ttl-young", "[LOG] Starting young task".to_string())
+        .await;
+    task_manager
+        .send_log("task-active", "[LOG] Still processing...".to_string())
+        .await;
+
+    // Complete task-ttl-old
+    task_manager
+        .send_log("task-ttl-old", "[DONE] Finished early".to_string())
+        .await;
+    assert!(task_manager.is_done("task-ttl-old").await);
+    assert!(!task_manager.is_done("task-ttl-young").await);
+    assert!(!task_manager.is_done("task-active").await);
+
+    // Sleep long enough for task-ttl-old to exceed completed_ttl
+    tokio::time::sleep(std::time::Duration::from_millis(70)).await;
+
+    // Now complete task-ttl-young
+    task_manager
+        .send_log("task-ttl-young", "[DONE] Finished recently".to_string())
+        .await;
+    assert!(task_manager.is_done("task-ttl-young").await);
+
+    assert_eq!(task_manager.task_count().await, 3);
+    assert_eq!(task_manager.completed_task_count().await, 2);
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 1, "Expected 1 task evicted due to TTL expiration");
+
+    assert!(
+        !task_manager.has_task("task-ttl-old").await,
+        "Old completed task should be evicted"
+    );
+    assert!(
+        task_manager.has_task("task-ttl-young").await,
+        "Young completed task should be retained"
+    );
+    assert!(
+        task_manager.has_task("task-active").await,
+        "Active task should be retained"
+    );
+
+    assert_eq!(task_manager.task_count().await, 2);
+    assert_eq!(task_manager.completed_task_count().await, 1);
+}
+
+#[tokio::test]
+async fn test_task_manager_prune_lru_capacity() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_secs(3600), // high TTL so only capacity eviction triggers
+        max_completed_tasks: 2,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    // Create an active task first so it doesn't trigger channel-creation prune later
+    task_manager
+        .send_log("task-active", "[LOG] In progress".to_string())
+        .await;
+
+    // 1. Complete task-lru-1
+    task_manager
+        .send_log("task-lru-1", "[DONE] Task 1 done".to_string())
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // 2. Complete task-lru-2
+    task_manager
+        .send_log("task-lru-2", "[DONE] Task 2 done".to_string())
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // 3. Complete task-lru-3
+    task_manager
+        .send_log("task-lru-3", "[DONE] Task 3 done".to_string())
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    // Refresh last_accessed of task-lru-1 by accessing its history
+    // Now last_accessed order from oldest to newest is: task-lru-2 (oldest), task-lru-3, task-lru-1
+    let history = task_manager.get_history("task-lru-1").await;
+    assert!(!history.is_empty());
+
+    assert_eq!(task_manager.task_count().await, 4);
+    assert_eq!(task_manager.completed_task_count().await, 3);
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(
+        evicted, 1,
+        "Expected 1 task evicted due to max_completed_tasks cap"
+    );
+
+    // task-lru-2 was least recently accessed, so it should be evicted
+    assert!(
+        !task_manager.has_task("task-lru-2").await,
+        "task-lru-2 should have been evicted as LRU"
+    );
+    assert!(
+        task_manager.has_task("task-lru-1").await,
+        "task-lru-1 was accessed recently, should be retained"
+    );
+    assert!(
+        task_manager.has_task("task-lru-3").await,
+        "task-lru-3 is more recent than task-lru-2, should be retained"
+    );
+    assert!(
+        task_manager.has_task("task-active").await,
+        "task-active should never be evicted"
+    );
+
+    assert_eq!(task_manager.task_count().await, 3);
+    assert_eq!(task_manager.completed_task_count().await, 2);
+}
+
+#[tokio::test]
+async fn test_task_manager_active_tasks_never_pruned() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(5),
+        max_completed_tasks: 0, // Capacity 0 for completed tasks
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    task_manager
+        .send_log("task-active-1", "[LOG] Processing step A".to_string())
+        .await;
+    task_manager
+        .send_log("task-active-2", "[LOG] Processing step B".to_string())
+        .await;
+
+    // Wait long enough to exceed completed_ttl
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let evicted = task_manager.prune_completed().await;
+    assert_eq!(evicted, 0, "Active tasks must never be evicted");
+
+    assert!(task_manager.has_task("task-active-1").await);
+    assert!(task_manager.has_task("task-active-2").await);
+    assert_eq!(task_manager.task_count().await, 2);
+    assert_eq!(task_manager.completed_task_count().await, 0);
+}
+
+#[tokio::test]
+async fn test_task_manager_auto_prune_on_create() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    // Create and complete task-auto-1
+    task_manager
+        .send_log("task-auto-1", "[DONE] Finished".to_string())
+        .await;
+    assert!(task_manager.has_task("task-auto-1").await);
+
+    // Sleep past TTL
+    tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+    // Creating a new task channel should automatically prune task-auto-1
+    let _tx = task_manager.get_or_create_channel("task-auto-new").await;
+
+    assert!(
+        !task_manager.has_task("task-auto-1").await,
+        "Expired completed task should be auto-pruned on channel creation"
+    );
+    assert!(
+        task_manager.has_task("task-auto-new").await,
+        "New task should exist"
+    );
+    assert_eq!(task_manager.task_count().await, 1);
 }

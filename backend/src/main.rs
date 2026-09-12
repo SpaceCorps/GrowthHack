@@ -94,6 +94,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let prune_tm = ctx.task_manager.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(15 * 60));
+        loop {
+            interval.tick().await;
+            tracing::info!("Running periodic completed task eviction sweep...");
+            let evicted = prune_tm.prune_completed().await;
+            if evicted > 0 {
+                tracing::info!("Periodic task eviction: pruned {} completed tasks", evicted);
+            }
+        }
+    });
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
