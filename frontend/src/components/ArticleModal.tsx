@@ -72,6 +72,26 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const [seedSuccessBanner, setSeedSuccessBanner] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
 
+  // Close reset confirmation dialog on Escape key
+  useEffect(() => {
+    if (!showResetConfirm) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isResettingEngagement) {
+          return;
+        }
+        e.stopPropagation();
+        setShowResetConfirm(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showResetConfirm, isResettingEngagement]);
+
   // Export tab state
   const [selectedChannel, setSelectedChannel] = useState<string>("Dev.to");
   const [formattedContent, setFormattedContent] = useState<string>("");
@@ -1928,15 +1948,30 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
 
       {/* Confirmation Dialog Modal for Single-Article Reset */}
       {showResetConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isResettingEngagement) {
+              setShowResetConfirm(false);
+            }
+          }}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-xl bg-rose-950/50 border border-rose-900/50">
                   <AlertTriangle className="w-5 h-5 text-rose-400" />
                 </div>
-                <h3 className="text-base font-semibold text-white">Reset Article Engagement?</h3>
+                <h3 id="reset-dialog-title" className="text-base font-semibold text-white">
+                  Reset Article Engagement?
+                </h3>
               </div>
               <button
                 type="button"

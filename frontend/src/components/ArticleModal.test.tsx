@@ -518,6 +518,303 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     expect(fetchCalled).toBe(false);
   });
 
+  it("dismisses the reset confirmation dialog when Escape key is pressed", async () => {
+    const article: Article = {
+      id: "art-reset-escape-test",
+      title: "Dev Reset Escape Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset escape test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    const dialog = container!.querySelector('div[role="dialog"]');
+    expect(dialog).toBeDefined();
+    expect(dialog!.getAttribute("aria-modal")).toBe("true");
+    expect(dialog!.getAttribute("aria-labelledby")).toBe("reset-dialog-title");
+    expect(container!.querySelector("#reset-dialog-title")?.textContent).toBe(
+      "Reset Article Engagement?",
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+  });
+
+  it("dismisses the reset confirmation dialog when clicking the backdrop overlay", async () => {
+    const article: Article = {
+      id: "art-reset-backdrop-test",
+      title: "Dev Reset Backdrop Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset backdrop test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    const dialog = container!.querySelector('div[role="dialog"]');
+    expect(dialog).toBeDefined();
+    const backdrop = dialog!.parentElement;
+    expect(backdrop).toBeDefined();
+
+    await act(async () => {
+      backdrop!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+  });
+
+  it("does not dismiss the reset confirmation dialog when clicking inside the dialog card", async () => {
+    const article: Article = {
+      id: "art-reset-card-test",
+      title: "Dev Reset Card Click Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset card click test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    const dialog = container!.querySelector('div[role="dialog"]');
+    expect(dialog).toBeDefined();
+
+    await act(async () => {
+      dialog!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+  });
+
+  it("does not dismiss the reset confirmation dialog via Escape or backdrop click when isResettingEngagement is true", async () => {
+    const article: Article = {
+      id: "art-reset-in-flight-test",
+      title: "Dev Reset In Flight Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for reset in flight test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    let resolveSeed: ((val: any) => void) | null = null;
+    const seedPromise = new Promise((resolve) => {
+      resolveSeed = resolve;
+    });
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/seed-engagement")) {
+        return seedPromise;
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    const confirmButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Confirm Reset"),
+    );
+    expect(confirmButton).toBeDefined();
+
+    await act(async () => {
+      confirmButton!.click();
+    });
+
+    // Now isResettingEngagement is true
+    expect(container!.textContent).toContain("Resetting...");
+
+    // Try dismissing via Escape key
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    // Try dismissing via backdrop click
+    const dialog = container!.querySelector('div[role="dialog"]');
+    expect(dialog).toBeDefined();
+    const backdrop = dialog!.parentElement;
+    expect(backdrop).toBeDefined();
+
+    await act(async () => {
+      backdrop!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    // Resolve promise to clean up
+    await act(async () => {
+      resolveSeed!({
+        ok: true,
+        json: () => Promise.resolve({ success: true, article }),
+      });
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+  });
+
   it("renders action buttons with expected variants and sets aria-busy='true' during loading states", async () => {
     const article: Article = {
       id: "art-export-test",
