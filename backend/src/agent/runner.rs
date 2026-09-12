@@ -78,6 +78,12 @@ impl AgentRunner {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
+        // On Unix, configure a new process group so child processes can be terminated as a group
+        #[cfg(unix)]
+        {
+            cmd.process_group(0);
+        }
+
         let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(err) => {
@@ -131,6 +137,13 @@ impl AgentRunner {
                 return Err(msg);
             }
             Err(_) => {
+                #[cfg(unix)]
+                if let Some(pid) = child.id() {
+                    unsafe {
+                        // Passing negative PID (-pgid) to kill(2) delivers the signal to all processes in the process group
+                        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+                    }
+                }
                 let _ = child.start_kill();
                 stdout_handle.abort();
                 stderr_handle.abort();
@@ -309,6 +322,76 @@ mod tests {
         assert!(
             received_error,
             "Broadcast receiver should have received timeout [ERROR] event with override duration"
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_agent_runner_timeout_kills_descendant_process_group_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir();
+        let test_id = Uuid::new_v4().simple();
+        let script_path = temp_dir.join(format!("slow_group_test_agy_{}.sh", test_id));
+        let pid_file_path = temp_dir.join(format!("slow_group_test_pid_{}.txt", test_id));
+
+        // Create an executable shell script that spawns a long-running background child process,
+        // writes the child PID to a temporary file, and blocks on wait.
+        let script_content = format!(
+            "#!/bin/sh\nsh -c 'sleep 30' &\necho $! > \"{}\"\nwait\n",
+            pid_file_path.display()
+        );
+        std::fs::write(&script_path, script_content).expect("write test script");
+        let mut perms = std::fs::metadata(&script_path)
+            .expect("metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).expect("set permissions");
+
+        // Execute AgentRunner with a short timeout (500ms)
+        let runner =
+            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(500));
+        let (tx, _rx) = tokio::sync::broadcast::channel(32);
+
+        let res = runner
+            .execute("Test prompt for process group timeout", tx)
+            .await;
+
+        assert!(res.is_err(), "Expected timeout error, got {:?}", res);
+        let err = res.unwrap_err();
+        assert!(err.contains("timed out after 500ms"), "Error was: {}", err);
+
+        // Read recorded child PID from temporary file
+        assert!(
+            pid_file_path.exists(),
+            "PID file should have been written by test script"
+        );
+        let pid_str = std::fs::read_to_string(&pid_file_path).expect("read pid file");
+        let child_pid: i32 = pid_str.trim().parse().expect("parse child PID");
+
+        // Check that descendant background process is no longer running by calling libc::kill(child_pid, 0).
+        // It returns -1 and sets errno to ESRCH when process does not exist.
+        let mut process_dead = false;
+        for _ in 0..20 {
+            let kill_res = unsafe { libc::kill(child_pid as libc::pid_t, 0) };
+            if kill_res == -1 {
+                let last_err = std::io::Error::last_os_error();
+                if last_err.raw_os_error() == Some(libc::ESRCH) {
+                    process_dead = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        // Clean up temporary test files
+        let _ = std::fs::remove_file(&script_path);
+        let _ = std::fs::remove_file(&pid_file_path);
+
+        assert!(
+            process_dead,
+            "Descendant process (PID {}) should have been killed by process group SIGKILL",
+            child_pid
         );
     }
 }
