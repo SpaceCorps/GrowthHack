@@ -22,7 +22,11 @@ import {
 interface RecipeHubProps {
   recipes: Recipe[];
   onRefresh?: () => Promise<void> | void;
-  onRunRecipe?: (recipeId: string, parameters: Record<string, string>) => Promise<void> | void;
+  onRunRecipe?: (
+    recipeId: string,
+    parameters: Record<string, string>,
+    timeoutSecs?: number,
+  ) => Promise<void> | void;
 }
 
 export const RecipeHub: React.FC<RecipeHubProps> = ({ recipes, onRefresh, onRunRecipe }) => {
@@ -35,6 +39,7 @@ export const RecipeHub: React.FC<RecipeHubProps> = ({ recipes, onRefresh, onRunR
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [copiedConfigCmd, setCopiedConfigCmd] = useState<boolean>(false);
   const [isRunningRecipe, setIsRunningRecipe] = useState<boolean>(false);
+  const [timeoutSecs, setTimeoutSecs] = useState<string>("");
 
   // Promptware YAML Drawer State
   const [yamlDrawerRecipe, setYamlDrawerRecipe] = useState<Recipe | null>(null);
@@ -106,6 +111,7 @@ steps:
     });
     setParamValues(initialParams);
     setCopiedConfigCmd(false);
+    setTimeoutSecs("");
   };
 
   // Resolve dynamic CLI snippet in configurator
@@ -142,16 +148,28 @@ steps:
     if (!configRecipe) return;
     setIsRunningRecipe(true);
     try {
+      const parsedTimeout = timeoutSecs.trim() ? parseInt(timeoutSecs.trim(), 10) : undefined;
+      const validTimeout =
+        parsedTimeout &&
+        Number.isFinite(parsedTimeout) &&
+        parsedTimeout >= 10 &&
+        parsedTimeout <= 3600
+          ? parsedTimeout
+          : undefined;
       if (onRunRecipe) {
-        await onRunRecipe(configRecipe.id, paramValues);
+        await onRunRecipe(configRecipe.id, paramValues, validTimeout);
       } else {
         await fetch(`/api/recipes/${configRecipe.id}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parameters: paramValues }),
+          body: JSON.stringify({
+            parameters: paramValues,
+            ...(validTimeout !== undefined ? { timeout_secs: validTimeout } : {}),
+          }),
         });
       }
       setConfigRecipe(null);
+      setTimeoutSecs("");
     } catch (err) {
       console.error("Failed to run recipe:", err);
     } finally {
@@ -548,6 +566,25 @@ steps:
                 <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg font-mono text-xs text-indigo-300 break-all select-all">
                   {resolvedCliSnippet}
                 </div>
+              </div>
+
+              {/* Runner Timeout */}
+              <div className="space-y-1 pt-2">
+                <label className="text-xs font-medium text-slate-200">
+                  Runner Timeout in Seconds (Optional)
+                </label>
+                <p className="text-[11px] text-slate-400">
+                  Between 10 and 3600 seconds. Leave blank to use the runner default.
+                </p>
+                <input
+                  type="number"
+                  min="10"
+                  max="3600"
+                  value={timeoutSecs}
+                  onChange={(e) => setTimeoutSecs(e.target.value)}
+                  placeholder="Default (300s)"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
               </div>
             </div>
 
