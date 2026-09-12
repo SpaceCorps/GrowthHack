@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { ContributorFlywheel } from "./ContributorFlywheel";
 import type {
   ContributorIssue,
@@ -775,5 +775,92 @@ describe("ContributorFlywheel View", () => {
     const claimBtn = screen.getByTestId("claim-btn-cf-issue-1") as HTMLButtonElement;
     expect(claimBtn.disabled).toBe(false);
     expect(claimBtn.textContent).toContain("Claim Issue");
+  });
+
+  it("modal submit buttons set aria-busy='true' and display loading text when submitting claims or verifications", async () => {
+    render(<ContributorFlywheel />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-btn-cf-issue-1")).toBeDefined();
+    });
+
+    // 1. Test Claim Modal Submit Button Loading State
+    let resolveClaim: ((val: any) => void) | null = null;
+    const claimPromise = new Promise((res) => {
+      resolveClaim = res;
+    });
+
+    mockController!.addHandler("/claim", () => claimPromise);
+
+    fireEvent.click(screen.getByTestId("claim-btn-cf-issue-1"));
+    expect(screen.getByText("Claim Good First Issue")).toBeDefined();
+
+    fireEvent.change(screen.getByTestId("claim-name-input"), { target: { value: "Alex Coder" } });
+    fireEvent.change(screen.getByTestId("claim-handle-input"), { target: { value: "@alexcoder" } });
+
+    const submitClaimBtn = screen.getByTestId("submit-claim-btn");
+    expect(submitClaimBtn.getAttribute("aria-busy")).toBeNull();
+    expect(submitClaimBtn.textContent).toBe("Confirm Claim");
+
+    // Click submit
+    fireEvent.click(submitClaimBtn);
+
+    // Assert loading state
+    expect(submitClaimBtn.getAttribute("aria-busy")).toBe("true");
+    expect(submitClaimBtn.textContent).toContain("Claiming...");
+    expect(submitClaimBtn.querySelector(".animate-spin")).not.toBeNull();
+
+    // Resolve claim and finish modal
+    await act(async () => {
+      resolveClaim!({
+        ...mockIssues[0],
+        claimed: true,
+        claimed_by: "@alexcoder",
+        github_sync_status: "Synced",
+        github_sync_message: "Assigned",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("claim-modal-done-btn")).toBeDefined();
+    });
+    fireEvent.click(screen.getByTestId("claim-modal-done-btn"));
+
+    // 2. Test Verify Modal Submit Button Loading State
+    await waitFor(() => {
+      expect(screen.getByTestId("verify-issue-btn-cf-issue-3")).toBeDefined();
+    });
+
+    let resolveVerify: ((val: any) => void) | null = null;
+    const verifyPromise = new Promise((res) => {
+      resolveVerify = res;
+    });
+
+    mockController!.addHandler("/api/contributors/verify", () => verifyPromise);
+
+    fireEvent.click(screen.getByTestId("verify-issue-btn-cf-issue-3"));
+    expect(screen.getByText("Verify Contributor & Generate PR")).toBeDefined();
+
+    const submitVerifyBtn = screen.getByTestId("submit-verify-btn");
+    expect(submitVerifyBtn.getAttribute("aria-busy")).toBeNull();
+    expect(submitVerifyBtn.textContent).toBe("Verify & Generate PR");
+
+    // Click submit
+    fireEvent.click(submitVerifyBtn);
+
+    // Assert loading state
+    expect(submitVerifyBtn.getAttribute("aria-busy")).toBe("true");
+    expect(submitVerifyBtn.textContent).toContain("Verifying...");
+    expect(submitVerifyBtn.querySelector(".animate-spin")).not.toBeNull();
+
+    // Resolve verify and finish modal
+    await act(async () => {
+      resolveVerify!(mockVerifyResponse);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("finish-verify-btn")).toBeDefined();
+    });
+    fireEvent.click(screen.getByTestId("finish-verify-btn"));
   });
 });
