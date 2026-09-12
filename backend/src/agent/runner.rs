@@ -234,9 +234,12 @@ impl AgentRunner {
                 if let Some(ref path) = temp_file {
                     let _ = tokio::fs::remove_file(path).await;
                 }
+                // Formatted with an explicit millisecond count rather than Duration's Debug
+                // impl, whose unit changes with magnitude (1500ms would render as "1.5s").
+                // Tests assert on this substring, so keep the unit fixed.
                 let msg = format!(
-                    "Antigravity agent process timed out after {:?}",
-                    effective_timeout
+                    "Antigravity agent process timed out after {}ms",
+                    effective_timeout.as_millis()
                 );
                 let _ = tx.send(format!("[ERROR] {}", msg));
                 return Err(msg);
@@ -444,9 +447,7 @@ mod tests {
 
         assert!(res.is_err(), "Expected timeout error, got {:?}", res);
         let err = res.unwrap_err();
-        // Duration's Debug format renders sub-second values as "500ms" but second-scale
-        // values as "1.5s" rather than "1500ms".
-        assert!(err.contains("timed out after 1.5s"), "Error was: {}", err);
+        assert!(err.contains("timed out after 1500ms"), "Error was: {}", err);
 
         // Read recorded child PID from temporary file
         assert!(
@@ -516,7 +517,7 @@ mod tests {
 
         assert!(res.is_err(), "Expected timeout error, got {:?}", res);
         let err = res.unwrap_err();
-        let expected = format!("timed out after {:?}", timeout);
+        let expected = format!("timed out after {}ms", timeout.as_millis());
         assert!(err.contains(&expected), "Error was: {}", err);
 
         // The PID file is written by a separate process; allow a bounded settling window
