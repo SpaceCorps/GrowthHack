@@ -70,6 +70,17 @@ Open `http://localhost:5173` to access the interactive Cockpit.
 
 Or run production mode where the Rust backend serves the compiled frontend assets directly from `frontend/dist`.
 
+### Export Path Configuration
+
+The Article Engine's "Export to Ivy Web" pipeline writes Markdoc posts and hero images into a local checkout of `ivy-web`. The backend resolves these two directories in the following order, so no developer-specific path is ever hardcoded:
+
+1. **Request payload** — an explicit `target_dir`/`target_images_dir` passed on a single export call.
+2. **Saved default** — an override persisted via `POST /api/settings/export-paths` (surfaced in the Cockpit's Export tab as "Save as Default").
+3. **`IVY_WEB_CONTENT_PATH` / `IVY_WEB_IMAGES_PATH` environment variables** — set these to pin the paths for your machine without touching the UI. A blank value is treated as unset and falls through to auto-detection.
+4. **Auto-detected fallback** — the backend probes common relative locations (e.g. `../ivy-web/apps/web-new/content/posts`, `~/git/ivy-web/apps/web-new/content/posts`) and finally falls back to `./content/posts` / `./public/site/images`.
+
+`GET /api/settings/export-paths` returns the currently resolved paths along with which of `settings`/`environment`/`detected` produced each one.
+
 ---
 
 ## License

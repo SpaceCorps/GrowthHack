@@ -2,7 +2,12 @@ import React, { useState, useEffect } from "react";
 import { ActionButton } from "./ActionButton";
 import { ArticleBannerStudio } from "./ArticleBannerStudio";
 import { SegmentedControl } from "./SegmentedControl";
-import type { Article, ExportRecord, SyndicationStatusResponse } from "../types";
+import type {
+  Article,
+  ExportPathSettings,
+  ExportRecord,
+  SyndicationStatusResponse,
+} from "../types";
 import {
   Download,
   Share2,
@@ -78,6 +83,11 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
     error?: string;
   } | null>(null);
 
+  // Export path defaults state
+  const [exportPaths, setExportPaths] = useState<ExportPathSettings | null>(null);
+  const [isSavingExportPaths, setIsSavingExportPaths] = useState<boolean>(false);
+  const [exportPathsMessage, setExportPathsMessage] = useState<string | null>(null);
+
   useEffect(() => {
     setIvyExportResult(null);
     setPublishResult(null);
@@ -100,8 +110,20 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
       });
   };
 
+  const fetchExportPaths = () => {
+    fetch("/api/settings/export-paths")
+      .then((res) => res.json())
+      .then((data: ExportPathSettings) => {
+        setExportPaths(data);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch export path settings:", err);
+      });
+  };
+
   useEffect(() => {
     fetchSyndicationSettings();
+    fetchExportPaths();
   }, []);
 
   useEffect(() => {
@@ -138,6 +160,22 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
       .replace(/(^-|-$)/g, "");
 
   const exportsList: ExportRecord[] = article.exports || [];
+
+  const exportPathSourceHint = (
+    source: ExportPathSettings["content_path_source"] | undefined,
+    envVar: string,
+  ) => {
+    switch (source) {
+      case "settings":
+        return "Saved default";
+      case "environment":
+        return `From environment (${envVar})`;
+      case "detected":
+        return "Auto-detected";
+      default:
+        return null;
+    }
+  };
 
   const handleExportIvyWeb = async () => {
     if (!article) return;
@@ -184,6 +222,33 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
       });
     } finally {
       setIsExportingIvy(false);
+    }
+  };
+
+  const handleSaveExportPathDefaults = async () => {
+    setIsSavingExportPaths(true);
+    setExportPathsMessage(null);
+    try {
+      const res = await fetch("/api/settings/export-paths", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ivy_web_content_path: ivyTargetDir.trim(),
+          ivy_web_images_path: ivyTargetImagesDir.trim(),
+        }),
+      });
+      if (res.ok) {
+        const data: ExportPathSettings = await res.json();
+        setExportPaths(data);
+        setExportPathsMessage("Saved as default!");
+        setTimeout(() => setExportPathsMessage(null), 1500);
+      } else {
+        setExportPathsMessage("Failed to save default paths.");
+      }
+    } catch (err: any) {
+      setExportPathsMessage(err.message || "Network error saving default paths");
+    } finally {
+      setIsSavingExportPaths(false);
     }
   };
 
@@ -397,9 +462,18 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
               type="text"
               value={ivyTargetDir}
               onChange={(e) => setIvyTargetDir(e.target.value)}
-              placeholder="Default: /Users/rorychatt/git/ivy-web/apps/web-new/content/posts or ./content/posts"
+              placeholder={
+                exportPaths
+                  ? `Default: ${exportPaths.content_path}`
+                  : "Default: resolved by backend"
+              }
               className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
+            {exportPathSourceHint(exportPaths?.content_path_source, "IVY_WEB_CONTENT_PATH") && (
+              <span className="block mt-1 text-[11px] text-slate-500">
+                {exportPathSourceHint(exportPaths?.content_path_source, "IVY_WEB_CONTENT_PATH")}
+              </span>
+            )}
           </div>
 
           <div>
@@ -408,6 +482,21 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
               {article.slug || "Auto-generated on export"}
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <ActionButton
+            variant="secondary"
+            size="sm"
+            loading={isSavingExportPaths}
+            loadingText="Saving..."
+            onClick={handleSaveExportPathDefaults}
+          >
+            Save as Default
+          </ActionButton>
+          {exportPathsMessage && (
+            <span className="text-[11px] text-slate-400">{exportPathsMessage}</span>
+          )}
         </div>
 
         {/* Hero Image Asset Synchronization Subsection */}
@@ -461,9 +550,18 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
                 type="text"
                 value={ivyTargetImagesDir}
                 onChange={(e) => setIvyTargetImagesDir(e.target.value)}
-                placeholder="Default: /Users/rorychatt/git/ivy-web/apps/web-new/public/site/images or ./public/site/images"
+                placeholder={
+                  exportPaths
+                    ? `Default: ${exportPaths.images_path}`
+                    : "Default: resolved by backend"
+                }
                 className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
+              {exportPathSourceHint(exportPaths?.images_path_source, "IVY_WEB_IMAGES_PATH") && (
+                <span className="block mt-1 text-[11px] text-slate-500">
+                  {exportPathSourceHint(exportPaths?.images_path_source, "IVY_WEB_IMAGES_PATH")}
+                </span>
+              )}
             </div>
           </div>
 

@@ -560,6 +560,15 @@ export interface SyndicationStatusResponse {
   publish_as_draft: boolean;
 }
 
+export interface ExportPathSettings {
+  content_path: string;
+  images_path: string;
+  content_path_source: "settings" | "environment" | "detected";
+  images_path_source: "settings" | "environment" | "detected";
+  content_path_override?: string | null;
+  images_path_override?: string | null;
+}
+
 export interface AuthenticityAnalysis {
   score: number;
   rating: string;
