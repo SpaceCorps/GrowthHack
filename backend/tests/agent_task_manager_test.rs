@@ -1,4 +1,6 @@
+use chrono::Utc;
 use growthhack_backend::agent::{AgentRunner, TaskManager, TaskManagerConfig};
+use growthhack_backend::db::TaskTombstone;
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -252,6 +254,7 @@ async fn test_task_manager_prune_completed_ttl() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(50),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -315,6 +318,7 @@ async fn test_task_manager_prune_lru_capacity() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_secs(3600), // high TTL so only capacity eviction triggers
         max_completed_tasks: 2,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -383,6 +387,7 @@ async fn test_task_manager_active_tasks_never_pruned() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(5),
         max_completed_tasks: 0, // Capacity 0 for completed tasks
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -411,6 +416,7 @@ async fn test_task_manager_auto_prune_on_create() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(40),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -443,6 +449,7 @@ async fn test_task_manager_active_subscriber_receives_expired_on_ttl() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(40),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -478,6 +485,7 @@ async fn test_task_manager_active_subscriber_receives_expired_on_lru() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_secs(3600),
         max_completed_tasks: 1,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -518,6 +526,7 @@ async fn test_task_manager_reconnecting_subscriber_receives_expired() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(40),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_config(runner, config);
 
@@ -553,8 +562,8 @@ async fn test_task_manager_tombstone_hydration() {
 
     let mut state = growthhack_backend::db::GrowthState::seed_default();
     state.task_tombstones = vec![
-        "task-persisted-1".to_string(),
-        "task-persisted-2".to_string(),
+        TaskTombstone::new("task-persisted-1", Utc::now()),
+        TaskTombstone::new("task-persisted-2", Utc::now()),
     ];
     state.save(&data_file).unwrap();
 
@@ -590,6 +599,7 @@ async fn test_task_manager_tombstone_persistence_on_prune() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(40),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_persistence(
         runner,
@@ -615,14 +625,15 @@ async fn test_task_manager_tombstone_persistence_on_prune() {
     // Verify in-memory state was updated
     {
         let s = shared_state.read().await;
-        assert!(s.task_tombstones.contains(&"task-evict-me-1".to_string()));
+        assert!(s.task_tombstones.iter().any(|t| t.task_id == "task-evict-me-1"));
     }
 
     // Verify file on disk was updated
     let loaded_state = growthhack_backend::db::GrowthState::load_or_init(&data_file);
     assert!(loaded_state
         .task_tombstones
-        .contains(&"task-evict-me-1".to_string()));
+        .iter()
+        .any(|t| t.task_id == "task-evict-me-1"));
 
     let _ = std::fs::remove_file(&data_file);
 }
@@ -642,6 +653,7 @@ async fn test_task_manager_survives_restart() {
     let config = TaskManagerConfig {
         completed_ttl: std::time::Duration::from_millis(40),
         max_completed_tasks: 100,
+        ..Default::default()
     };
     let task_manager = TaskManager::with_persistence(
         runner.clone(),
@@ -684,4 +696,117 @@ async fn test_task_manager_survives_restart() {
     assert!(!new_task_manager.has_task("task-restart-1").await);
 
     let _ = std::fs::remove_file(&data_file);
+}
+
+#[tokio::test]
+async fn test_task_manager_tombstone_retention_pruning() {
+    let data_file = std::env::temp_dir().join(format!(
+        "test_growth_data_retention_prune_{}.json",
+        uuid::Uuid::new_v4().simple()
+    ));
+
+    let state = growthhack_backend::db::GrowthState::seed_default();
+    state.save(&data_file).unwrap();
+
+    let shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        completed_ttl: std::time::Duration::from_millis(40),
+        max_completed_tasks: 100,
+        tombstone_retention: std::time::Duration::from_millis(100),
+        max_tombstones: 1000,
+    };
+    let task_manager = TaskManager::with_persistence(
+        runner,
+        config,
+        std::sync::Arc::clone(&shared_state),
+        data_file.clone(),
+    )
+    .await;
+
+    // Load tombstones: one fresh, one expiring soon
+    let start_time = Utc::now();
+    task_manager
+        .load_tombstones(vec![
+            TaskTombstone::new("task-retention-test", start_time),
+        ])
+        .await;
+
+    assert!(task_manager.is_evicted("task-retention-test").await);
+
+    // Sleep past tombstone_retention (100ms)
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+    // Prune completed and expired tombstones
+    let _ = task_manager.prune_completed().await;
+
+    // The expired tombstone should have been purged
+    assert!(!task_manager.is_evicted("task-retention-test").await);
+
+    // Verify persistence was updated
+    {
+        let s = shared_state.read().await;
+        assert!(!s.task_tombstones.iter().any(|t| t.task_id == "task-retention-test"));
+    }
+
+    let _ = std::fs::remove_file(&data_file);
+}
+
+#[tokio::test]
+async fn test_task_manager_tombstone_retention_on_hydration() {
+    let data_file = std::env::temp_dir().join(format!(
+        "test_growth_data_hydrate_retention_{}.json",
+        uuid::Uuid::new_v4().simple()
+    ));
+
+    let mut state = growthhack_backend::db::GrowthState::seed_default();
+    let old_time = Utc::now() - chrono::Duration::days(10);
+    let fresh_time = Utc::now();
+    state.task_tombstones = vec![
+        TaskTombstone::new("task-expired-tombstone", old_time),
+        TaskTombstone::new("task-valid-tombstone", fresh_time),
+    ];
+    state.save(&data_file).unwrap();
+
+    let shared_state = std::sync::Arc::new(tokio::sync::RwLock::new(state));
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        tombstone_retention: std::time::Duration::from_secs(7 * 24 * 3600), // 7 days
+        ..Default::default()
+    };
+    let task_manager = TaskManager::with_persistence(
+        runner,
+        config,
+        shared_state,
+        data_file.clone(),
+    )
+    .await;
+
+    assert!(!task_manager.is_evicted("task-expired-tombstone").await);
+    assert!(task_manager.is_evicted("task-valid-tombstone").await);
+
+    let _ = std::fs::remove_file(&data_file);
+}
+
+#[tokio::test]
+async fn test_task_manager_tombstone_max_capacity() {
+    let runner = AgentRunner::new(PathBuf::from("dummy_agy"));
+    let config = TaskManagerConfig {
+        max_tombstones: 2,
+        ..Default::default()
+    };
+    let task_manager = TaskManager::with_config(runner, config);
+
+    task_manager
+        .load_tombstones(vec![
+            TaskTombstone::new("task-tomb-1", Utc::now()),
+            TaskTombstone::new("task-tomb-2", Utc::now()),
+            TaskTombstone::new("task-tomb-3", Utc::now()),
+        ])
+        .await;
+
+    // Oldest tombstone should have been popped because capacity is 2
+    assert!(!task_manager.is_evicted("task-tomb-1").await);
+    assert!(task_manager.is_evicted("task-tomb-2").await);
+    assert!(task_manager.is_evicted("task-tomb-3").await);
 }

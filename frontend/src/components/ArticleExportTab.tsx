@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ActionButton } from "./ActionButton";
 import { ArticleBannerStudio } from "./ArticleBannerStudio";
+import { SegmentedControl } from "./SegmentedControl";
 import type { Article, ExportRecord, SyndicationStatusResponse } from "../types";
 import {
   Download,
@@ -478,42 +479,26 @@ export const ArticleExportTab: React.FC<ArticleExportTabProps> = ({
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setHeroFormat("dual")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  heroFormat === "dual"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
-                    : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                Dual (PNG + SVG Vector){" "}
-                <span className="text-[10px] opacity-75 font-normal">(Default)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeroFormat("svg")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  heroFormat === "svg"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
-                    : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                Vector SVG (.svg)
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeroFormat("png")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  heroFormat === "png"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm"
-                    : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                Raster PNG (.png)
-              </button>
-            </div>
+            <SegmentedControl
+              options={[
+                {
+                  value: "dual",
+                  label: (
+                    <>
+                      Dual (PNG + SVG Vector){" "}
+                      <span className="text-[10px] opacity-75 font-normal">(Default)</span>
+                    </>
+                  ),
+                },
+                { value: "svg", label: "Vector SVG (.svg)" },
+                { value: "png", label: "Raster PNG (.png)" },
+              ]}
+              value={heroFormat}
+              onChange={setHeroFormat}
+              variant="cyan"
+              size="sm"
+              ariaLabel="Hero asset format selector"
+            />
           </div>
 
           {/* Frontmatter / Markdown Live Preview */}
@@ -890,25 +875,18 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
         )}
 
         {/* Segmented Channel Selector */}
-        <div className="flex flex-wrap gap-2 pt-1">
-          {channels.map((ch) => (
-            <button
-              key={ch}
-              type="button"
-              onClick={() => {
-                setSelectedChannel(ch);
-                setPublishResult(null);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                selectedChannel === ch
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
-                  : "bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200"
-              }`}
-            >
-              {ch}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          options={channels}
+          value={selectedChannel}
+          onChange={(ch) => {
+            setSelectedChannel(ch);
+            setPublishResult(null);
+          }}
+          variant="emerald"
+          size="sm"
+          ariaLabel="Syndication channel selector"
+          className="pt-1"
+        />
 
         {/* Live Formatted Preview */}
         <div className="relative">

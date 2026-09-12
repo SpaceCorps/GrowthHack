@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { Navigation } from "./components/Navigation";
 import { LiveTerminal } from "./components/LiveTerminal";
+import { Menu, Sparkles } from "lucide-react";
 const IssuesHub = React.lazy(() =>
   import("./views/IssuesHub").then((m) => ({ default: m.IssuesHub })),
 );
@@ -163,6 +164,7 @@ export const App: React.FC = () => {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [contributorIssues, setContributorIssues] = useState<ContributorIssue[]>([]);
   const [launchCampaign, setLaunchCampaign] = useState<LaunchCampaignState | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Live Terminal & Modal State
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -1156,10 +1158,13 @@ export const App: React.FC = () => {
     : undefined;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex font-sans">
       <Navigation
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setIsMobileMenuOpen(false);
+        }}
         agentStatus={agentStatus}
         issuesCount={issues.length}
         articlesCount={articles.length}
@@ -1170,137 +1175,176 @@ export const App: React.FC = () => {
         recipesCount={recipes.length}
         contributorsCount={contributorIssues.filter((i) => !i.claimed).length}
         launchCount={remainingLaunchChecklist}
+        isMobileOpen={isMobileMenuOpen}
+        onMobileClose={() => setIsMobileMenuOpen(false)}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <React.Suspense
-          fallback={
-            <div className="flex items-center justify-center py-24 text-slate-400">
-              <div className="flex items-center space-x-3">
-                <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm">Loading view...</span>
-              </div>
-            </div>
-          }
-        >
-          {activeTab === "recipes" && (
-            <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
-          )}
-          {activeTab === "issues" && (
-            <IssuesHub
-              issues={issues}
-              onRunIssue={handleRunIssue}
-              onUpdateStatus={handleUpdateIssueStatus}
-              onCreateIssue={handleCreateIssue}
-            />
-          )}
-
-          {activeTab === "articles" && (
-            <ArticleEngine
-              articles={articles}
-              onGenerateArticle={handleGenerateArticle}
-              onGenerateSpotlight={handleGenerateSpotlight}
-              onSelectArticle={(art, tab) => {
-                setSelectedArticle(art);
-                setArticleModalTab(tab || "content");
-              }}
-              onUpdateStatus={handleUpdateArticleStatus}
-              onSyncMetrics={handleSyncMetrics}
-              onResetEngagement={fetchAll}
-            />
-          )}
-
-          {activeTab === "review" && (
-            <ReviewQueue
-              items={reviewItems}
-              onApprove={handleApproveReviewItem}
-              onReject={handleRejectReviewItem}
-              onRefine={handleRefineReviewItem}
-              onBatchPublish={handleBatchPublish}
-              onAutoPost={handleAutoPostReviewItem}
-            />
-          )}
-          {activeTab === "trends" && (
-            <TrendRadar
-              trends={trends}
-              articles={articles}
-              onScoutTrends={handleScoutTrends}
-              onSynthesizeTrend={handleSynthesizeTrend}
-              onSelectArticle={(art) => setSelectedArticle(art)}
-              onUpdateArticleStatus={handleUpdateArticleStatus}
-            />
-          )}
-
-          {activeTab === "demos" && (
-            <VideoDemos onGenerateDemo={handleGenerateDemo} demos={demos} />
-          )}
-
-          {activeTab === "listings" && (
-            <ListingBlitz
-              listings={listings}
-              onGenerateBlurb={handleGenerateBlurb}
-              onUpdateStatus={handleUpdateListingStatus}
-              onCreateListing={handleCreateListing}
-              onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
-              onVerifyBacklink={handleVerifyBacklink}
-              onSubmitUpstream={handleSubmitUpstream}
-              onBatchSubmitUpstream={handleBatchSubmitUpstream}
-              githubStatus={githubStatus}
-              onSyncAllPrs={handleSyncAllPrs}
-              onSyncSinglePr={handleSyncSinglePr}
-            />
-          )}
-
-          {activeTab === "packages" && (
-            <PackageManagerBlitz
-              packages={packages}
-              onUpdatePackageStatus={handleUpdatePackageStatus}
-              onDispatchPackagePr={handleDispatchPackagePr}
-            />
-          )}
-
-          {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
-
-          {activeTab === "flywheel" && <PrFlywheel />}
-
-          {activeTab === "launch" && (
-            <LaunchCampaign
-              initialCampaign={launchCampaign || undefined}
-              onCampaignUpdated={fetchAll}
-            />
-          )}
-
-          {activeTab === "agent" && (
-            <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
-          )}
-
-          {activeTab === "doctor" && <DoctorDemo />}
-          {activeTab === "playground" && <Playground />}
-        </React.Suspense>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-900/50 py-6 text-center text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>GrowthHack Platform &middot; Scaling Ivy-Tendril adoption</p>
-          <div className="flex items-center space-x-4">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-hidden">
+        {/* Mobile top bar (visible only on < lg screens) */}
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center space-x-3">
             <button
-              onClick={() => setActiveTab("contributors")}
-              className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+              type="button"
+              aria-label="Open sidebar"
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
-              Contributor Guide & Fast-Track Onboarding
+              <Menu className="w-5 h-5" />
             </button>
-            <a
-              href="https://github.com/SpaceCorps/GrowthHack"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-slate-200 transition-colors"
-            >
-              GitHub
-            </a>
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5 text-slate-950 font-bold" />
+              </div>
+              <span className="text-sm font-bold tracking-tight text-white">
+                SpaceCorps // GrowthHack
+              </span>
+            </div>
           </div>
-        </div>
-      </footer>
+
+          <div
+            className={`flex items-center space-x-1.5 px-2 py-0.5 rounded-full text-xs border ${
+              agentStatus?.is_available
+                ? "bg-emerald-950/60 text-emerald-300 border-emerald-800/80"
+                : "bg-rose-950/60 text-rose-300 border-rose-800/80"
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            <span className="font-mono text-[10px]">
+              {agentStatus?.is_available ? "Antigravity" : "Offline"}
+            </span>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <React.Suspense
+            fallback={
+              <div className="flex items-center justify-center py-24 text-slate-400">
+                <div className="flex items-center space-x-3">
+                  <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm">Loading view...</span>
+                </div>
+              </div>
+            }
+          >
+            {activeTab === "recipes" && (
+              <RecipeHub recipes={recipes} onRefresh={fetchAll} onRunRecipe={handleRunRecipe} />
+            )}
+            {activeTab === "issues" && (
+              <IssuesHub
+                issues={issues}
+                onRunIssue={handleRunIssue}
+                onUpdateStatus={handleUpdateIssueStatus}
+                onCreateIssue={handleCreateIssue}
+              />
+            )}
+
+            {activeTab === "articles" && (
+              <ArticleEngine
+                articles={articles}
+                onGenerateArticle={handleGenerateArticle}
+                onGenerateSpotlight={handleGenerateSpotlight}
+                onSelectArticle={(art, tab) => {
+                  setSelectedArticle(art);
+                  setArticleModalTab(tab || "content");
+                }}
+                onUpdateStatus={handleUpdateArticleStatus}
+                onSyncMetrics={handleSyncMetrics}
+                onResetEngagement={fetchAll}
+              />
+            )}
+
+            {activeTab === "review" && (
+              <ReviewQueue
+                items={reviewItems}
+                onApprove={handleApproveReviewItem}
+                onReject={handleRejectReviewItem}
+                onRefine={handleRefineReviewItem}
+                onBatchPublish={handleBatchPublish}
+                onAutoPost={handleAutoPostReviewItem}
+              />
+            )}
+            {activeTab === "trends" && (
+              <TrendRadar
+                trends={trends}
+                articles={articles}
+                onScoutTrends={handleScoutTrends}
+                onSynthesizeTrend={handleSynthesizeTrend}
+                onSelectArticle={(art) => setSelectedArticle(art)}
+                onUpdateArticleStatus={handleUpdateArticleStatus}
+              />
+            )}
+
+            {activeTab === "demos" && (
+              <VideoDemos onGenerateDemo={handleGenerateDemo} demos={demos} />
+            )}
+
+            {activeTab === "listings" && (
+              <ListingBlitz
+                listings={listings}
+                onGenerateBlurb={handleGenerateBlurb}
+                onUpdateStatus={handleUpdateListingStatus}
+                onCreateListing={handleCreateListing}
+                onBatchGenerateBlurbs={handleBatchGenerateBlurbs}
+                onVerifyBacklink={handleVerifyBacklink}
+                onSubmitUpstream={handleSubmitUpstream}
+                onBatchSubmitUpstream={handleBatchSubmitUpstream}
+                githubStatus={githubStatus}
+                onSyncAllPrs={handleSyncAllPrs}
+                onSyncSinglePr={handleSyncSinglePr}
+              />
+            )}
+
+            {activeTab === "packages" && (
+              <PackageManagerBlitz
+                packages={packages}
+                onUpdatePackageStatus={handleUpdatePackageStatus}
+                onDispatchPackagePr={handleDispatchPackagePr}
+              />
+            )}
+
+            {activeTab === "contributors" && <ContributorFlywheel onIssueClaimed={fetchAll} />}
+
+            {activeTab === "flywheel" && <PrFlywheel />}
+
+            {activeTab === "launch" && (
+              <LaunchCampaign
+                initialCampaign={launchCampaign || undefined}
+                onCampaignUpdated={fetchAll}
+              />
+            )}
+
+            {activeTab === "agent" && (
+              <AgentConsole agentStatus={agentStatus} onRunCustomPrompt={handleRunCustomPrompt} />
+            )}
+
+            {activeTab === "doctor" && <DoctorDemo />}
+            {activeTab === "playground" && <Playground />}
+          </React.Suspense>
+        </main>
+
+        {/* Footer */}
+        <footer className="border-t border-slate-800 bg-slate-900/50 py-4 text-center text-xs text-slate-400">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p>GrowthHack Platform &middot; Scaling Ivy-Tendril adoption</p>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setActiveTab("contributors")}
+                className="text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+              >
+                Contributor Guide & Fast-Track Onboarding
+              </button>
+              <a
+                href="https://github.com/SpaceCorps/GrowthHack"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-slate-200 transition-colors"
+              >
+                GitHub
+              </a>
+            </div>
+          </div>
+        </footer>
+      </div>
 
       {/* Floating Live Terminal for Real-Time Streaming */}
       <LiveTerminal
