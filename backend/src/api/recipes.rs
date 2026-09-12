@@ -18,6 +18,9 @@ pub struct ListRecipesQuery {
     pub search: Option<String>,
 }
 
+pub const MIN_RECIPE_TIMEOUT_SECS: u64 = 10;
+pub const MAX_RECIPE_TIMEOUT_SECS: u64 = 3600;
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RunRecipeRequest {
     #[serde(default)]
@@ -192,6 +195,21 @@ pub async fn run_recipe(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<RunRecipeRequest>,
 ) -> impl IntoResponse {
+    if let Some(timeout) = payload.timeout_secs {
+        if !(MIN_RECIPE_TIMEOUT_SECS..=MAX_RECIPE_TIMEOUT_SECS).contains(&timeout) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!(
+                        "timeout_secs must be between {} and {} seconds",
+                        MIN_RECIPE_TIMEOUT_SECS, MAX_RECIPE_TIMEOUT_SECS
+                    )
+                })),
+            )
+                .into_response();
+        }
+    }
+
     let mut state = ctx.state.write().await;
     let recipe_opt = state
         .recipes
@@ -208,7 +226,8 @@ pub async fn run_recipe(
                 cli_command: String::new(),
                 message: "Recipe not found".to_string(),
             }),
-        );
+        )
+            .into_response();
     }
 
     let recipe = recipe_opt.unwrap();
@@ -249,6 +268,7 @@ pub async fn run_recipe(
             message: "Recipe execution dispatched".to_string(),
         }),
     )
+        .into_response()
 }
 
 pub async fn submit_recipe(
