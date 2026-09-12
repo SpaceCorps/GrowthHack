@@ -549,11 +549,12 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       }),
     );
 
+    const onClose = vi.fn();
     await act(async () => {
       root!.render(
         <ArticleModal
           article={article}
-          onClose={vi.fn()}
+          onClose={onClose}
           onUpdateStatus={vi.fn()}
           initialTab="engagement"
         />,
@@ -584,6 +585,7 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     });
 
     expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("dismisses the reset confirmation dialog when clicking the backdrop overlay", async () => {
@@ -617,11 +619,12 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       }),
     );
 
+    const onClose = vi.fn();
     await act(async () => {
       root!.render(
         <ArticleModal
           article={article}
-          onClose={vi.fn()}
+          onClose={onClose}
           onUpdateStatus={vi.fn()}
           initialTab="engagement"
         />,
@@ -649,6 +652,7 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     });
 
     expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("does not dismiss the reset confirmation dialog when clicking inside the dialog card", async () => {
@@ -682,11 +686,12 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       }),
     );
 
+    const onClose = vi.fn();
     await act(async () => {
       root!.render(
         <ArticleModal
           article={article}
-          onClose={vi.fn()}
+          onClose={onClose}
           onUpdateStatus={vi.fn()}
           initialTab="engagement"
         />,
@@ -712,6 +717,7 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     });
 
     expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("does not dismiss the reset confirmation dialog via Escape or backdrop click when isResettingEngagement is true", async () => {
@@ -753,11 +759,12 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       });
     });
 
+    const onClose = vi.fn();
     await act(async () => {
       root!.render(
         <ArticleModal
           article={article}
-          onClose={vi.fn()}
+          onClose={onClose}
           onUpdateStatus={vi.fn()}
           initialTab="engagement"
         />,
@@ -792,6 +799,7 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
 
     // Try dismissing via backdrop click
     const dialog = container!.querySelector('div[role="dialog"]');
@@ -803,6 +811,7 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
       backdrop!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
 
     // Resolve promise to clean up
     await act(async () => {
@@ -813,6 +822,317 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     });
 
     expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("calls onClose when Escape is pressed and no nested dialog is open", async () => {
+    const article: Article = {
+      id: "art-modal-escape-test",
+      title: "Modal Escape Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for modal escape test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onClose when a non-Escape key is pressed", async () => {
+    const article: Article = {
+      id: "art-modal-nonescape-test",
+      title: "Modal Non-Escape Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for modal non-escape test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("calls onClose when clicking the overlay backdrop", async () => {
+    const article: Article = {
+      id: "art-modal-backdrop-test",
+      title: "Modal Backdrop Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for modal backdrop test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    const overlay = container!.firstElementChild as HTMLElement;
+    expect(overlay).toBeDefined();
+
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onClose when clicking inside the modal card", async () => {
+    const article: Article = {
+      id: "art-modal-card-click-test",
+      title: "Modal Card Click Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for modal card click test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    const title = Array.from(container!.querySelectorAll("h2")).find(
+      (h) => h.textContent === article.title,
+    );
+    expect(title).toBeDefined();
+
+    await act(async () => {
+      title!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes only the nested reset confirmation on Escape, leaving the parent modal open", async () => {
+    const article: Article = {
+      id: "art-modal-nested-escape-test",
+      title: "Modal Nested Escape Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for nested escape test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={onClose}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(container!.textContent).not.toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not call onClose via Escape while a reset is in flight, even after the nested dialog would otherwise close", async () => {
+    const article: Article = {
+      id: "art-modal-nested-inflight-test",
+      title: "Modal Nested In Flight Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for nested in-flight test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    let resolveSeed: ((val: any) => void) | null = null;
+    const seedPromise = new Promise((resolve) => {
+      resolveSeed = resolve;
+    });
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/seed-engagement")) {
+        return seedPromise;
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+    });
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={onClose}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    const confirmButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Confirm Reset"),
+    );
+    expect(confirmButton).toBeDefined();
+
+    await act(async () => {
+      confirmButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Resetting...");
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(container!.textContent).toContain("Reset Article Engagement?");
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSeed!({
+        ok: true,
+        json: () => Promise.resolve({ success: true, article }),
+      });
+    });
+  });
+
+  it("stops listening for Escape after unmount", async () => {
+    const article: Article = {
+      id: "art-modal-unmount-test",
+      title: "Modal Unmount Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for modal unmount test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement_badges: [],
+      milestone_alerts: [],
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    await act(async () => {
+      root!.unmount();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Root is already unmounted; clean up directly so afterEach doesn't double-unmount.
+    container!.remove();
+    container = null;
+    root = null;
   });
 
   it("renders action buttons with expected variants and sets aria-busy='true' during loading states", async () => {
