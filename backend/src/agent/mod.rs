@@ -115,7 +115,18 @@ impl TaskManager {
         task_id: &str,
         prompt: impl Into<String>,
     ) -> tokio::task::JoinHandle<()> {
-        self.spawn_task_with_callback(task_id, prompt, |_, _| async {}).await
+        self.spawn_task_with_timeout(task_id, prompt, None).await
+    }
+
+    pub async fn spawn_task_with_timeout(
+        &self,
+        task_id: &str,
+        prompt: impl Into<String>,
+        timeout_override: Option<std::time::Duration>,
+    ) -> tokio::task::JoinHandle<()> {
+        self.spawn_task_with_callback_and_timeout(task_id, prompt, timeout_override, |_, _| async {
+        })
+        .await
     }
 
     pub async fn spawn_task_with_callback<F, Fut>(
@@ -128,13 +139,31 @@ impl TaskManager {
         F: FnOnce(String, tokio::sync::broadcast::Sender<String>) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
+        self.spawn_task_with_callback_and_timeout(task_id, prompt, None, on_success)
+            .await
+    }
+
+    pub async fn spawn_task_with_callback_and_timeout<F, Fut>(
+        &self,
+        task_id: &str,
+        prompt: impl Into<String>,
+        timeout_override: Option<std::time::Duration>,
+        on_success: F,
+    ) -> tokio::task::JoinHandle<()>
+    where
+        F: FnOnce(String, tokio::sync::broadcast::Sender<String>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
         let tx = self.get_or_create_channel(task_id).await;
         let runner = self.runner.clone();
         let prompt = prompt.into();
         let task_id_string = task_id.to_string();
 
         tokio::spawn(async move {
-            match runner.execute(&prompt, tx.clone()).await {
+            match runner
+                .execute_with_timeout(&prompt, tx.clone(), timeout_override)
+                .await
+            {
                 Ok(content) => {
                     tracing::info!(task_id = %task_id_string, "Task execution completed successfully");
                     on_success(content, tx).await;
