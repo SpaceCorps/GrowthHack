@@ -20,6 +20,7 @@ import {
 
 import type { VideoDemo, StoryboardScene } from "../types";
 import { LiveTerminal } from "../components/LiveTerminal";
+import { SegmentedControl } from "../components/SegmentedControl";
 
 interface VideoDemosProps {
   onGenerateDemo?: (
@@ -805,63 +806,35 @@ export const VideoDemos: React.FC<VideoDemosProps> = ({ onGenerateDemo, demos: p
 
                   {/* Multi-Platform Script Selector (Tabs) */}
                   <div className="space-y-2">
-                    <div
-                      className="flex items-center space-x-1 border-b border-slate-800 text-xs"
-                      role="tablist"
-                    >
-                      <button
-                        role="tab"
-                        aria-selected={activeTab === "linkedin"}
-                        data-testid={`tab-${demo.id}-linkedin`}
-                        onClick={() => setActiveTab(demo.id, "linkedin")}
-                        className={`px-3 py-1.5 font-medium border-b-2 transition-all ${
-                          activeTab === "linkedin"
-                            ? "border-rose-500 text-white font-bold"
-                            : "border-transparent text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        LinkedIn Post
-                      </button>
-                      <button
-                        role="tab"
-                        aria-selected={activeTab === "twitter"}
-                        data-testid={`tab-${demo.id}-twitter`}
-                        onClick={() => setActiveTab(demo.id, "twitter")}
-                        className={`px-3 py-1.5 font-medium border-b-2 transition-all ${
-                          activeTab === "twitter"
-                            ? "border-rose-500 text-white font-bold"
-                            : "border-transparent text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        X/Twitter Thread
-                      </button>
-                      <button
-                        role="tab"
-                        aria-selected={activeTab === "youtube"}
-                        data-testid={`tab-${demo.id}-youtube`}
-                        onClick={() => setActiveTab(demo.id, "youtube")}
-                        className={`px-3 py-1.5 font-medium border-b-2 transition-all ${
-                          activeTab === "youtube"
-                            ? "border-rose-500 text-white font-bold"
-                            : "border-transparent text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        YouTube Shorts
-                      </button>
-                      <button
-                        role="tab"
-                        aria-selected={activeTab === "playwright"}
-                        data-testid={`tab-${demo.id}-playwright`}
-                        onClick={() => setActiveTab(demo.id, "playwright")}
-                        className={`px-3 py-1.5 font-medium border-b-2 transition-all ${
-                          activeTab === "playwright"
-                            ? "border-rose-500 text-white font-bold"
-                            : "border-transparent text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        Playwright & Config
-                      </button>
-                    </div>
+                    <SegmentedControl
+                      appearance="underline"
+                      variant="rose"
+                      ariaLabel={`Platform copy tabs for ${demo.headline}`}
+                      value={activeTab}
+                      onChange={(tab) => setActiveTab(demo.id, tab)}
+                      options={[
+                        {
+                          value: "linkedin",
+                          label: "LinkedIn Post",
+                          testId: `tab-${demo.id}-linkedin`,
+                        },
+                        {
+                          value: "twitter",
+                          label: "X/Twitter Thread",
+                          testId: `tab-${demo.id}-twitter`,
+                        },
+                        {
+                          value: "youtube",
+                          label: "YouTube Shorts",
+                          testId: `tab-${demo.id}-youtube`,
+                        },
+                        {
+                          value: "playwright",
+                          label: "Playwright & Config",
+                          testId: `tab-${demo.id}-playwright`,
+                        },
+                      ]}
+                    />
 
                     {/* Tab Content Box */}
                     <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 relative group min-h-[140px]">
