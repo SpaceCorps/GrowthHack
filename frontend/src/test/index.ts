@@ -13,3 +13,6 @@ export type {
 
 export { setupMockClipboard } from "./mockClipboard";
 export type { MockClipboardController, MockClipboardOptions } from "./mockClipboard";
+
+export { setupMockBlobUrl } from "./mockBlobUrl";
+export type { MockBlobUrlController, MockBlobUrlOptions } from "./mockBlobUrl";
