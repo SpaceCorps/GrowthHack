@@ -5,7 +5,7 @@ use growthhack_backend::agent::{AgentRunner, TaskManager};
 use growthhack_backend::api::issues::AppContext;
 use growthhack_backend::api::recipes::{
     get_recipe, list_recipes, resolve_cli_snippet, run_recipe, submit_recipe, ListRecipesQuery,
-    RunRecipeRequest, SubmitRecipeRequest,
+    RunRecipeRequest, SubmitRecipeRequest, MAX_RECIPE_TIMEOUT_SECS, MIN_RECIPE_TIMEOUT_SECS,
 };
 use growthhack_backend::db::{GrowthState, RecipeParameter};
 use std::collections::HashMap;
@@ -290,4 +290,128 @@ async fn test_run_recipe_accepts_optional_timeout_secs() {
     let state = ctx.state.read().await;
     let task = state.tasks.iter().find(|t| t.id == response_data.task_id);
     assert!(task.is_some());
+}
+
+#[tokio::test]
+async fn test_run_recipe_rejects_timeout_below_minimum() {
+    let ctx = create_test_context();
+    let initial_task_count = ctx.state.read().await.tasks.len();
+
+    // Test with 9
+    let request_below: RunRecipeRequest =
+        serde_json::from_str(r#"{"parameters": {}, "timeout_secs": 9}"#).unwrap();
+    let resp_below = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request_below),
+    )
+    .await;
+
+    let (parts_below, body_below) =
+        axum::response::IntoResponse::into_response(resp_below).into_parts();
+    assert_eq!(parts_below.status, StatusCode::BAD_REQUEST);
+    let bytes_below = axum::body::to_bytes(body_below, usize::MAX).await.unwrap();
+    let parsed_below: serde_json::Value = serde_json::from_slice(&bytes_below).unwrap();
+    assert_eq!(
+        parsed_below["error"],
+        format!(
+            "timeout_secs must be between {} and {} seconds",
+            MIN_RECIPE_TIMEOUT_SECS, MAX_RECIPE_TIMEOUT_SECS
+        )
+    );
+
+    // Test with 0
+    let request_zero: RunRecipeRequest =
+        serde_json::from_str(r#"{"parameters": {}, "timeout_secs": 0}"#).unwrap();
+    let resp_zero = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request_zero),
+    )
+    .await;
+
+    let (parts_zero, body_zero) =
+        axum::response::IntoResponse::into_response(resp_zero).into_parts();
+    assert_eq!(parts_zero.status, StatusCode::BAD_REQUEST);
+    let bytes_zero = axum::body::to_bytes(body_zero, usize::MAX).await.unwrap();
+    let parsed_zero: serde_json::Value = serde_json::from_slice(&bytes_zero).unwrap();
+    assert_eq!(
+        parsed_zero["error"],
+        format!(
+            "timeout_secs must be between {} and {} seconds",
+            MIN_RECIPE_TIMEOUT_SECS, MAX_RECIPE_TIMEOUT_SECS
+        )
+    );
+
+    // Verify no task was created in state
+    assert_eq!(ctx.state.read().await.tasks.len(), initial_task_count);
+}
+
+#[tokio::test]
+async fn test_run_recipe_rejects_timeout_above_maximum() {
+    let ctx = create_test_context();
+    let initial_task_count = ctx.state.read().await.tasks.len();
+
+    let request_above: RunRecipeRequest =
+        serde_json::from_str(r#"{"parameters": {}, "timeout_secs": 3601}"#).unwrap();
+    let resp_above = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request_above),
+    )
+    .await;
+
+    let (parts_above, body_above) =
+        axum::response::IntoResponse::into_response(resp_above).into_parts();
+    assert_eq!(parts_above.status, StatusCode::BAD_REQUEST);
+    let bytes_above = axum::body::to_bytes(body_above, usize::MAX).await.unwrap();
+    let parsed_above: serde_json::Value = serde_json::from_slice(&bytes_above).unwrap();
+    assert_eq!(
+        parsed_above["error"],
+        format!(
+            "timeout_secs must be between {} and {} seconds",
+            MIN_RECIPE_TIMEOUT_SECS, MAX_RECIPE_TIMEOUT_SECS
+        )
+    );
+
+    assert_eq!(ctx.state.read().await.tasks.len(), initial_task_count);
+}
+
+#[tokio::test]
+async fn test_run_recipe_accepts_boundary_timeouts() {
+    let ctx = create_test_context();
+
+    // Test lower boundary (10s)
+    let request_min: RunRecipeRequest =
+        serde_json::from_str(r#"{"parameters": {}, "timeout_secs": 10}"#).unwrap();
+    let resp_min = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request_min),
+    )
+    .await;
+
+    let (parts_min, body_min) = axum::response::IntoResponse::into_response(resp_min).into_parts();
+    assert_eq!(parts_min.status, StatusCode::ACCEPTED);
+    let bytes_min = axum::body::to_bytes(body_min, usize::MAX).await.unwrap();
+    let res_min: growthhack_backend::api::recipes::RunRecipeResponse =
+        serde_json::from_slice(&bytes_min).unwrap();
+    assert!(res_min.task_id.starts_with("task-"));
+
+    // Test upper boundary (3600s)
+    let request_max: RunRecipeRequest =
+        serde_json::from_str(r#"{"parameters": {}, "timeout_secs": 3600}"#).unwrap();
+    let resp_max = run_recipe(
+        Path("recipe-bugfixer".to_string()),
+        State(ctx.clone()),
+        Json(request_max),
+    )
+    .await;
+
+    let (parts_max, body_max) = axum::response::IntoResponse::into_response(resp_max).into_parts();
+    assert_eq!(parts_max.status, StatusCode::ACCEPTED);
+    let bytes_max = axum::body::to_bytes(body_max, usize::MAX).await.unwrap();
+    let res_max: growthhack_backend::api::recipes::RunRecipeResponse =
+        serde_json::from_slice(&bytes_max).unwrap();
+    assert!(res_max.task_id.starts_with("task-"));
 }
