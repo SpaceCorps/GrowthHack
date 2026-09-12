@@ -572,8 +572,11 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
 
     expect(container!.textContent).toContain("Reset Article Engagement?");
 
-    const dialog = container!.querySelector('div[role="dialog"]');
+    const dialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="reset-dialog-title"]',
+    );
     expect(dialog).toBeDefined();
+    expect(dialog).not.toBeNull();
     expect(dialog!.getAttribute("aria-modal")).toBe("true");
     expect(dialog!.getAttribute("aria-labelledby")).toBe("reset-dialog-title");
     expect(container!.querySelector("#reset-dialog-title")?.textContent).toBe(
@@ -642,8 +645,11 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
 
     expect(container!.textContent).toContain("Reset Article Engagement?");
 
-    const dialog = container!.querySelector('div[role="dialog"]');
+    const dialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="reset-dialog-title"]',
+    );
     expect(dialog).toBeDefined();
+    expect(dialog).not.toBeNull();
     const backdrop = dialog!.parentElement;
     expect(backdrop).toBeDefined();
 
@@ -709,8 +715,11 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
 
     expect(container!.textContent).toContain("Reset Article Engagement?");
 
-    const dialog = container!.querySelector('div[role="dialog"]');
+    const dialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="reset-dialog-title"]',
+    );
     expect(dialog).toBeDefined();
+    expect(dialog).not.toBeNull();
 
     await act(async () => {
       dialog!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -802,8 +811,11 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     // Try dismissing via backdrop click
-    const dialog = container!.querySelector('div[role="dialog"]');
+    const dialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="reset-dialog-title"]',
+    );
     expect(dialog).toBeDefined();
+    expect(dialog).not.toBeNull();
     const backdrop = dialog!.parentElement;
     expect(backdrop).toBeDefined();
 
@@ -1648,5 +1660,132 @@ describe("ArticleModal Component - Dev Seed Engagement", () => {
 
     expect(exportTab.getAttribute("aria-selected")).toBe("true");
     expect(container!.textContent).toContain("Export to Ivy Web");
+  });
+
+  it("exposes dialog semantics on the parent modal card, labelled by the article title", async () => {
+    const article: Article = {
+      id: "art-parent-dialog-test",
+      title: "Parent Dialog Semantics Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for parent dialog semantics test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+    };
+
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={vi.fn()} onUpdateStatus={vi.fn()} />);
+    });
+
+    const dialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="article-modal-title"]',
+    );
+    expect(dialog).not.toBeNull();
+    expect(dialog!.getAttribute("aria-modal")).toBe("true");
+
+    const title = container!.querySelector("#article-modal-title");
+    expect(title).not.toBeNull();
+    expect(title!.textContent).toBe(article.title);
+  });
+
+  it("distinguishes the parent modal dialog from the nested reset confirmation dialog", async () => {
+    const article: Article = {
+      id: "art-two-dialogs-test",
+      title: "Two Dialogs Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for two dialogs test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Published",
+      created_at: new Date().toISOString(),
+      engagement: {
+        views: 500,
+        reactions: 30,
+        comments: 10,
+        last_synced_at: new Date().toISOString(),
+      },
+      engagement_badges: ["100+ Views"],
+      milestone_alerts: [],
+      engagement_snapshots: [],
+    };
+
+    await act(async () => {
+      root!.render(
+        <ArticleModal
+          article={article}
+          onClose={vi.fn()}
+          onUpdateStatus={vi.fn()}
+          initialTab="engagement"
+        />,
+      );
+    });
+
+    expect(container!.querySelectorAll('div[role="dialog"]')).toHaveLength(1);
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes("Reset Engagement"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    const dialogs = container!.querySelectorAll('div[role="dialog"]');
+    expect(dialogs).toHaveLength(2);
+
+    const parentDialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="article-modal-title"]',
+    );
+    const nestedDialog = container!.querySelector(
+      'div[role="dialog"][aria-labelledby="reset-dialog-title"]',
+    );
+    expect(parentDialog).not.toBeNull();
+    expect(nestedDialog).not.toBeNull();
+    expect(parentDialog).not.toBe(nestedDialog);
+  });
+
+  it("does not treat the modal card as the click-to-dismiss backdrop", async () => {
+    const article: Article = {
+      id: "art-card-not-backdrop-test",
+      title: "Card Not Backdrop Article",
+      feature: "Worktrees",
+      channel: "Website",
+      angle: "Architecture",
+      summary: "Summary for card not backdrop test",
+      content: "Content",
+      backlinks: [],
+      outbound_citations: [],
+      status: "Draft",
+      created_at: new Date().toISOString(),
+    };
+
+    const onClose = vi.fn();
+    await act(async () => {
+      root!.render(<ArticleModal article={article} onClose={onClose} onUpdateStatus={vi.fn()} />);
+    });
+
+    const card = container!.querySelector('[aria-labelledby="article-modal-title"]');
+    expect(card).not.toBeNull();
+
+    await act(async () => {
+      card!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    const overlay = container!.firstElementChild;
+    expect(overlay).not.toBeNull();
+
+    await act(async () => {
+      overlay!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
