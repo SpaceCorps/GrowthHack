@@ -21,6 +21,8 @@ import {
   Trophy,
   CheckCheck,
   RotateCcw,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { EngagementVelocityChart } from "../components/EngagementVelocityChart";
 import { ActionButton } from "../components/ActionButton";
@@ -64,6 +66,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
   const [mode, setMode] = useState<"feature" | "spotlight">("feature");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isResettingAll, setIsResettingAll] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetBanner, setResetBanner] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [globalHistory, setGlobalHistory] = useState<EngagementHistoryResponse | null>(null);
@@ -723,7 +726,7 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={handleResetAllEngagement}
+                    onClick={() => setShowResetConfirm(true)}
                     disabled={isResettingAll || isSyncing}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                     title="Reset all workspace engagement metrics, snapshots, and badges to zero"
@@ -1232,6 +1235,102 @@ export const ArticleEngine: React.FC<ArticleEngineProps> = ({
           );
         })}
       </div>
+
+      {/* Confirmation Dialog Modal for Batch Reset */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-rose-950/50 border border-rose-900/50">
+                  <AlertTriangle className="w-5 h-5 text-rose-400" />
+                </div>
+                <h3 className="text-base font-semibold text-white">Reset All Workspace Metrics?</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResettingAll}
+                className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Close confirmation dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="space-y-3 text-sm text-slate-300">
+              <p className="leading-relaxed text-slate-300">
+                Are you sure you want to reset all reader engagement metrics across all articles in
+                this workspace? This will reset views, reactions, comments, milestone badges,
+                alerts, and historical velocity snapshots back to zero. This action cannot be
+                undone.
+              </p>
+
+              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 text-center text-xs">
+                <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                    Total Views
+                  </span>
+                  <span className="text-sm font-bold text-cyan-400">
+                    {totalViews.toLocaleString()}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                    Total Reactions
+                  </span>
+                  <span className="text-sm font-bold text-pink-400">
+                    {totalReactions.toLocaleString()}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <span className="text-[10px] uppercase font-semibold text-slate-400 block">
+                    Total Comments
+                  </span>
+                  <span className="text-sm font-bold text-amber-400">
+                    {totalComments.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResettingAll}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await handleResetAllEngagement();
+                  } finally {
+                    setShowResetConfirm(false);
+                  }
+                }}
+                disabled={isResettingAll}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-rose-600 hover:bg-rose-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-rose-950/30"
+              >
+                {isResettingAll ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin" />
+                    <span>Resetting...</span>
+                  </>
+                ) : (
+                  <span>Confirm Reset</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -934,12 +934,29 @@ describe("ArticleEngine Component", () => {
       resetButton!.click();
     });
 
+    // Clicking toolbar button opens confirmation dialog and does not immediately call reset API
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/articles/reset-engagement", expect.anything());
+    expect(container!.textContent).toContain("Reset All Workspace Metrics?");
+    expect(container!.textContent).toContain(
+      "Are you sure you want to reset all reader engagement metrics",
+    );
+
+    // Find "Confirm Reset" button in the modal
+    const confirmButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Confirm Reset"),
+    );
+    expect(confirmButton).toBeDefined();
+
+    await act(async () => {
+      confirmButton!.click();
+    });
+
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/articles/reset-engagement",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(resetButton!.textContent).toContain("Resetting...");
-    expect(resetButton!.disabled).toBe(true);
+    expect(confirmButton!.textContent).toContain("Resetting...");
+    expect(confirmButton!.disabled).toBe(true);
 
     await act(async () => {
       resolveReset();
@@ -948,9 +965,69 @@ describe("ArticleEngine Component", () => {
     expect(onResetEngagement).toHaveBeenCalled();
     expect(resetButton!.textContent).toContain("Reset All Metrics");
     expect(resetButton!.disabled).toBe(false);
+    // Modal is closed upon completion
+    expect(container!.textContent).not.toContain("Reset All Workspace Metrics?");
     expect(container!.textContent).toContain(
       "Reset all article engagement metrics, milestone alerts, and global snapshots to zero.",
     );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("canceling reset confirmation dialog dismisses modal without calling reset API", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await act(async () => {
+      root!.render(
+        <ArticleEngine
+          articles={[]}
+          onGenerateArticle={vi.fn()}
+          onSelectArticle={vi.fn()}
+          onUpdateStatus={vi.fn()}
+        />,
+      );
+    });
+
+    const resetButton = Array.from(container!.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Reset All Metrics"),
+    );
+    expect(resetButton).toBeDefined();
+
+    await act(async () => {
+      resetButton!.click();
+    });
+
+    expect(container!.textContent).toContain("Reset All Workspace Metrics?");
+
+    const cancelButton = Array.from(container!.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Cancel",
+    );
+    expect(cancelButton).toBeDefined();
+
+    await act(async () => {
+      cancelButton!.click();
+    });
+
+    expect(container!.textContent).not.toContain("Reset All Workspace Metrics?");
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/articles/reset-engagement", expect.anything());
+
+    // Also test the dismiss 'X' button
+    await act(async () => {
+      resetButton!.click();
+    });
+    expect(container!.textContent).toContain("Reset All Workspace Metrics?");
+
+    const closeButton = container!.querySelector(
+      'button[aria-label="Close confirmation dialog"]',
+    ) as HTMLButtonElement | null;
+    expect(closeButton).toBeDefined();
+
+    await act(async () => {
+      closeButton!.click();
+    });
+
+    expect(container!.textContent).not.toContain("Reset All Workspace Metrics?");
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/articles/reset-engagement", expect.anything());
 
     fetchSpy.mockRestore();
   });
