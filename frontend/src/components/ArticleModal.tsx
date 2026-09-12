@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActionButton } from "./ActionButton";
 import { ArticleBacklinksTab } from "./ArticleBacklinksTab";
 import { ArticleExportTab } from "./ArticleExportTab";
 import { ArticleEngagementTab } from "./ArticleEngagementTab";
 import { SegmentedControl } from "./SegmentedControl";
+import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
 import type { Article } from "../types";
 import { X, Copy, Check, Globe, Send, Share2, FileText, Code, Activity } from "lucide-react";
 
@@ -26,27 +27,14 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const [activeTab, setActiveTab] = useState<
     "content" | "raw" | "backlinks" | "export" | "engagement"
   >(initialTab);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const { overlayRef, onBackdropClick } = useOverlayDismiss(onClose, {
+    enabled: Boolean(article),
+    guardSelector: '[data-nested-overlay="true"]',
+  });
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [article?.id, initialTab]);
-
-  // Close the modal on Escape unless a nested confirmation dialog owns the key
-  useEffect(() => {
-    if (!article) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (overlayRef.current?.querySelector('[data-nested-overlay="true"]')) return;
-      onClose();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [article, onClose]);
 
   if (!article) return null;
 
@@ -61,9 +49,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   return (
     <div
       ref={overlayRef}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onClick={onBackdropClick}
       className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
       <div
