@@ -66,7 +66,12 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       }}
       className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
     >
-      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="article-modal-title"
+        className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-3">
@@ -118,7 +123,10 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
         {/* Title and Summary */}
         <div className="px-6 pt-5 pb-3 border-b border-slate-800/60">
-          <h2 className="text-xl font-bold text-white tracking-tight leading-snug">
+          <h2
+            id="article-modal-title"
+            className="text-xl font-bold text-white tracking-tight leading-snug"
+          >
             {article.title}
           </h2>
           <p className="text-sm text-slate-400 mt-1">{article.summary}</p>
