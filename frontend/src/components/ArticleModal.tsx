@@ -1469,13 +1469,14 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                       <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
                       <span>Dev.to API key is not configured for direct publishing.</span>
                     </div>
-                    <button
-                      type="button"
+                    <ActionButton
+                      variant="secondary"
+                      size="xs"
+                      icon={<Key className="w-3.5 h-3.5 text-amber-400" />}
                       onClick={() => setIsConfigOpen(true)}
-                      className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-900 text-amber-100 font-semibold underline text-xs transition-colors"
                     >
                       Configure Dev.to Key
-                    </button>
+                    </ActionButton>
                   </div>
                 )}
 
@@ -1487,13 +1488,14 @@ canonical_url: "https://ivy.interactive/blog/${currentSlug}"
                         Hashnode Personal Access Token is not configured for direct publishing.
                       </span>
                     </div>
-                    <button
-                      type="button"
+                    <ActionButton
+                      variant="secondary"
+                      size="xs"
+                      icon={<Key className="w-3.5 h-3.5 text-amber-400" />}
                       onClick={() => setIsConfigOpen(true)}
-                      className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-900 text-amber-100 font-semibold underline text-xs transition-colors"
                     >
                       Configure Hashnode Token
-                    </button>
+                    </ActionButton>
                   </div>
                 )}
 
