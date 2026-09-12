@@ -7,6 +7,71 @@ use uuid::Uuid;
 pub const DEFAULT_PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+#[cfg(windows)]
+struct JobObject {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+impl JobObject {
+    fn new() -> Option<Self> {
+        unsafe {
+            let handle = windows_sys::Win32::System::JobObjects::CreateJobObjectW(
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            );
+            if handle == 0 {
+                return None;
+            }
+
+            let mut info: windows_sys::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION =
+                std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags =
+                windows_sys::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+            let res = windows_sys::Win32::System::JobObjects::SetInformationJobObject(
+                handle,
+                windows_sys::Win32::System::JobObjects::JobObjectExtendedLimitInformation,
+                &info as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<
+                    windows_sys::Win32::System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                >() as u32,
+            );
+
+            if res == 0 {
+                windows_sys::Win32::Foundation::CloseHandle(handle);
+                None
+            } else {
+                Some(Self { handle })
+            }
+        }
+    }
+
+    fn assign_process(&self, process_handle: std::os::windows::io::RawHandle) -> bool {
+        unsafe {
+            windows_sys::Win32::System::JobObjects::AssignProcessToJobObject(
+                self.handle,
+                process_handle as windows_sys::Win32::Foundation::HANDLE,
+            ) != 0
+        }
+    }
+
+    fn terminate(&self, exit_code: u32) {
+        unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(self.handle, exit_code);
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for JobObject {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AgentRunner {
     pub agy_path: std::path::PathBuf,
@@ -84,6 +149,9 @@ impl AgentRunner {
             cmd.process_group(0);
         }
 
+        #[cfg(windows)]
+        let job_object = JobObject::new();
+
         let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(err) => {
@@ -95,6 +163,13 @@ impl AgentRunner {
                 return Err(err_msg);
             }
         };
+
+        #[cfg(windows)]
+        if let Some(ref job) = job_object {
+            if let Some(raw_proc) = child.raw_handle() {
+                job.assign_process(raw_proc);
+            }
+        }
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -143,6 +218,10 @@ impl AgentRunner {
                         // Passing negative PID (-pgid) to kill(2) delivers the signal to all processes in the process group
                         libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
                     }
+                }
+                #[cfg(windows)]
+                if let Some(ref job) = job_object {
+                    job.terminate(1);
                 }
                 let _ = child.start_kill();
                 stdout_handle.abort();
@@ -391,6 +470,79 @@ mod tests {
         assert!(
             process_dead,
             "Descendant process (PID {}) should have been killed by process group SIGKILL",
+            child_pid
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(windows)]
+    async fn test_agent_runner_timeout_kills_descendant_job_object_on_windows() {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        let temp_dir = std::env::temp_dir();
+        let test_id = Uuid::new_v4().simple();
+        let script_path = temp_dir.join(format!("slow_job_test_agy_{}.bat", test_id));
+        let pid_file_path = temp_dir.join(format!("slow_job_test_pid_{}.txt", test_id));
+
+        // Create a temporary batch script (.bat) that spawns a background child process using PowerShell,
+        // writes the child PID to a temporary file, and blocks on wait.
+        let script_content = format!(
+            "@echo off\r\npowershell -NoProfile -Command \"$p = Start-Process ping -ArgumentList '127.0.0.1 -n 30' -PassThru; Set-Content -Path '{}' -Value $p.Id; Wait-Process -Id $p.Id\"\r\n",
+            pid_file_path.display()
+        );
+        std::fs::write(&script_path, script_content).expect("write test script");
+
+        // Execute AgentRunner with a short timeout (500ms)
+        let runner =
+            AgentRunner::with_timeout(script_path.clone(), std::time::Duration::from_millis(500));
+        let (tx, _rx) = tokio::sync::broadcast::channel(32);
+
+        let res = runner
+            .execute("Test prompt for job object timeout", tx)
+            .await;
+
+        assert!(res.is_err(), "Expected timeout error, got {:?}", res);
+        let err = res.unwrap_err();
+        assert!(err.contains("timed out after 500ms"), "Error was: {}", err);
+
+        // Read recorded child PID from temporary file
+        assert!(
+            pid_file_path.exists(),
+            "PID file should have been written by test script"
+        );
+        let pid_str = std::fs::read_to_string(&pid_file_path).expect("read pid file");
+        let child_pid: u32 = pid_str.trim().parse().expect("parse child PID");
+
+        // Check that descendant background process is no longer running
+        let mut process_dead = false;
+        for _ in 0..20 {
+            unsafe {
+                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, child_pid);
+                if handle == 0 {
+                    process_dead = true;
+                    break;
+                }
+                let mut exit_code: u32 = 0;
+                let res = GetExitCodeProcess(handle, &mut exit_code);
+                CloseHandle(handle);
+                if res != 0 && exit_code != 259 {
+                    process_dead = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+
+        // Clean up temporary test files
+        let _ = std::fs::remove_file(&script_path);
+        let _ = std::fs::remove_file(&pid_file_path);
+
+        assert!(
+            process_dead,
+            "Descendant process (PID {}) should have been killed by Job Object termination",
             child_pid
         );
     }
